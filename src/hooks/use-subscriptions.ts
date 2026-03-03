@@ -131,6 +131,7 @@ export function useDeleteSubscription() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
+      qc.invalidateQueries({ queryKey: queryKeys.clients });
       toast.success("Subscription deleted");
     },
     onError: (err: Error) => toast.error(err.message),
