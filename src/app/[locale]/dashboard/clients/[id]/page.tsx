@@ -168,8 +168,6 @@ export default function ClientDetailPage() {
         <AssignSubscriptionDialog
           clientId={client.id}
           clientName={client.name}
-          previousServiceUser={client.serviceUser}
-          previousServicePassword={client.servicePassword}
           open={assignOpen}
           onOpenChange={setAssignOpen}
         />
