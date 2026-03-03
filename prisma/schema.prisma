@@ -166,8 +166,6 @@ model Client {
   name            String   @db.VarChar(150)
   phone           String?  @db.VarChar(30)
   notes           String?  @db.Text
-  serviceUser     String?  @map("service_user") @db.VarChar(100)
-  servicePassword String?  @map("service_password") @db.VarChar(100)
   createdAt       DateTime @default(now()) @map("created_at")
 
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)

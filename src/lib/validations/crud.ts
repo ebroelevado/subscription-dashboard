@@ -50,8 +50,6 @@ export const createClientSchema = z.object({
   name: z.string().min(1).max(150),
   phone: z.string().max(30).nullable().optional(),
   notes: z.string().nullable().optional(),
-  serviceUser: z.string().max(100).nullable().optional(),
-  servicePassword: z.string().max(100).nullable().optional(),
 });
 
 export type CreateClientInput = z.infer<typeof createClientSchema>;

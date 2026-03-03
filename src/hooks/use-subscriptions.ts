@@ -36,11 +36,8 @@ export interface SubscriptionDetail extends Omit<Subscription, "clientSubscripti
     joinedAt: string;
     leftAt: string | null;
     status: "active" | "paused";
-    serviceUser: string | null;
-    servicePassword: string | null;
-    client: { id: string; name: string; phone: string | null };
+    client: { id: string; name: string; phone: string | null; serviceUser: string | null; servicePassword: string | null };
   }[];
-  owner?: { id: string; name: string; phone: string | null } | null;
   platformRenewals: {
     id: string;
     amountPaid: number;

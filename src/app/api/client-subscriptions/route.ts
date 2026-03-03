@@ -94,24 +94,22 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
     // Compute dates from duration
     const startDate = data.startDate ? startOfDay(data.startDate) : startOfDay(new Date());
     const activeUntil = addMonths(startDate, data.durationMonths);
 
-    // Build seat — store credentials per seat (per-platform), not on the client
-    const seatData: Record<string, unknown> = {
-      clientId: data.clientId,
-      subscriptionId: data.subscriptionId,
-      customPrice: data.customPrice,
-      activeUntil,
-      joinedAt: startDate,
-      status: data.status,
-    };
-    if (data.serviceUser !== undefined) seatData.serviceUser = data.serviceUser;
-    if (data.servicePassword !== undefined) seatData.servicePassword = data.servicePassword;
-
     const seat = await prisma.clientSubscription.create({
-      data: seatData as Parameters<typeof prisma.clientSubscription.create>[0]["data"],
+      data: {
+        clientId: data.clientId,
+        subscriptionId: data.subscriptionId,
+        customPrice: data.customPrice,
+        activeUntil,
+        joinedAt: startDate,
+        status: data.status,
+        serviceUser: data.serviceUser || null,
+        servicePassword: data.servicePassword || null,
+      },
     });
     return success(seat, 201);
   });

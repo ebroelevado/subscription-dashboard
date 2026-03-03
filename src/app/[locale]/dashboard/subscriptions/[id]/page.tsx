@@ -29,8 +29,6 @@ import {
   PauseCircle,
   PlayCircle,
   Banknote,
-  ShieldCheck,
-  Copy,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useSession } from "next-auth/react";
@@ -58,9 +56,8 @@ export default function SubscriptionDetailPage({
   const { id } = use(params);
   const { data: sub, isLoading, isError } = useSubscription(id);
   const [addSeatOpen, setAddSeatOpen] = useState(false);
-  type SeatType = NonNullable<typeof sub>["clientSubscriptions"][number];
-  const [editSeat, setEditSeat] = useState<SeatType | null>(null);
-  const [renewClientSeat, setRenewClientSeat] = useState<SeatType | null>(null);
+  const [editSeat, setEditSeat] = useState<typeof sub extends undefined ? never : NonNullable<typeof sub>["clientSubscriptions"][number] | null>(null);
+  const [renewClientSeat, setRenewClientSeat] = useState<typeof sub extends undefined ? never : NonNullable<typeof sub>["clientSubscriptions"][number] | null>(null);
   const { data: session } = useSession();
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
   const [renewPlatformOpen, setRenewPlatformOpen] = useState(false);
@@ -329,69 +326,13 @@ export default function SubscriptionDetailPage({
           </div>
         </CardHeader>
         <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
-          {sub.clientSubscriptions.length === 0 && !sub.owner ? (
+          {sub.clientSubscriptions.length === 0 ? (
             <div className="py-6 text-center">
               <Users className="mx-auto mb-3 size-10 text-muted-foreground/50" />
               <p className="text-muted-foreground">{t("noActiveSeats")}</p>
             </div>
           ) : (
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Admin seat (owner) */}
-              {sub.owner && (
-                <div className="flex flex-col gap-3 rounded-lg border border-l-4 border-l-violet-500 bg-violet-500/5 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center justify-center size-8 rounded-full bg-violet-500/20 shrink-0">
-                        <ShieldCheck className="size-4 text-violet-500" />
-                      </div>
-                      <div>
-                        <Link
-                          href={`/dashboard/clients/${sub.owner.id}`}
-                          className="font-medium text-sm hover:underline block"
-                        >
-                          {sub.owner.name}
-                        </Link>
-                        {sub.owner.phone && (
-                          <p className="text-xs text-muted-foreground">{sub.owner.phone}</p>
-                        )}
-                      </div>
-                    </div>
-                    <Badge className="bg-violet-500/20 text-violet-400 border-0 text-[10px] h-5 shrink-0">
-                      Admin
-                    </Badge>
-                  </div>
-                  {/* Master credentials */}
-                  {(sub.masterUsername || sub.masterPassword) && (
-                    <div className="rounded border bg-muted/30 p-2 space-y-1 text-xs">
-                      {sub.masterUsername && (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground shrink-0">{t("serviceUser")}</span>
-                          <div className="flex items-center gap-1 min-w-0">
-                            <code className="font-mono truncate">{sub.masterUsername}</code>
-                            <Button variant="ghost" size="icon" className="size-5 shrink-0"
-                              onClick={() => { navigator.clipboard.writeText(sub.masterUsername!); toast.success(tc("copied", { label: t("serviceUser") })); }}>
-                              <Copy className="size-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {sub.masterPassword && (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground shrink-0">{t("servicePassword")}</span>
-                          <div className="flex items-center gap-1 min-w-0">
-                            <code className="font-mono truncate">{sub.masterPassword}</code>
-                            <Button variant="ghost" size="icon" className="size-5 shrink-0"
-                              onClick={() => { navigator.clipboard.writeText(sub.masterPassword!); toast.success(tc("copied", { label: t("servicePassword") })); }}>
-                              <Copy className="size-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Regular seats */}
               {sub.clientSubscriptions.map((seat) => (
                 <SeatCard
                   key={seat.id}
@@ -455,9 +396,6 @@ export default function SubscriptionDetailPage({
         open={!!editSeat}
         onOpenChange={(open) => {
           if (!open) setEditSeat(null);
-        }}
-        onRemove={() => {
-          if (editSeat) setCancelSeatId(editSeat.id);
         }}
       />
 

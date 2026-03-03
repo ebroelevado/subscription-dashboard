@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (data.startDate !== undefined) updateData.joinedAt = data.startDate;
     if (data.activeUntil !== undefined) updateData.activeUntil = data.activeUntil;
 
-    // Handle credentials — store on the seat row (per-platform credentials)
+    // Handle credentials (update ClientSubscription model)
     if (data.serviceUser !== undefined) updateData.serviceUser = data.serviceUser;
     if (data.servicePassword !== undefined) updateData.servicePassword = data.servicePassword;
 
