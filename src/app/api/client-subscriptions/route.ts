@@ -94,31 +94,24 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-
     // Compute dates from duration
     const startDate = data.startDate ? startOfDay(data.startDate) : startOfDay(new Date());
     const activeUntil = addMonths(startDate, data.durationMonths);
 
-    // If credentials are provided, update the client record
-    if (data.serviceUser || data.servicePassword) {
-      const updateData: { serviceUser?: string; servicePassword?: string } = {};
-      if (data.serviceUser) updateData.serviceUser = data.serviceUser;
-      if (data.servicePassword) updateData.servicePassword = data.servicePassword;
-      await prisma.client.update({
-        where: { id: data.clientId },
-        data: updateData,
-      });
-    }
+    // Build seat — store credentials per seat (per-platform), not on the client
+    const seatData: Record<string, unknown> = {
+      clientId: data.clientId,
+      subscriptionId: data.subscriptionId,
+      customPrice: data.customPrice,
+      activeUntil,
+      joinedAt: startDate,
+      status: data.status,
+    };
+    if (data.serviceUser !== undefined) seatData.serviceUser = data.serviceUser;
+    if (data.servicePassword !== undefined) seatData.servicePassword = data.servicePassword;
 
     const seat = await prisma.clientSubscription.create({
-      data: {
-        clientId: data.clientId,
-        subscriptionId: data.subscriptionId,
-        customPrice: data.customPrice,
-        activeUntil,
-        joinedAt: startDate,
-        status: data.status,
-      },
+      data: seatData as Parameters<typeof prisma.clientSubscription.create>[0]["data"],
     });
     return success(seat, 201);
   });

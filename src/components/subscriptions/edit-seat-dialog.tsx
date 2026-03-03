@@ -21,15 +21,15 @@ interface EditSeatDialogProps {
     joinedAt: string;
     activeUntil: string;
     status: "active" | "paused";
-    client: {
-      serviceUser?: string | null;
-      servicePassword?: string | null;
-    };
+    serviceUser?: string | null;
+    servicePassword?: string | null;
+    client: { name: string };
   } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRemove?: () => void;
 }
-export function EditSeatDialog({ seat, open, onOpenChange }: EditSeatDialogProps) {
+export function EditSeatDialog({ seat, open, onOpenChange, onRemove }: EditSeatDialogProps) {
   const t = useTranslations("subscriptions");
   const tc = useTranslations("common");
   const updateSeat = useUpdateSeat();
@@ -37,8 +37,8 @@ export function EditSeatDialog({ seat, open, onOpenChange }: EditSeatDialogProps
   const [customPrice, setCustomPrice] = useState(seat?.customPrice.toString() ?? "");
   const [startDate, setStartDate] = useState(seat?.joinedAt.split("T")[0] ?? "");
   const [activeUntil, setActiveUntil] = useState(seat?.activeUntil.split("T")[0] ?? "");
-  const [serviceUser, setServiceUser] = useState(seat?.client.serviceUser || "");
-  const [servicePassword, setServicePassword] = useState(seat?.client.servicePassword || "");
+  const [serviceUser, setServiceUser] = useState(seat?.serviceUser || "");
+  const [servicePassword, setServicePassword] = useState(seat?.servicePassword || "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,6 +125,16 @@ export function EditSeatDialog({ seat, open, onOpenChange }: EditSeatDialogProps
           </div>
 
           <DialogFooter className="col-span-2 pt-2">
+            {onRemove && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => { onOpenChange(false); onRemove(); }}
+              >
+                {t("removeSeat")}
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {tc("cancel")}
             </Button>

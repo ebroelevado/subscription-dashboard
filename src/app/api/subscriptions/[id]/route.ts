@@ -18,9 +18,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         plan: {
           include: { platform: { select: { id: true, name: true } } },
         },
+        owner: { select: { id: true, name: true, phone: true } },
         clientSubscriptions: {
           include: {
-            client: { select: { id: true, name: true, phone: true, serviceUser: true, servicePassword: true } },
+            client: { select: { id: true, name: true, phone: true } },
           },
           orderBy: { joinedAt: "asc" },
         },

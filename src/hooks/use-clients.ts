@@ -46,6 +46,8 @@ export interface ClientDetail {
     joinedAt: string;
     leftAt: string | null;
     activeUntil: string;
+    serviceUser: string | null;
+    servicePassword: string | null;
     subscription: {
       id: string;
       label: string;
@@ -65,6 +67,17 @@ export interface ClientDetail {
       periodEnd: string;
       paidOn: string;
     }[];
+  }[];
+  ownedSubscriptions: {
+    id: string;
+    label: string;
+    status: string;
+    masterUsername: string | null;
+    masterPassword: string | null;
+    plan: {
+      name: string;
+      platform: { id: string; name: string };
+    };
   }[];
 }
 

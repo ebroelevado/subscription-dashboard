@@ -184,15 +184,17 @@ model Client {
 // ──────────────────────────────────────────
 
 model ClientSubscription {
-  id             String                   @id @default(uuid())
-  clientId       String                   @map("client_id")
-  subscriptionId String                   @map("subscription_id")
-  customPrice    Decimal                  @map("custom_price") @db.Decimal(10, 2)
-  activeUntil    DateTime                 @map("active_until") @db.Date
-  joinedAt       DateTime                 @map("joined_at") @db.Date
-  leftAt         DateTime?                @map("left_at") @db.Date
-  status         ClientSubscriptionStatus @default(active)
-  remainingDays  Int?                     @map("remaining_days")
+  id              String                   @id @default(uuid())
+  clientId        String                   @map("client_id")
+  subscriptionId  String                   @map("subscription_id")
+  customPrice     Decimal                  @map("custom_price") @db.Decimal(10, 2)
+  activeUntil     DateTime                 @map("active_until") @db.Date
+  joinedAt        DateTime                 @map("joined_at") @db.Date
+  leftAt          DateTime?                @map("left_at") @db.Date
+  status          ClientSubscriptionStatus @default(active)
+  remainingDays   Int?                     @map("remaining_days")
+  serviceUser     String?                  @map("service_user") @db.VarChar(100)
+  servicePassword String?                  @map("service_password") @db.VarChar(100)
 
   client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)

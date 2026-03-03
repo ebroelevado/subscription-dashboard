@@ -38,6 +38,22 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           },
           orderBy: { joinedAt: "asc" },
         },
+        // Subscriptions this client owns (admin seat)
+        ownedSubscriptions: {
+          where: { userId },
+          select: {
+            id: true,
+            label: true,
+            status: true,
+            masterUsername: true,
+            masterPassword: true,
+            plan: {
+              include: {
+                platform: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
       },
     });
 
