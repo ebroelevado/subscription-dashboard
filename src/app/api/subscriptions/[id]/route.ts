@@ -20,7 +20,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         },
         clientSubscriptions: {
           include: {
-            client: { select: { id: true, name: true, phone: true, serviceUser: true, servicePassword: true } },
+            client: true,
           },
           orderBy: { joinedAt: "asc" },
         },

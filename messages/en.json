@@ -337,13 +337,6 @@
     "noNotes": "No notes",
     "noActiveSeatsToRemind": "No active seats to remind about.",
     "addPhoneWarning": "Add a phone number to enable WhatsApp reminders.",
-    "assignSubscription": "Assign Subscription",
-    "removeSeat": "Remove Seat",
-    "viewCredentials": "View Credentials",
-    "hideCredentials": "Hide Credentials",
-    "noCredentials": "No credentials",
-    "confirmRemoveSeat": "Remove this seat?",
-    "confirmRemoveSeatDescription": "This will permanently remove the seat from this subscription. Renewal history will be preserved.",
     "status": {
       "paid": "Paid",
       "due": "Due",

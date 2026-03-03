@@ -305,7 +305,7 @@ export async function POST(req: Request) {
             safeResolve();
           });
 
-          copilotSession.send({ prompt: promptText }).catch((err: Error) => {
+          copilotSession.send({ prompt: promptText }).catch((err) => {
             console.error("[Route] send error:", err);
             reject(err);
           });

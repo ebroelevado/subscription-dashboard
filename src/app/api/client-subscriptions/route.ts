@@ -99,6 +99,8 @@ export async function POST(request: NextRequest) {
     const startDate = data.startDate ? startOfDay(data.startDate) : startOfDay(new Date());
     const activeUntil = addMonths(startDate, data.durationMonths);
 
+    // If credentials are provided, update the client record
+
     const seat = await prisma.clientSubscription.create({
       data: {
         clientId: data.clientId,
@@ -106,9 +108,9 @@ export async function POST(request: NextRequest) {
         customPrice: data.customPrice,
         activeUntil,
         joinedAt: startDate,
-        status: data.status,
-        serviceUser: data.serviceUser || null,
-        servicePassword: data.servicePassword || null,
+        status: "active",
+        serviceUser: (data as any).serviceUser ?? null,
+        servicePassword: (data as any).servicePassword ?? null,
       },
     });
     return success(seat, 201);

@@ -17,6 +17,8 @@ import { addMonths, format } from "date-fns";
 interface AssignSubscriptionDialogProps {
   clientId: string;
   clientName: string;
+  previousServiceUser?: string | null;
+  previousServicePassword?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -24,6 +26,8 @@ interface AssignSubscriptionDialogProps {
 export function AssignSubscriptionDialog({ 
   clientId, 
   clientName,
+  previousServiceUser,
+  previousServicePassword,
   open, 
   onOpenChange 
 }: AssignSubscriptionDialogProps) {
@@ -37,8 +41,8 @@ export function AssignSubscriptionDialog({
   const [customPrice, setCustomPrice] = useState("");
   const [durationMonths, setDurationMonths] = useState("1");
   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [serviceUser, setServiceUser] = useState("");
-  const [servicePassword, setServicePassword] = useState("");
+  const [serviceUser, setServiceUser] = useState(previousServiceUser || "");
+  const [servicePassword, setServicePassword] = useState(previousServicePassword || "");
   const [showPassword, setShowPassword] = useState(false);
 
   // Search filter
@@ -67,8 +71,8 @@ export function AssignSubscriptionDialog({
     setCustomPrice("");
     setDurationMonths("1");
     setStartDate(format(new Date(), "yyyy-MM-dd"));
-    setServiceUser("");
-    setServicePassword("");
+    setServiceUser(previousServiceUser || "");
+    setServicePassword(previousServicePassword || "");
     setShowPassword(false);
   };
 

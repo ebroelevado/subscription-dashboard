@@ -131,6 +131,7 @@ export async function importUserData(
           userId,
           name: c.name,
           phone: c.phone ?? null,
+          notes: c.notes ?? null,
           ...(c.createdAt && { createdAt: new Date(c.createdAt) }),
         },
       });
@@ -154,8 +155,8 @@ export async function importUserData(
           leftAt: cs.leftAt ? new Date(cs.leftAt) : null,
           status: cs.status,
           remainingDays: cs.remainingDays ?? null,
-          serviceUser: cs.serviceUser ?? null,
-          servicePassword: cs.servicePassword ?? null,
+          serviceUser: (cs as any).serviceUser ?? null,
+          servicePassword: (cs as any).servicePassword ?? null,
         },
       });
     }

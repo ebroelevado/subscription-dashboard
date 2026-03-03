@@ -10,6 +10,8 @@ export interface Client {
   name: string;
   phone: string | null;
   notes: string | null;
+  serviceUser: string | null;
+  servicePassword: string | null;
   createdAt: string;
   clientSubscriptions: {
     id: string;
@@ -34,6 +36,8 @@ export interface ClientDetail {
   name: string;
   phone: string | null;
   notes: string | null;
+  serviceUser: string | null;
+  servicePassword: string | null;
   createdAt: string;
   clientSubscriptions: {
     id: string;
@@ -42,14 +46,10 @@ export interface ClientDetail {
     joinedAt: string;
     leftAt: string | null;
     activeUntil: string;
-    serviceUser: string | null;
-    servicePassword: string | null;
     subscription: {
       id: string;
       label: string;
       status: string;
-      masterUsername: string | null;
-      masterPassword: string | null;
       plan: {
         id: string;
         name: string;
@@ -84,7 +84,7 @@ export function useClient(id: string | undefined) {
 export function useCreateClient() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; phone?: string | null; notes?: string | null }) =>
+    mutationFn: (data: { name: string; phone?: string | null; notes?: string | null; serviceUser?: string | null; servicePassword?: string | null }) =>
       fetchApi<Client>("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -101,7 +101,7 @@ export function useCreateClient() {
 export function useUpdateClient() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { id: string; name?: string; phone?: string | null; notes?: string | null }) =>
+    mutationFn: (data: { id: string; name?: string; phone?: string | null; notes?: string | null; serviceUser?: string | null; servicePassword?: string | null }) =>
       fetchApi<Client>(`/api/clients/${data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

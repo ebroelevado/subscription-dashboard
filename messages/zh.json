@@ -335,13 +335,6 @@
     "noNotes": "无备注",
     "noActiveSeatsToRemind": "没有需要提醒的活跃席位。",
     "addPhoneWarning": "添加电话号码以启用 WhatsApp 提醒。",
-    "assignSubscription": "分配订阅",
-    "removeSeat": "移除席位",
-    "viewCredentials": "查看凭据",
-    "hideCredentials": "隐藏凭据",
-    "noCredentials": "无凭据",
-    "confirmRemoveSeat": "移除此席位？",
-    "confirmRemoveSeatDescription": "这将永久从此订阅中移除该席位。续约历史将保留。",
     "status": {
       "paid": "已付",
       "due": "待付",

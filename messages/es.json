@@ -335,13 +335,6 @@
     "noNotes": "Sin notas",
     "noActiveSeatsToRemind": "No hay asientos activos para recordar.",
     "addPhoneWarning": "Añade un número de teléfono para activar los recordatorios de WhatsApp.",
-    "assignSubscription": "Asignar Suscripción",
-    "removeSeat": "Quitar Asiento",
-    "viewCredentials": "Ver Credenciales",
-    "hideCredentials": "Ocultar Credenciales",
-    "noCredentials": "Sin credenciales",
-    "confirmRemoveSeat": "¿Quitar este asiento?",
-    "confirmRemoveSeatDescription": "Se eliminará permanentemente el asiento de esta suscripción. El historial de renovaciones se conservará.",
     "status": {
       "paid": "Pagado",
       "due": "Por vencer",

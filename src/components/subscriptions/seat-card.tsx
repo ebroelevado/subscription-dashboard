@@ -83,9 +83,9 @@ interface SeatCardProps {
       id: string;
       name: string;
       phone: string | null;
-      serviceUser?: string | null;
-      servicePassword?: string | null;
     };
+    serviceUser?: string | null;
+    servicePassword?: string | null;
   };
   onPause: () => void;
   onResume: () => void;
@@ -101,18 +101,25 @@ export function SeatCard({ seat, onPause, onResume, onCancel, onRenew, onEdit }:
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
   const [showPassword, setShowPassword] = useState(false);
   const expiry = getExpiryStatus(seat.activeUntil, tc);
-  const hasCredentials = seat.client.serviceUser || seat.client.servicePassword;
+  const hasCredentials = seat.serviceUser || seat.servicePassword;
   const isPaused = seat.status === "paused";
   const isActive = seat.status === "active";
   
+  const handleCopyUser = () => {
+    if (seat.serviceUser) {
+      navigator.clipboard.writeText(seat.serviceUser);
+      toast.success(t("credentials.userCopied"));
+    }
+  };
 
+  const handleCopyPassword = () => {
+    if (seat.servicePassword) {
+      navigator.clipboard.writeText(seat.servicePassword);
+      toast.success(t("credentials.passwordCopied"));
+    }
+  };
 
   const statusConfig = statusBadgeConfig[seat.status as "active" | "paused"];
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success(tc("copied", { label }));
-  };
 
   return (
     <div
@@ -251,31 +258,29 @@ export function SeatCard({ seat, onPause, onResume, onCancel, onRenew, onEdit }:
       {/* Credentials */}
       {hasCredentials && (
         <div className="rounded border bg-muted/30 p-2 space-y-1.5 overflow-hidden">
-          {seat.client.serviceUser && (
+          {seat.serviceUser && (
             <div className="flex items-center justify-between text-xs gap-2 overflow-hidden">
               <span className="text-muted-foreground shrink-0">{t("serviceUser")}</span>
               <div className="flex items-center gap-1 min-w-0">
-                <code className="font-mono text-xs truncate">{seat.client.serviceUser}</code>
+                <code className="font-mono text-xs truncate">{seat.serviceUser}</code>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="size-5 shrink-0"
-                  onClick={() =>
-                    copyToClipboard(seat.client.serviceUser!, t("serviceUser"))
-                  }
+                  onClick={handleCopyUser}
                 >
                   <Copy className="size-3" />
                 </Button>
               </div>
             </div>
           )}
-          {seat.client.servicePassword && (
+          {seat.servicePassword && (
             <div className="flex items-center justify-between text-xs gap-2 overflow-hidden">
               <span className="text-muted-foreground shrink-0">{t("servicePassword")}</span>
               <div className="flex items-center gap-1 min-w-0">
                 <code className="font-mono text-xs truncate">
                   {showPassword
-                    ? seat.client.servicePassword
+                    ? seat.servicePassword
                     : "••••••••"}
                 </code>
                 <Button
@@ -294,9 +299,7 @@ export function SeatCard({ seat, onPause, onResume, onCancel, onRenew, onEdit }:
                   variant="ghost"
                   size="icon"
                   className="size-5"
-                  onClick={() =>
-                    copyToClipboard(seat.client.servicePassword!, t("servicePassword"))
-                  }
+                  onClick={handleCopyPassword}
                 >
                   <Copy className="size-3" />
                 </Button>
