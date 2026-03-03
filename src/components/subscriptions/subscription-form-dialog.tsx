@@ -306,17 +306,17 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
 
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-2">
-              <Label>Master Username</Label>
-              <Input {...register("masterUsername")} placeholder="Optional" />
+              <Label>{t("masterUsername")}</Label>
+              <Input {...register("masterUsername")} placeholder={tc("optional")} />
             </div>
             <div className="space-y-2">
-              <Label>Master Password</Label>
-              <Input {...register("masterPassword")} placeholder="Optional" />
+              <Label>{t("masterPassword")}</Label>
+              <Input {...register("masterPassword")} placeholder={tc("optional")} />
             </div>
           </div>
           
           <div className="space-y-2">
-              <Label>Owner (Client)</Label>
+              <Label>{t("owner")}</Label>
                <Controller
                 control={control}
                 name="ownerId"
@@ -326,10 +326,10 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
                     onValueChange={(val) => field.onChange(val === "none" ? undefined : val)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="No owner" />
+                      <SelectValue placeholder={t("noOwner")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="none">{tc("none")}</SelectItem>
                       {clients?.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name}

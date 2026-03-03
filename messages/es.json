@@ -23,6 +23,7 @@
     "autoCalculated": "Auto-calculado",
     "renewMonthsHint": "Positivo = extender, negativo = corrección",
     "optional": "opcional",
+    "none": "ninguno",
     "notes": "Notas",
     "notesPlaceholder": "ej. Pagado por Bizum",
     "currentExpiry": "Vencimiento actual",
@@ -285,7 +286,11 @@
     "renewSeat": "Renovar Asiento",
     "isAutopayable": "Renovación automática",
     "autopayableTooltip": "Si está activo, la suscripción se renovará automáticamente al llegar al vencimiento",
-    "autopayableDescription": "Activa esta opción si el servicio se cobra automáticamente de tu tarjeta o cuenta."
+    "autopayableDescription": "Activa esta opción si el servicio se cobra automáticamente de tu tarjeta o cuenta.",
+    "masterUsername": "Usuario Maestro",
+    "masterPassword": "Contraseña Maestra",
+    "owner": "Propietario (Cliente)",
+    "noOwner": "Sin propietario"
   },
   "clients": {
     "title": "Clientes",

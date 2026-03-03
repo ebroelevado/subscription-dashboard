@@ -23,6 +23,8 @@
     "autoCalculated": "自动计算",
     "renewMonthsHint": "正数 = 延长，负数 = 更正",
     "optional": "可选",
+    "none": "无",
+    "autopayable": "自动支付",
     "notes": "备注",
     "notesPlaceholder": "例如：通过 Bizum 支付",
     "currentExpiry": "当前有效期",
@@ -285,7 +287,11 @@
     "renewSeat": "续约席位",
     "isAutopayable": "自动续约",
     "autopayableTooltip": "如果开启，订阅将在到期时自动续约",
-    "autopayableDescription": "如果该服务从您的卡或账户自动扣款，请开启此选项。"
+    "autopayableDescription": "如果该服务从您的卡或账户自动扣款，请开启此选项。",
+    "masterUsername": "主账号用户名",
+    "masterPassword": "主账号密码",
+    "owner": "所有者 (客户)",
+    "noOwner": "无所有者"
   },
   "clients": {
     "title": "客户",

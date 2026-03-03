@@ -23,6 +23,8 @@
     "autoCalculated": "Auto-calculated",
     "renewMonthsHint": "Positive = extend, negative = correction",
     "optional": "optional",
+    "none": "none",
+    "autopayable": "Auto-payable",
     "notes": "Notes",
     "notesPlaceholder": "e.g. Paid via Bizum",
     "currentExpiry": "Current expiry",
@@ -253,8 +255,9 @@
     "seats": "Seats",
     "nextRenewal": "Next Renewal",
     "cost": "Cost",
-    "myCost": "我的成本",
-    "maxSeats": "最高名额",
+    "myCost": "My Cost",
+    "maxSeats": "Max Seats",
+    "maxSeatsTooltip": "Leave empty for unlimited seats",
     "seat": "Seat",
     "addSeat": "Add Seat",
     "removeSeat": "Remove Seat",
@@ -287,7 +290,11 @@
     "renewSeat": "Renew Seat",
     "isAutopayable": "Automatic renewal",
     "autopayableTooltip": "If active, the subscription will renew automatically upon expiration",
-    "autopayableDescription": "Enable this if the service is charged automatically from your card or account."
+    "autopayableDescription": "Enable this if the service is charged automatically from your card or account.",
+    "masterUsername": "Master Username",
+    "masterPassword": "Master Password",
+    "owner": "Owner (Client)",
+    "noOwner": "No owner"
   },
   "clients": {
     "title": "Clients",
