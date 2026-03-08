@@ -32,14 +32,24 @@ export async function withErrorHandling(
       return error(`Validation error: ${messages.join(", ")}`, 422);
     }
 
+    console.error("[API Error]", err);
+    
+    let errorMessage = "Unknown error";
     if (err instanceof Error) {
-      // Prisma "not found" errors
+      errorMessage = err.message;
       if (err.name === "NotFoundError" || err.message.includes("No")) {
-        return error(err.message, 404);
+        return error(errorMessage, 404);
       }
-      return error(err.message, 500);
+    } else if (typeof err === "string") {
+      errorMessage = err;
+    } else if (err && typeof err === "object") {
+        try {
+            errorMessage = JSON.stringify(err, Object.getOwnPropertyNames(err));
+        } catch {
+            errorMessage = String(err);
+        }
     }
 
-    return error("Unknown error", 500);
+    return error(errorMessage, 500);
   }
 }

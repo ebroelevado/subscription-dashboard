@@ -94,13 +94,31 @@ export async function POST(req: Request) {
       const serverDir = process.argv[1] ? dirname(process.argv[1]) : "";
       const projectRoot = process.cwd();
 
+      // Check pnpm virtual store specifically for local dev
+      let pnpmCliPath = "";
+      try {
+        const { readdirSync } = await import("fs");
+        const pnpmDir = join(projectRoot, "node_modules", ".pnpm");
+        if (existsSync(pnpmDir)) {
+          const dirs = readdirSync(pnpmDir);
+          const copilotDir = dirs.find(d => d.startsWith("@github+copilot@"));
+          if (copilotDir) {
+             pnpmCliPath = join(pnpmDir, copilotDir, "node_modules", "@github", "copilot", "index.js");
+          }
+        }
+      } catch (e) {
+        // Ignore read errors
+      }
+
       const candidates = [
         // Production: railpack copies @github/copilot here during build
         join(serverDir, "copilot-cli", "index.js"),
         join(projectRoot, ".next", "standalone", "copilot-cli", "index.js"),
         // Development: standard node_modules
         join(projectRoot, "node_modules", "@github", "copilot", "index.js"),
-      ];
+        // Development: pnpm workspace/hoisted
+        pnpmCliPath
+      ].filter(Boolean);
 
       const found = candidates.find(c => c && existsSync(c));
       if (found) cliPath = found;

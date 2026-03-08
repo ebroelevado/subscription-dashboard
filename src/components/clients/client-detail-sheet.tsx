@@ -76,23 +76,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
   const { data: session } = useSession();
   const penaltyPerDay = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5;
 
-  const disciplineScore = discipline && discipline.totalPayments > 0 ? (() => {
-    // We already have the batch endpoint precalculating this actually,
-    // but the `useDiscipline` hook here hits `/api/analytics/discipline` which returns aggregates.
-    // The single client endpoint returns aggregates (avgDaysLate, onTimeRate).
-    // To match the new formula without refetching all logs here, we can estimate it:
-    // If we want exact match, we should update the `/api/analytics/discipline` endpoint too, 
-    // or simply use the batch hook.
-    // Let's approximate it with the new formula based on the averages:
-    const avg = discipline.avgDaysLate;
-    if (avg <= 0) {
-      // Early or exactly on time
-      const earlyDays = Math.min(5, Math.abs(avg));
-      return 9.5 + (earlyDays * 0.1);
-    } else {
-      return Math.max(0, 9.5 - avg * penaltyPerDay);
-    }
-  })() : null;
+  const disciplineScore = discipline?.score ?? null;
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
 
   // Renew dialog state
@@ -287,7 +271,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                   disabled={!canSendReminder}
                 >
                   <MessageCircle className="mr-2 size-4" />
-                  {t("sendReminder")}
+                  {activeSeats.length > 1 ? t("sendReminders") : t("sendReminder")}
                 </Button>
                 <TooltipProvider>
                   <Tooltip>

@@ -331,6 +331,7 @@
     "monthsToRenew": "Meses a renovar",
     "renewServicesAction": "Renovar {count, plural, one {# servicio} other {# servicios}}",
     "sendReminder": "Enviar Recordatorio",
+    "sendReminders": "Envíar Recordatorios",
     "reminderSent": "WhatsApp abierto",
     "copied": "{label} copiado",
     "showPhone": "Mostrar teléfono",
@@ -376,7 +377,15 @@
     "scoreBelowAverage": "Deficiente (Suele atrasarse)",
     "scorePoor": "Mala (Muy impuntual)",
     "avgDaysLateLabel": "Promedio de retraso",
-    "onTimeRateLabel": "Tasa a tiempo"
+    "onTimeRateLabel": "Tasa a tiempo",
+    "healthLabel": "Estado de salud",
+    "overdueLabel": "Retraso actual",
+    "healthStatusExcellent": "Excelente",
+    "healthStatusGood": "Bueno",
+    "healthStatusLate": "Retrasado",
+    "healthStatusOverdue": "Vencido",
+    "healthStatusCritical": "Crítico",
+    "healthStatusNew": "Nuevo"
   },
   "history": {
     "title": "Historial de Renovaciones",

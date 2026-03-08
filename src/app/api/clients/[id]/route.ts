@@ -37,7 +37,54 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!client) return error("Client not found", 404);
-    return success(client);
+
+    const c = client as any;
+    let score: number | null = null;
+    if (c.disciplineScore !== null && c.disciplineScore !== undefined) {
+        score = Number(c.disciplineScore);
+        if (isNaN(score)) score = null;
+    }
+
+    const remapped = {
+        id: c.id,
+        name: c.name,
+        phone: c.phone || "",
+        notes: c.notes || "",
+        createdAt: c.createdAt,
+        disciplineScore: score,
+        daysOverdue: Number(c.daysOverdue || 0),
+        healthStatus: c.healthStatus || "New",
+        clientSubscriptions: (c.clientSubscriptions || []).map((cs: any) => ({
+            id: cs.id,
+            status: cs.status,
+            customPrice: Number(cs.customPrice || 0),
+            joinedAt: cs.joinedAt,
+            leftAt: cs.leftAt,
+            activeUntil: cs.activeUntil,
+            subscription: cs.subscription ? {
+                id: cs.subscription.id,
+                label: cs.subscription.label,
+                status: cs.subscription.status,
+                plan: cs.subscription.plan ? {
+                    id: cs.subscription.plan.id,
+                    name: cs.subscription.plan.name,
+                    platform: {
+                        id: cs.subscription.plan.platform?.id,
+                        name: cs.subscription.plan.platform?.name || "Unknown"
+                    }
+                } : null
+            } : null,
+            renewalLogs: (cs.renewalLogs || []).map((rl: any) => ({
+                id: rl.id,
+                amountPaid: Number(rl.amountPaid),
+                periodStart: rl.periodStart,
+                periodEnd: rl.periodEnd,
+                paidOn: rl.paidOn
+            }))
+        }))
+    };
+
+    return success(remapped);
   });
 }
 
@@ -51,11 +98,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const data = createClientSchema.partial().parse(body);
 
-    const client = await prisma.client.update({
+    const updatedClient = await prisma.client.update({
       where: { id, userId },
       data,
     });
-    return success(client);
+
+    const c = updatedClient as any;
+    const remapped = {
+        id: c.id,
+        name: c.name,
+        phone: c.phone || "",
+        notes: c.notes || "",
+        createdAt: c.createdAt,
+        disciplineScore: c.disciplineScore ? Number(c.disciplineScore) : null,
+        daysOverdue: Number(c.daysOverdue || 0),
+        healthStatus: c.healthStatus || "New",
+    };
+
+    return success(remapped);
   });
 }
 

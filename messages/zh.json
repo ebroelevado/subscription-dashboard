@@ -332,6 +332,7 @@
     "monthsToRenew": "续费月数",
     "renewServicesAction": "续费 {count} 个服务",
     "sendReminder": "发送提醒",
+    "sendReminders": "发送提醒",
     "reminderSent": "WhatsApp 已打开",
     "copied": "{label} 已复制",
     "showPhone": "显示电话",

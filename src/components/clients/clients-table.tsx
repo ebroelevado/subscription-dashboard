@@ -165,8 +165,11 @@ export function ClientsTable({ clients, isLoading }: ClientsTableProps) {
               const status = getClientStatus(c);
               const sc = config[status];
               const services = getServicesSummary(c);
-              const cd = discipline?.perClient[c.id];
-              const score = cd?.score ?? null;
+              // Using hook-based analytics data (like the detail sheet)
+              const clientDiscipline = discipline?.perClient[c.id];
+              const score = clientDiscipline?.score ?? null;
+              const daysOverdue = clientDiscipline?.daysOverdue ?? 0;
+              const healthStatus = clientDiscipline?.healthStatus || "New";
 
               return (
                 <TableRow
@@ -182,9 +185,7 @@ export function ClientsTable({ clients, isLoading }: ClientsTableProps) {
                     {services}
                   </TableCell>
                   <TableCell className="text-center">
-                    {isDisciplineLoading ? (
-                      <Skeleton className="h-5 w-12 mx-auto rounded-full" />
-                    ) : score !== null ? (
+                    {score !== null ? (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -194,12 +195,14 @@ export function ClientsTable({ clients, isLoading }: ClientsTableProps) {
                           </TooltipTrigger>
                           <TooltipContent side="top" className="text-xs">
                             <p>{getScoreLabel(score, t)}</p>
-                             <p className="text-muted-foreground mt-1">
-                               {t("avgDaysLateLabel")}: {cd?.avgDaysLate}d · {t("onTimeRateLabel")}: {cd?.onTimeRate}%
-                             </p>
-                             <p className="text-[10px] text-muted-foreground border-t mt-1 pt-1 opacity-70">
-                               {tc("totalPayments")}: {cd?.totalPayments}
-                             </p>
+                             <div className="text-muted-foreground mt-1 space-y-0.5">
+                               <p>{t("healthLabel")}: <span className="font-semibold text-foreground">{t(`healthStatus${healthStatus}`)}</span></p>
+                               {daysOverdue > 0 && (
+                                   <p className="text-destructive font-semibold">
+                                     {t("overdueLabel")}: {daysOverdue}d
+                                   </p>
+                               )}
+                             </div>
                            </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

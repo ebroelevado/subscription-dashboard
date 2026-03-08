@@ -335,6 +335,7 @@
     "monthsToRenew": "Months to Renew",
     "renewServicesAction": "Renew {count, plural, one {# Service} other {# Services}}",
     "sendReminder": "Send Reminder",
+    "sendReminders": "Send Reminders",
     "reminderSent": "WhatsApp opened",
     "copied": "{label} copied",
     "showPhone": "Show phone",

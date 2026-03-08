@@ -13,6 +13,9 @@ export interface Client {
   serviceUser: string | null;
   servicePassword: string | null;
   createdAt: string;
+  disciplineScore: number | null;
+  daysOverdue: number;
+  healthStatus: string | null;
   clientSubscriptions: {
     id: string;
     status: string;
@@ -39,6 +42,9 @@ export interface ClientDetail {
   serviceUser: string | null;
   servicePassword: string | null;
   createdAt: string;
+  disciplineScore: number | null;
+  daysOverdue: number;
+  healthStatus: string | null;
   clientSubscriptions: {
     id: string;
     status: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/fetch-api";
 import { signOut } from "next-auth/react";
 import type { UpdateProfileInput } from "@/lib/validations/account";
@@ -19,6 +19,8 @@ export function useUpdateProfile() {
 
 // ── Update Settings (Currency etc.) ──
 export function useUpdateSettings() {
+  const queryClient = useQueryClient();
+  
   return useMutation({
     mutationFn: (data: { currency?: string; disciplinePenalty?: number }) =>
       fetchApi("/api/user/settings", {
@@ -26,6 +28,19 @@ export function useUpdateSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       }),
+    onSuccess: (_, variables) => {
+      // If discipline penalty changes, we must force a refetch of discipline APIs
+      // so the charts and scores reflect the new mathematical formula immediately
+      if (variables.disciplinePenalty !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ["clients-discipline"] });
+        queryClient.invalidateQueries({ queryKey: ["discipline"] });
+        queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      }
+      if (variables.currency !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ["analytics"] });
+        queryClient.invalidateQueries({ queryKey: ["clients"] });
+      }
+    }
   });
 }
 

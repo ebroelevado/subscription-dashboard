@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getDisciplineAnalytics } from "@/lib/discipline-service";
 
 // Type for defineTool — imported dynamically in route.ts
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,8 +56,13 @@ export function createUserScopedTools(
                 }
               : {}),
           },
-          include: {
-            _count: { select: { clientSubscriptions: true } },
+          select: {
+             id: true,
+             name: true,
+             phone: true,
+             notes: true,
+             createdAt: true,
+             _count: { select: { clientSubscriptions: true } },
           },
           orderBy: { name: "asc" },
           take: Math.min(limit, 50),
@@ -88,15 +94,32 @@ export function createUserScopedTools(
       handler: async ({ clientId }: { clientId: string }) => {
         const client = await prisma.client.findFirst({
           where: { id: clientId, userId },
-          include: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            notes: true,
+            createdAt: true,
             clientSubscriptions: {
-              include: {
+              select: {
+                id: true,
+                status: true,
+                customPrice: true,
+                activeUntil: true,
+                joinedAt: true,
                 subscription: {
-                  include: {
-                    plan: { include: { platform: true } },
-                  },
+                  select: {
+                    label: true,
+                    plan: {
+                      select: {
+                        name: true,
+                        platform: { select: { name: true } }
+                      }
+                    }
+                  }
                 },
                 renewalLogs: {
+                  select: { amountPaid: true, periodStart: true, periodEnd: true, paidOn: true },
                   orderBy: { paidOn: "desc" },
                   take: 5,
                 },
@@ -330,69 +353,81 @@ export function createUserScopedTools(
         "Get comprehensive revenue statistics: monthly recurring revenue (MRR), total platform costs, net profit, per-platform breakdown, and key metrics like total clients and seats.",
       parameters: z.object({}),
       handler: async () => {
+        // Optimize: Use DB aggregations instead of downloading all rows
         const [
-          activeSeats,
+          mrrAgg,
+          costAgg,
           totalClients,
-          platforms,
-          subscriptions,
+          activeSeatsCount,
+          platforms
         ] = await Promise.all([
-          prisma.clientSubscription.findMany({
-            where: {
-              status: "active",
-              subscription: { userId },
-            },
-            select: { customPrice: true },
+          prisma.clientSubscription.aggregate({
+            where: { status: "active", subscription: { userId } },
+            _sum: { customPrice: true }
           }),
+          prisma.subscription.aggregate({
+            where: { status: "active", userId },
+            // Prisma aggregate on relations sum is tricky, let's fetch active subscriptions with their plans
+            // Actually, we'll keep the subscription fetch but ONLY the cost
+          }).catch(() => null), // Catch just in case
           prisma.client.count({ where: { userId } }),
+          prisma.clientSubscription.count({ 
+            where: { status: "active", subscription: { userId } } 
+          }),
           prisma.platform.findMany({
             where: { userId },
-            include: {
+            select: {
+              name: true,
               plans: {
-                include: {
+                select: {
+                  cost: true,
                   subscriptions: {
                     where: { status: "active" },
-                    include: {
+                    select: {
                       clientSubscriptions: {
                         where: { status: "active" },
-                        select: { customPrice: true },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          }),
-          prisma.subscription.findMany({
-            where: { userId, status: "active" },
-            select: { plan: { select: { cost: true } } },
-          }),
+                        select: { customPrice: true }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          })
         ]);
 
-        const totalMRR = activeSeats.reduce(
-          (sum, s) => sum + Number(s.customPrice),
-          0,
-        );
-        const totalCosts = subscriptions.reduce(
-          (sum, s) => sum + Number(s.plan.cost),
-          0,
-        );
+        // Fallback for costs if aggregate isn't perfectly supported on relations in this prisma version
+        const activeSubs = await prisma.subscription.findMany({
+            where: { userId, status: "active" },
+            select: { plan: { select: { cost: true } } },
+        });
+
+        const totalMRR = Number(mrrAgg._sum.customPrice || 0);
+        const totalCosts = activeSubs.reduce((sum, s) => sum + Number(s.plan.cost), 0);
 
         const perPlatform = platforms.map((p) => {
-          const revenue = p.plans.flatMap((pl) =>
-            pl.subscriptions.flatMap((s) =>
-              s.clientSubscriptions.map((cs) => Number(cs.customPrice)),
-            ),
-          );
-          const costs = p.plans.flatMap((pl) =>
-            pl.subscriptions.map((_) => Number(pl.cost)),
-          );
+          let revenue = 0;
+          let costs = 0;
+          let activeSeats = 0;
+          let activeSubsCount = 0;
+
+          for (const plan of p.plans) {
+              for (const sub of plan.subscriptions) {
+                  costs += Number(plan.cost);
+                  activeSubsCount++;
+                  for (const cs of sub.clientSubscriptions) {
+                      revenue += Number(cs.customPrice);
+                      activeSeats++;
+                  }
+              }
+          }
+
           return {
             platform: p.name,
-            revenue: revenue.reduce((a, b) => a + b, 0),
-            costs: costs.reduce((a, b) => a + b, 0),
-            activeSeats: revenue.length,
-            activeSubscriptions: p.plans.flatMap((pl) => pl.subscriptions)
-              .length,
+            revenue,
+            costs,
+            activeSeats,
+            activeSubscriptions: activeSubsCount,
           };
         });
 
@@ -400,12 +435,9 @@ export function createUserScopedTools(
           totalMRR,
           totalCosts,
           netProfit: totalMRR - totalCosts,
-          profitMargin:
-            totalMRR > 0
-              ? `${((1 - totalCosts / totalMRR) * 100).toFixed(1)}%`
-              : "N/A",
+          profitMargin: totalMRR > 0 ? `${((1 - totalCosts / totalMRR) * 100).toFixed(1)}%` : "N/A",
           totalClients,
-          totalActiveSeats: activeSeats.length,
+          totalActiveSeats: activeSeatsCount,
           perPlatform,
         };
       },
@@ -594,6 +626,54 @@ export function createUserScopedTools(
             periodEnd: pr.periodEnd,
             paidOn: pr.paidOn,
           })),
+        };
+      },
+    }),
+
+    // ──────────────────────────────────────────
+    // 9. getDisciplineScores — Worst/Best clients
+    // ──────────────────────────────────────────
+    defineTool("getDisciplineScores", {
+      description:
+        "Get pre-calculated payment discipline scores (0.0 to 10.0) for every client. Use this to find 'worst clients' (scores < 5.0) or 'best clients' (score = 10.0) instantly, WITHOUT downloading raw payment histories.",
+      parameters: z.object({}),
+      handler: async () => {
+        // Fetch clients with persisted metrics
+        const clients = await (prisma.client as any).findMany({
+            where: { userId },
+            select: { 
+                id: true, 
+                name: true, 
+                phone: true,
+                disciplineScore: true,
+                healthStatus: true,
+                daysOverdue: true,
+                dailyPenalty: true
+            }
+        });
+
+        const results = clients.map((c: any) => ({
+            clientId: c.id,
+            name: c.name,
+            phone: c.phone || "Unknown",
+            score: c.disciplineScore ? Number(c.disciplineScore) : null,
+            healthStatus: c.healthStatus || "New",
+            daysOverdue: c.daysOverdue,
+            dailyPenalty: c.dailyPenalty ? Number(c.dailyPenalty) : 0.5
+        }));
+
+        // Sort worst to best by default to prioritize answering "worst clients"
+        results.sort((a: any, b: any) => {
+            if (a.healthStatus === "Critical" && b.healthStatus !== "Critical") return -1;
+            if (a.healthStatus !== "Critical" && b.healthStatus === "Critical") return 1;
+            if (a.score === null) return 1;
+            if (b.score === null) return -1;
+            return a.score - b.score;
+        });
+
+        return {
+          totalClients: results.length,
+          clientsRanking: results
         };
       },
     }),

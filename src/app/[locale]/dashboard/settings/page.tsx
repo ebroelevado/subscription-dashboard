@@ -274,8 +274,9 @@ function AppearanceTab() {
 
   // Sync state if session changes initially
   useEffect(() => {
-    if (session?.user && penalty === 0.5) {
-      setPenalty((session.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5);
+    const sessionPenalty = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty;
+    if (sessionPenalty !== undefined && penalty === 0.5 && sessionPenalty !== 0.5) {
+      setPenalty(sessionPenalty);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user]);
@@ -288,7 +289,7 @@ function AppearanceTab() {
           { disciplinePenalty: penalty },
           {
             onSuccess: () => {
-              updateSession();
+              updateSession({ disciplinePenalty: penalty });
               toast.success(t("penaltyUpdated", { fallback: "Penalty updated successfully" }));
             },
             onError: (err: any) => toast.error(err.message),
@@ -297,7 +298,8 @@ function AppearanceTab() {
       }
     }, 500);
     return () => clearTimeout(handler);
-  }, [penalty, initialPenalty, updateSession, updateSettings, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [penalty]);
 
   return (
     <Card>

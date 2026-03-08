@@ -58,7 +58,7 @@ const nextAuth = NextAuth({
   ],
   callbacks: {
     ...authConfig.callbacks,
-    async jwt({ token, user, trigger, account }) {
+    async jwt({ token, user, trigger, account, session }) {
       if (user) {
         token.id = user.id;
         token.image = user.image;
@@ -66,19 +66,35 @@ const nextAuth = NextAuth({
           token.isOAuth = true;
         }
       }
-      // On sign-in or session update, verify password existence
-      if (token.id && (!token.hasPassword || trigger === "update")) {
-        const dbUser: any = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          select: { name: true, image: true, password: true, accounts: { select: { provider: true } }, currency: true, disciplinePenalty: true },
-        });
-        if (dbUser) {
-          token.name = dbUser.name;
-          token.image = dbUser.image;
-          token.hasPassword = !!dbUser.password;
-          token.isOAuth = dbUser.accounts.some((acc: { provider: string }) => acc.provider !== "credentials");
-          token.currency = dbUser.currency || "EUR";
-          token.disciplinePenalty = dbUser.disciplinePenalty ?? 0.5;
+      
+      // Handle frontend session updates (e.g. update({ disciplinePenalty: 1.2 }))
+      if (trigger === "update" && session) {
+        if (session.name !== undefined) token.name = session.name;
+        if (session.image !== undefined) token.image = session.image;
+        if (session.currency !== undefined) token.currency = session.currency;
+        if (session.disciplinePenalty !== undefined) token.disciplinePenalty = session.disciplinePenalty;
+      }
+      
+      // Always fetch the latest critical settings from DB if we have the user ID.
+      // NextAuth tokens are stateless and can become out of sync easily if the DB is modified 
+      // via raw API routes or other devices.
+      if (token.id) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { name: true, image: true, password: true, accounts: { select: { provider: true } }, currency: true, disciplinePenalty: true },
+          });
+          
+          if (dbUser) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.hasPassword = !!dbUser.password;
+            token.isOAuth = dbUser.accounts?.some((acc: { provider: string }) => acc.provider !== "credentials") || false;
+            token.currency = dbUser.currency || "EUR";
+            token.disciplinePenalty = dbUser.disciplinePenalty ?? 0.5;
+          }
+        } catch (e) {
+          console.error("[Auth] Error reading user from DB:", e);
         }
       }
       return token;

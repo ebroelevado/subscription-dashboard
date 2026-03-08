@@ -86,11 +86,12 @@ export interface DisciplineData {
   lateCount: number;
   onTimeRate: number;
   avgDaysLate: number;
+  score: number;
 }
 
 // ── Shared config — analytics data changes rarely ──
 
-const ANALYTICS_STALE = 5 * 60 * 1000; // 5 minutes
+const ANALYTICS_STALE = 5 * 1000; // 5 seconds (temporary for debugging)
 
 // ── Hooks ──
 
@@ -186,7 +187,10 @@ export interface ClientDisciplineEntry {
   avgDaysLate: number;
   onTimeRate: number;
   totalPayments: number;
-  score: number;
+  score: number | null;
+  daysOverdue: number;
+  healthStatus: string;
+  isUnpaid: boolean;
 }
 
 export interface ClientsDisciplineResponse {

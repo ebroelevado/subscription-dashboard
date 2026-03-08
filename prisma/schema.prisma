@@ -169,6 +169,12 @@ model Client {
   notes           String?  @db.Text
   createdAt       DateTime @default(now()) @map("created_at")
 
+  // Persisted Discipline & Health Metrics (Calculated via Service)
+  disciplineScore Decimal? @map("discipline_score") @db.Decimal(4, 2)
+  dailyPenalty    Decimal? @map("daily_penalty")    @db.Decimal(10, 4)
+  daysOverdue     Int      @default(0)              @map("days_overdue")
+  healthStatus    String?  @map("health_status")    @db.VarChar(50)
+
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   clientSubscriptions ClientSubscription[]
   ownedSubscriptions  Subscription[]       @relation("SubscriptionOwner")
