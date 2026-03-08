@@ -147,14 +147,42 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
       activeUntil: cs.activeUntil,
       platformName: cs.subscription.plan.platform.name,
     }));
-    // We pass a dummy 't' that can handle placeholders or just use the current translation context
-    // Actually, it's better to use the useTranslations hook results if we want to support dynamic switching
-    // But since the helper is outside, let's just use the current 'tc' and 't' from hook in this scope
-    const url = buildWhatsAppUrl(client.phone, client.name, waData, lang, (key: string, vals?: Record<string, string | number>) => {
-      if (key.startsWith("common.")) return tc(key.replace("common.", ""), vals);
-      if (key.startsWith("clients.")) return t(key.replace("clients.", ""), vals);
-      return key;
-    });
+    const url = buildWhatsAppUrl(
+      client.phone,
+      client.name,
+      waData,
+      lang,
+      (key: string, vals?: Record<string, string | number>) => {
+        if (key.startsWith("common.")) return tc(key.replace("common.", ""), vals);
+        if (key.startsWith("clients.")) return t(key.replace("clients.", ""), vals);
+        return key;
+      },
+      currency,
+      false // only include seats expiring within 5 days
+    );
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleSendReminderForSeat = (cs: typeof activeSeats[number]) => {
+    if (!client?.phone) return;
+    const waData = [{
+      customPrice: Number(cs.customPrice),
+      activeUntil: cs.activeUntil,
+      platformName: cs.subscription.plan.platform.name,
+    }];
+    const url = buildWhatsAppUrl(
+      client.phone,
+      client.name,
+      waData,
+      lang,
+      (key: string, vals?: Record<string, string | number>) => {
+        if (key.startsWith("common.")) return tc(key.replace("common.", ""), vals);
+        if (key.startsWith("clients.")) return t(key.replace("clients.", ""), vals);
+        return key;
+      },
+      currency,
+      true // force — always include this single seat regardless of days
+    );
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -302,17 +330,16 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                   client.clientSubscriptions.map((cs) => {
                     const expiry = getExpiryInfo(cs.activeUntil);
                     const isPaused = cs.status === "paused";
-                    
-                    
+
+
 
                     return (
                       <div
                         key={cs.id}
-                        className={`rounded-lg border p-3 space-y-2 transition-colors ${
-                          isPaused
+                        className={`rounded-lg border p-3 space-y-2 transition-colors ${isPaused
                             ? "opacity-80 bg-amber-50/30 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
                             : ""
-                        }`}
+                          }`}
                       >
                         {/* Service info */}
                         <div className="flex items-center justify-between">
@@ -354,19 +381,31 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
 
                         {/* Renew button — only for active seats */}
                         {cs.status === "active" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            onClick={() => openRenewDialog({
-                              id: cs.id,
-                              customPrice: Number(cs.customPrice),
-                              activeUntil: cs.activeUntil,
-                            })}
-                          >
-                            <RefreshCw className="mr-2 size-3.5" />
-                            {t("renewSeat")}
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => openRenewDialog({
+                                id: cs.id,
+                                customPrice: Number(cs.customPrice),
+                                activeUntil: cs.activeUntil,
+                              })}
+                            >
+                              <RefreshCw className="mr-2 size-3.5" />
+                              {t("renewSeat")}
+                            </Button>
+                            {client?.phone && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 bg-[#25D366]/10 text-[#25D366] border-[#25D366]/30 hover:bg-[#25D366] hover:text-white hover:border-[#25D366] transition-all duration-200"
+                                onClick={() => handleSendReminderForSeat(cs)}
+                              >
+                                <MessageCircle className="size-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         )}
 
                         {/* Recent renewals */}

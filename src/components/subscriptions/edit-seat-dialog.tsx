@@ -21,10 +21,8 @@ interface EditSeatDialogProps {
     joinedAt: string;
     activeUntil: string;
     status: "active" | "paused";
-    client: {
-      serviceUser?: string | null;
-      servicePassword?: string | null;
-    };
+    serviceUser?: string | null;
+    servicePassword?: string | null;
   } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,8 +35,8 @@ export function EditSeatDialog({ seat, open, onOpenChange }: EditSeatDialogProps
   const [customPrice, setCustomPrice] = useState(seat?.customPrice.toString() ?? "");
   const [startDate, setStartDate] = useState(seat?.joinedAt.split("T")[0] ?? "");
   const [activeUntil, setActiveUntil] = useState(seat?.activeUntil.split("T")[0] ?? "");
-  const [serviceUser, setServiceUser] = useState(seat?.client.serviceUser || "");
-  const [servicePassword, setServicePassword] = useState(seat?.client.servicePassword || "");
+  const [serviceUser, setServiceUser] = useState(seat?.serviceUser || "");
+  const [servicePassword, setServicePassword] = useState(seat?.servicePassword || "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
