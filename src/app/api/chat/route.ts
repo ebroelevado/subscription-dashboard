@@ -74,7 +74,7 @@ export async function POST(req: Request) {
 
     const selectedModel = model || "gpt-4o";
 
-    const { CopilotClient, defineTool } = await import("@github/copilot-sdk");
+    const { CopilotClient, approveAll, defineTool } = await import("@github/copilot-sdk");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ai = await import("ai") as any;
@@ -146,6 +146,7 @@ export async function POST(req: Request) {
     const copilotSession = await client.createSession({
       model: selectedModel,
       streaming: true,
+      onPermissionRequest: approveAll, // Auto-approve all tools (safe since they are read-only)
       systemMessage: {
         mode: "replace" as const,
         content: [

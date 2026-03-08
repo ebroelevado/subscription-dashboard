@@ -1,25 +1,23 @@
 {
   "$schema": "https://schema.railpack.com",
-  "provider": "node",
+  "provider": "bun",
   "packages": {
-    "node": "22"
+    "bun": "1.3.10"
   },
   "steps": {
     "build": {
       "commands": [
-        "pnpm build",
+        "bun run build",
         "cp -r public .next/standalone/public",
-        "cp -r .next/static .next/standalone/.next/static",
-        "cp -rL node_modules/.pnpm/@github+copilot@0.0.411/node_modules/@github/copilot .next/standalone/copilot-cli"
+        "cp -r .next/static .next/standalone/.next/static"
       ],
       "variables": {
-        "NODE_OPTIONS": "--max-old-space-size=4096",
         "NEXT_CPU_COUNT": "4"
       }
     }
   },
   "deploy": {
-    "startCommand": "pnpm prisma migrate deploy && node .next/standalone/server.js",
+    "startCommand": "prisma migrate deploy && bun .next/standalone/server.js",
     "variables": {
       "NODE_ENV": "production",
       "HOSTNAME": "0.0.0.0",

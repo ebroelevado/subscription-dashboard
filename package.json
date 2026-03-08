@@ -2,15 +2,16 @@
   "name": "dashboard",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "bun@1.3.10",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.12.0",
+    "bun": ">=1.3.10"
   },
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build --webpack",
     "postinstall": "prisma generate",
-    "start": "pnpm prisma migrate deploy && next start",
+    "start": "prisma migrate deploy && next start",
     "lint": "eslint"
   },
   "dependencies": {
