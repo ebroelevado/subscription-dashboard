@@ -102,6 +102,8 @@ export const renewBulkClientSubscriptionsSchema = z.object({
       z.object({
         clientSubscriptionId: z.string().uuid(),
         amountPaid: z.number().min(0).optional(),
+        months: z.coerce.number().int().min(1).max(12).optional(), // per-seat override
+        notes: z.string().nullable().optional(),
       })
     )
     .min(1, "Select at least one service to renew"),
@@ -111,7 +113,7 @@ export const renewBulkClientSubscriptionsSchema = z.object({
     .int()
     .min(1)
     .max(12)
-    .default(1),
+    .default(1), // global default, used when item.months is not set
 });
 
 export type RenewBulkClientSubscriptionsInput = z.infer<

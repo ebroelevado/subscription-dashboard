@@ -364,7 +364,10 @@
       "due": "Por vencer",
       "expired": "Vencido",
       "none": "Sin asientos"
-    }
+    },
+    "customizeRenewal": "Personalizar",
+    "addNotes": "Añadir notas",
+    "allExpireSameDate": "mismo vencimiento"
   },
   "history": {
     "title": "Historial de Renovaciones",

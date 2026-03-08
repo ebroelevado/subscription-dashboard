@@ -100,12 +100,14 @@ export async function renewClientSubscription({
 
 interface BulkRenewItem {
   clientSubscriptionId: string;
-  amountPaid?: number; // defaults to custom_price
+  amountPaid?: number; // defaults to custom_price * months
+  months?: number;     // per-item override; falls back to global
+  notes?: string | null;
 }
 
 interface BulkRenewParams {
   items: BulkRenewItem[];
-  months: number; // > 0, applied to ALL selected seats
+  months: number; // global default (> 0)
 }
 
 export async function renewBulkClientSubscriptions({
@@ -122,33 +124,35 @@ export async function renewBulkClientSubscriptions({
         where: { id: item.clientSubscriptionId },
       });
 
-      // Seats are now only active or paused (cancelled was removed from schema)
-
+      const seatMonths = item.months ?? months; // per-item override or global
       const currentExpiry = startOfDay(new Date(seat.activeUntil));
       const customPrice = Number(seat.customPrice);
 
       // 2. Compute new expiry — each seat independently
-      const newExpiry = addMonths(currentExpiry, months);
+      const newExpiry = addMonths(currentExpiry, seatMonths);
 
       // 3. Period boundaries
       const periodStart = addDays(currentExpiry, 1);
       const periodEnd = newExpiry;
 
       // 4. Amount collected
-      const paid = item.amountPaid ?? customPrice * months;
+      const paid = item.amountPaid ?? customPrice * seatMonths;
 
-      // 5. INSERT append-only renewal_log (one per seat)
+      // 5. Notes
+      const finalNotes = item.notes ?? `[BULK] Renewed ${seatMonths} month(s)`;
+
+      // 6. INSERT append-only renewal_log (one per seat)
       const log = await tx.renewalLog.create({
         data: {
           clientSubscriptionId: item.clientSubscriptionId,
           amountPaid: paid,
-          expectedAmount: customPrice * months,
+          expectedAmount: customPrice * seatMonths,
           periodStart,
           periodEnd,
           paidOn: today,
           dueOn: currentExpiry,
-          monthsRenewed: months,
-          notes: `[BULK] Renewed ${months} month(s)`,
+          monthsRenewed: seatMonths,
+          notes: finalNotes,
         },
       });
 

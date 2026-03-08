@@ -41,9 +41,9 @@ export function useRenewBulkClients() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: {
-      items: { clientSubscriptionId: string; amountPaid?: number }[];
-      months: number;
-      clientName: string; // for toast only, not sent to API
+      items: { clientSubscriptionId: string; amountPaid?: number; months?: number; notes?: string | null }[];
+      months: number; // global default
+      clientName: string; // for toast only
     }) =>
       fetchApi<{ renewed: number }>(`/api/client-subscriptions/bulk-renew`, {
         method: "POST",

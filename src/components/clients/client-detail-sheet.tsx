@@ -158,7 +158,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
         return key;
       },
       currency,
-      false // only include seats expiring within 5 days
+      true // always include ALL seats in the global reminder
     );
     window.open(url, "_blank", "noopener,noreferrer");
   };

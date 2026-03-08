@@ -365,7 +365,10 @@
       "due": "待付",
       "expired": "已过期",
       "none": "无席位"
-    }
+    },
+    "customizeRenewal": "自定义",
+    "addNotes": "添加备注",
+    "allExpireSameDate": "同日到期"
   },
   "history": {
     "title": "续约历史",

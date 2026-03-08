@@ -368,7 +368,10 @@
       "due": "Due",
       "expired": "Expired",
       "none": "No seats"
-    }
+    },
+    "customizeRenewal": "Customize",
+    "addNotes": "Add notes",
+    "allExpireSameDate": "same expiry"
   },
   "history": {
     "title": "Renewal History",
