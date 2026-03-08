@@ -74,6 +74,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
   const [bulkRenewOpen, setBulkRenewOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const { data: session } = useSession();
+  const penaltyPerDay = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5;
 
   const disciplineScore = discipline && discipline.totalPayments > 0 ? (() => {
     // We already have the batch endpoint precalculating this actually,
@@ -89,7 +90,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
       const earlyDays = Math.min(5, Math.abs(avg));
       return 9.5 + (earlyDays * 0.1);
     } else {
-      return Math.max(0, 9.5 - avg * 1.5);
+      return Math.max(0, 9.5 - avg * penaltyPerDay);
     }
   })() : null;
   const currency = (session?.user as { currency?: string })?.currency || "EUR";

@@ -50,13 +50,17 @@ import {
   useExportData,
   useImportData,
   useDeleteAccount,
+  useUpdateSettings,
 } from "@/hooks/use-account";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
+import { Slider } from "@/components/ui/slider";
 import { useTranslations } from "next-intl";
+import { useEffect } from "react";
+
 
 // ── Profile Tab ──
 function ProfileTab() {
@@ -131,7 +135,7 @@ function ProfileTab() {
           toast.success(t("profileUpdated"));
           updateSession({ name, image });
         },
-        onError: (err) => toast.error(err.message),
+        onError: (err: any) => toast.error(err.message),
       },
     );
   };
@@ -262,6 +266,38 @@ function ProfileTab() {
 // ── Appearance Tab ──
 function AppearanceTab() {
   const t = useTranslations("settings");
+  const { data: session, update: updateSession } = useSession();
+  const updateSettings = useUpdateSettings();
+  
+  const initialPenalty = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5;
+  const [penalty, setPenalty] = useState(initialPenalty);
+
+  // Sync state if session changes initially
+  useEffect(() => {
+    if (session?.user && penalty === 0.5) {
+      setPenalty((session.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user]);
+
+  // Debounced save
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (penalty !== initialPenalty) {
+        updateSettings.mutate(
+          { disciplinePenalty: penalty },
+          {
+            onSuccess: () => {
+              updateSession();
+              toast.success(t("penaltyUpdated", { fallback: "Penalty updated successfully" }));
+            },
+            onError: (err: any) => toast.error(err.message),
+          }
+        );
+      }
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [penalty, initialPenalty, updateSession, updateSettings, t]);
 
   return (
     <Card>
@@ -303,6 +339,28 @@ function AppearanceTab() {
             </p>
           </div>
           <CurrencySelector />
+        </div>
+
+        <div className="rounded-lg border p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <h4 className="text-sm font-medium">{t("disciplineStrictness", { fallback: "Discipline Strictness" })}</h4>
+              <p className="text-xs text-muted-foreground">
+                {t("disciplineStrictnessDesc", { fallback: "Adjust the daily penalty for late payments (-0.5 by default)." })}
+              </p>
+            </div>
+            <div className="font-mono font-bold text-sm bg-muted px-2 py-1 rounded">
+              -{penalty.toFixed(1)} / {t("day", { fallback: "day" })}
+            </div>
+          </div>
+          <Slider
+            value={[penalty]}
+            onValueChange={(vals: number[]) => setPenalty(vals[0])}
+            max={5}
+            min={0}
+            step={0.1}
+            disabled={updateSettings.isPending}
+          />
         </div>
       </CardContent>
     </Card>

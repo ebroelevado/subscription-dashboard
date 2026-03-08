@@ -8,23 +8,36 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { currency } = await req.json();
+  const { currency, disciplinePenalty } = await req.json();
 
-  if (!currency || !['EUR', 'USD', 'GBP', 'CNY'].includes(currency)) {
-    return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
+  const data: any = {};
+
+  if (currency) {
+    if (!['EUR', 'USD', 'GBP', 'CNY'].includes(currency)) {
+      return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
+    }
+    data.currency = currency;
+  }
+
+  if (typeof disciplinePenalty === 'number') {
+    if (disciplinePenalty < 0 || disciplinePenalty > 5) {
+       return NextResponse.json({ error: "Invalid discipline penalty range" }, { status: 400 });
+    }
+    data.disciplinePenalty = disciplinePenalty;
   }
 
   try {
     const user = await (prisma.user as any).update({
       where: { id: session.user.id },
-      data: { currency },
+      data,
     });
 
     return NextResponse.json({ 
       ok: true, 
       data: {
         success: true, 
-        currency: (user as any).currency 
+        currency: user.currency,
+        disciplinePenalty: user.disciplinePenalty
       }
     });
   } catch (error) {

@@ -490,7 +490,11 @@
     "disconnectCopilot": "断开 Copilot 连接",
     "confirmDisconnect": "断开 GitHub Copilot 连接？",
     "disconnectDescription": "这将从仪表板中删除您的 Copilot 访问令牌。您需要重新进行身份验证才能再次使用 AI 助手。",
-    "disconnectSuccess": "已成功断开与 GitHub Copilot 的连接"
+    "disconnectSuccess": "已成功断开与 GitHub Copilot 的连接",
+    "disciplineStrictness": "处罚严格度",
+    "disciplineStrictnessDesc": "调整逾期付款的每日罚款 (默认 -0.5)。",
+    "penaltyUpdated": "严格度已更新",
+    "day": "天"
   },
   "validation": {
     "required": "此字段为必填项",

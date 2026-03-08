@@ -68,16 +68,17 @@ const nextAuth = NextAuth({
       }
       // On sign-in or session update, verify password existence
       if (token.id && (!token.hasPassword || trigger === "update")) {
-        const dbUser = await prisma.user.findUnique({
+        const dbUser: any = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { name: true, image: true, password: true, accounts: { select: { provider: true } }, currency: true },
+          select: { name: true, image: true, password: true, accounts: { select: { provider: true } }, currency: true, disciplinePenalty: true },
         });
         if (dbUser) {
           token.name = dbUser.name;
           token.image = dbUser.image;
           token.hasPassword = !!dbUser.password;
-          token.isOAuth = dbUser.accounts.some(acc => acc.provider !== "credentials");
+          token.isOAuth = dbUser.accounts.some((acc: { provider: string }) => acc.provider !== "credentials");
           token.currency = dbUser.currency || "EUR";
+          token.disciplinePenalty = dbUser.disciplinePenalty ?? 0.5;
         }
       }
       return token;

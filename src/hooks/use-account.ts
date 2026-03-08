@@ -20,7 +20,7 @@ export function useUpdateProfile() {
 // ── Update Settings (Currency etc.) ──
 export function useUpdateSettings() {
   return useMutation({
-    mutationFn: (data: { currency: string }) =>
+    mutationFn: (data: { currency?: string; disciplinePenalty?: number }) =>
       fetchApi("/api/user/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

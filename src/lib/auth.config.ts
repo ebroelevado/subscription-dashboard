@@ -13,6 +13,7 @@ declare module "next-auth" {
       hasPassword?: boolean;
       isOAuth?: boolean;
       currency?: string;
+      disciplinePenalty?: number;
     };
   }
 }
@@ -23,6 +24,7 @@ declare module "next-auth/jwt" {
     hasPassword?: boolean;
     isOAuth?: boolean;
     currency?: string;
+    disciplinePenalty?: number;
   }
 }
 
@@ -98,6 +100,7 @@ export const authConfig = {
         session.user.hasPassword = token.hasPassword as boolean;
         session.user.isOAuth = token.isOAuth as boolean;
         session.user.currency = (token.currency as string) ?? "EUR";
+        session.user.disciplinePenalty = (token.disciplinePenalty as number) ?? 0.5;
       }
       return session;
     },

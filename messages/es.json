@@ -489,7 +489,11 @@
     "disconnectCopilot": "Desconectar Copilot",
     "confirmDisconnect": "¿Desconectar GitHub Copilot?",
     "disconnectDescription": "Esto eliminará tu token de acceso de Copilot del panel. Deberás volver a autenticarte para usar el Asistente AI de nuevo.",
-    "disconnectSuccess": "Se ha desconectado de GitHub Copilot correctamente"
+    "disconnectSuccess": "Se ha desconectado de GitHub Copilot correctamente",
+    "disciplineStrictness": "Exigencia de la Disciplina",
+    "disciplineStrictnessDesc": "Ajusta la penalización diaria por pagos atrasados (-0.5 por defecto).",
+    "penaltyUpdated": "Exigencia actualizada",
+    "day": "día"
   },
   "validation": {
     "required": "Este campo es obligatorio",
