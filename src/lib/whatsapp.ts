@@ -79,9 +79,9 @@ export function buildWhatsAppUrl(
     }
   }
 
-  const detailBlock = lines.join("\n");
+  const detailBlock = lines.join(", ");
   const totalLine = isMulti
-    ? "\n" + t("clients.reminderTotal", { total: formatPrice(totalPrice) })
+    ? " " + t("clients.reminderTotal", { total: formatPrice(totalPrice) })
     : "";
 
   const msg = t("clients.whatsappTemplate", { name, detailBlock, totalLine });
