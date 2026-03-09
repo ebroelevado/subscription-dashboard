@@ -293,6 +293,22 @@ export async function POST(req: Request) {
                 output: parsedResult,
                 providerExecuted: true,
               });
+
+              // 🪝 HITL HOOK: If the tool is requesting human confirmation,
+              // emit a dedicated data annotation. The frontend watches for this
+              // via useEffect and shows the sticky confirmation panel.
+              if (parsedResult?.status === "requires_confirmation") {
+                writer.write({
+                  type: "data",
+                  data: [{
+                    __hitl_required: true,
+                    toolName: event.data.toolName,
+                    toolCallId: event.data.toolCallId,
+                    message: parsedResult.message,
+                    pendingChanges: parsedResult.pendingChanges ?? null,
+                  }]
+                });
+              }
             } else {
               writer.write({
                 type: "tool-output-error",

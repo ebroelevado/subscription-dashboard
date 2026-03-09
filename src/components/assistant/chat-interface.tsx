@@ -449,9 +449,31 @@ export function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Vercel AI SDK v4 — useChat with sendMessage API
-  const { messages, sendMessage, status, setMessages, stop } = useChat({});
+  const { messages, sendMessage, status, setMessages, stop } = useChat({
+    // 🪝 HITL HOOK: The backend emits a `data` stream annotation (__hitl_required)
+    // when a mutation tool proposes a change. The SDK calls onData for each DataUIPart.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onData: (dataPart: any) => {
+      if (dataPart?.__hitl_required) {
+        setHitlPending({
+          toolName: dataPart.toolName,
+          toolCallId: dataPart.toolCallId,
+          message: dataPart.message,
+          pendingChanges: dataPart.pendingChanges ?? null,
+        });
+      }
+    },
+  });
 
-  // Auto-resize textarea
+  // HITL (Human-in-the-Loop) state — driven by backend data annotations
+  type HitlPending = {
+    toolName: string;
+    toolCallId: string;
+    message: string;
+    pendingChanges: Record<string, unknown> | null;
+  };
+  const [hitlPending, setHitlPending] = useState<HitlPending | null>(null);
+
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   // Auto-resize textarea
@@ -496,6 +518,9 @@ export function ChatInterface() {
 
   const handleConfirmTool = (toolName: string, args: any, accepted: boolean) => {
     if (!sendMessage) return;
+    
+    // Clear the HITL pending panel — user has responded
+    setHitlPending(null);
     
     if (!accepted) {
       sendMessage(
@@ -753,6 +778,60 @@ export function ChatInterface() {
         <div ref={bottomRef} className="h-4" />
         </div>
       </div>
+
+      {/* ── HITL Confirmation Panel — sticky above input, appears when AI proposes a change */}
+      {hitlPending && (
+        <div className="shrink-0 px-4 py-3 bg-background z-30 border-t border-amber-500/30 animate-in slide-in-from-bottom-2 fade-in duration-300">
+          <div className="max-w-4xl mx-auto">
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 shadow-[0_0_20px_rgba(245,158,11,0.08)] p-4 flex flex-col gap-3">
+              {/* Header */}
+              <div className="flex items-start gap-3">
+                <div className="size-8 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+                  <Terminal className="size-4 text-amber-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest">Acción Requerida</p>
+                  <p className="text-sm text-foreground/90 mt-0.5 leading-snug">
+                    {hitlPending.message}
+                  </p>
+                </div>
+              </div>
+
+              {/* Pending changes diff */}
+              {hitlPending.pendingChanges && Object.keys(hitlPending.pendingChanges).length > 0 && (
+                <div className="rounded-xl bg-muted/40 border border-border/40 px-3 py-2 font-mono text-[11px] text-muted-foreground/80 space-y-0.5">
+                  {Object.entries(hitlPending.pendingChanges).map(([k, v]) => v !== undefined && (
+                    <div key={k} className="flex gap-2">
+                      <span className="text-primary/50">+</span>
+                      <span className="text-primary/70 font-semibold">{k}:</span>
+                      <span className="truncate">{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => handleConfirmTool(hitlPending.toolName, hitlPending.pendingChanges, true)}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
+                >
+                  <Check className="size-4 mr-2" />
+                  Aceptar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleConfirmTool(hitlPending.toolName, hitlPending.pendingChanges, false)}
+                  className="flex-1 border-red-500/30 hover:bg-red-500/10 text-red-400 font-bold py-2.5 rounded-xl text-sm transition-all active:scale-[0.97]"
+                >
+                  <X className="size-4 mr-2" />
+                  Rechazar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Input Area ── sticky bottom dock (No border/footer) */}
       <div className="shrink-0 px-4 pt-2 pb-6 sm:pb-8 bg-background relative z-20">
