@@ -38,6 +38,9 @@ const schema = z.object({
   masterPassword: z.string().optional(),
   ownerId: z.string().optional(),
   isAutopayable: z.boolean().default(true),
+  isPaid: z.boolean().default(false),
+  paymentNote: z.string().optional(),
+  defaultPaymentNote: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -71,6 +74,9 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
       durationMonths: 1, status: "active",
       masterUsername: "", masterPassword: "", ownerId: "",
       isAutopayable: true,
+      isPaid: false,
+      paymentNote: "",
+      defaultPaymentNote: "como pago",
     },
   });
 
@@ -135,6 +141,7 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
             masterPassword: subscription.masterPassword || "",
             ownerId: subscription.ownerId || "none",
             isAutopayable: subscription.isAutopayable,
+            defaultPaymentNote: subscription.defaultPaymentNote || "como pago",
           });
           setPrevPlatformId(platform?.id ?? "");
         }, 0);
@@ -144,6 +151,9 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
           durationMonths: 1, status: "active",
           masterUsername: "", masterPassword: "", ownerId: "",
           isAutopayable: true,
+          isPaid: false,
+          paymentNote: "",
+          defaultPaymentNote: "como pago",
         });
       }
     }
@@ -178,6 +188,9 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
         masterPassword: parsedMasterPassword,
         ownerId: parsedOwnerId,
         isAutopayable: values.isAutopayable,
+        isPaid: values.isPaid,
+        paymentNote: values.paymentNote || null,
+        defaultPaymentNote: values.defaultPaymentNote || null,
       });
     }
     onOpenChange(false);
@@ -375,10 +388,57 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="default-payment-note">Default Payment Note</Label>
+            <Input
+              id="default-payment-note"
+              placeholder="e.g. como pago"
+              {...register("defaultPaymentNote")}
+            />
+            {errors.defaultPaymentNote && <p className="text-sm text-destructive">{getErrorMessage(errors.defaultPaymentNote.message)}</p>}
+          </div>
+
+          {mode === "create" && (
+            <>
+              <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm pt-3 mt-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">First payment already made?</Label>
+                  <p className="text-[12px] text-muted-foreground">
+                    If marked, the first renewal log will be created automatically.
+                  </p>
+                </div>
+                <Controller
+                  control={control}
+                  name="isPaid"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+
+              {watch("isPaid") && (
+                <div className="space-y-2">
+                  <Label htmlFor="payment-note">Payment Note (Optional)</Label>
+                  <Input
+                    id="payment-note"
+                    placeholder={watch("defaultPaymentNote") || "como pago"}
+                    {...register("paymentNote")}
+                  />
+                  {errors.paymentNote && <p className="text-sm text-destructive">{getErrorMessage(errors.paymentNote.message)}</p>}
+                </div>
+              )}
+            </>
+          )}
+
           {/* Date preview */}
           {previewDate && (
             <p className="text-xs text-muted-foreground">
-              {t("activeUntil", { date: previewDate })}
+              {mode === "create" && !watch("isPaid")
+                 ? t("paymentDueImmediately") || "Next payment due on start date"
+                 : t("activeUntil", { date: previewDate })}
             </p>
           )}
 

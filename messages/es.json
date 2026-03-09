@@ -367,6 +367,7 @@
       "expired": "Vencido",
       "none": "Sin asientos"
     },
+    "paymentDueImmediately": "Pago pendiente inmediatamente",
     "customizeRenewal": "Personalizar",
     "addNotes": "Añadir notas",
     "allExpireSameDate": "mismo vencimiento",

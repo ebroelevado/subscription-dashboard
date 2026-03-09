@@ -16,6 +16,8 @@ export function useCreateSeat() {
       startDate?: string | Date;
       serviceUser?: string | null;
       servicePassword?: string | null;
+      isPaid?: boolean;
+      paymentNote?: string | null;
     }) =>
       fetchApi("/api/client-subscriptions", {
         method: "POST",

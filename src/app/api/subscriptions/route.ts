@@ -48,22 +48,54 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createSubscriptionSchema.parse(body);
 
-    const activeUntil = addMonths(data.startDate, data.durationMonths);
+    const activeUntil = data.isPaid ? addMonths(data.startDate, data.durationMonths) : data.startDate;
+    const defaultPaymentNote = data.defaultPaymentNote || "como pago";
 
-    const subscription = await prisma.subscription.create({
-      data: {
-        label: data.label,
-        startDate: data.startDate,
-        activeUntil,
-        status: data.status,
-        masterUsername: data.masterUsername,
-        masterPassword: data.masterPassword,
-        isAutopayable: data.isAutopayable,
-        user: { connect: { id: userId } },
-        plan: { connect: { id: data.planId } },
-        ...(data.ownerId && { owner: { connect: { id: data.ownerId } } }),
-      },
+    // Create subscription and potentially the initial PlatformRenewal if paid
+    const subscription = await prisma.$transaction(async (tx) => {
+      const sub = await tx.subscription.create({
+        data: {
+          label: data.label,
+          startDate: data.startDate,
+          activeUntil,
+          status: data.status,
+          masterUsername: data.masterUsername,
+          masterPassword: data.masterPassword,
+          isAutopayable: data.isAutopayable,
+          defaultPaymentNote,
+          user: { connect: { id: userId } },
+          plan: { connect: { id: data.planId } },
+          ...(data.ownerId && { owner: { connect: { id: data.ownerId } } }),
+        },
+        include: {
+          plan: true,
+        },
+      });
+
+      if (data.isPaid) {
+        // Find how much plan costs
+        const planCost = Number(sub.plan.cost);
+        const { startOfDay, addDays } = await import("date-fns");
+        
+        const periodStart = startOfDay(data.startDate);
+        const periodEnd = startOfDay(activeUntil);
+        const paidOn = startOfDay(new Date());
+
+        await tx.platformRenewal.create({
+          data: {
+            subscriptionId: sub.id,
+            amountPaid: planCost,
+            periodStart,
+            periodEnd,
+            paidOn,
+            notes: data.paymentNote || defaultPaymentNote,
+          },
+        });
+      }
+
+      return sub;
     });
+
     return success(subscription, 201);
   });
 }

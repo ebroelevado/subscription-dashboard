@@ -8,10 +8,9 @@ const nextConfig: NextConfig = {
   // This is required by the Railpack/Dokploy environment.
   output: "standalone",
 
-  // Keep the Copilot SDK packages external (not bundled by webpack).
-  // The SDK uses `import.meta.resolve` internally which webpack breaks.
-  serverExternalPackages: ["@github/copilot-sdk", "@github/copilot"],
-
+  // Keep the Copilot CLI package external (not bundled by webpack)
+  // because we execute its path manually.
+  serverExternalPackages: ["@github/copilot"],
 
   experimental: {
     // Limit CPU count to prevent OOM during production build on high-core machines.

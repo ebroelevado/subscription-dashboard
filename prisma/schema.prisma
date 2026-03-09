@@ -150,6 +150,7 @@ model Subscription {
 
   masterUsername String? @map("master_username") @db.VarChar(100)
   masterPassword String? @map("master_password") @db.VarChar(100)
+  defaultPaymentNote String? @map("default_payment_note") @default("como pago")
   ownerId        String? @map("owner_id")
   owner          Client? @relation("SubscriptionOwner", fields: [ownerId], references: [id])
 
@@ -248,6 +249,7 @@ model PlatformRenewal {
   periodStart    DateTime @map("period_start") @db.Date
   periodEnd      DateTime @map("period_end") @db.Date
   paidOn         DateTime @map("paid_on") @db.Date
+  notes          String?  @db.Text
   createdAt      DateTime @default(now()) @map("created_at")
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)

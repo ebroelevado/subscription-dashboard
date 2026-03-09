@@ -38,6 +38,9 @@ export const createSubscriptionSchema = z.object({
   masterPassword: z.string().max(100).nullable().optional(),
   ownerId: z.string().uuid().nullable().optional(),
   isAutopayable: z.boolean().optional().default(true),
+  isPaid: z.boolean().optional().default(false),
+  paymentNote: z.string().nullable().optional(),
+  defaultPaymentNote: z.string().nullable().optional(),
 });
 
 export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>;
@@ -72,6 +75,8 @@ export const createClientSubscriptionSchema = z.object({
     .enum(["active", "paused"])
     .optional()
     .default("active"),
+  isPaid: z.boolean().optional().default(false),
+  paymentNote: z.string().nullable().optional(),
 });
 
 export type CreateClientSubscriptionInput = z.infer<

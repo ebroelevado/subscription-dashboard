@@ -97,22 +97,49 @@ export async function POST(request: NextRequest) {
 
     // Compute dates from duration
     const startDate = data.startDate ? startOfDay(data.startDate) : startOfDay(new Date());
-    const activeUntil = addMonths(startDate, data.durationMonths);
+    const activeUntil = data.isPaid ? addMonths(startDate, data.durationMonths) : startDate;
+
+    const defaultPaymentNote = (subscription as any).defaultPaymentNote || "como pago";
 
     // If credentials are provided, update the client record
 
-    const seat = await prisma.clientSubscription.create({
-      data: {
-        clientId: data.clientId,
-        subscriptionId: data.subscriptionId,
-        customPrice: data.customPrice,
-        activeUntil,
-        joinedAt: startDate,
-        status: "active",
-        serviceUser: (data as any).serviceUser ?? null,
-        servicePassword: (data as any).servicePassword ?? null,
-      },
+    const seat = await prisma.$transaction(async (tx) => {
+      const newSeat = await tx.clientSubscription.create({
+        data: {
+          clientId: data.clientId,
+          subscriptionId: data.subscriptionId,
+          customPrice: data.customPrice,
+          activeUntil,
+          joinedAt: startDate,
+          status: "active",
+          serviceUser: (data as any).serviceUser ?? null,
+          servicePassword: (data as any).servicePassword ?? null,
+        },
+      });
+
+      if (data.isPaid) {
+        const periodStart = startDate;
+        const periodEnd = activeUntil;
+        const paidOn = startOfDay(new Date());
+
+        await tx.renewalLog.create({
+          data: {
+            clientSubscriptionId: newSeat.id,
+            amountPaid: data.customPrice,
+            expectedAmount: data.customPrice,
+            periodStart,
+            periodEnd,
+            paidOn,
+            dueOn: startDate,
+            monthsRenewed: data.durationMonths,
+            notes: data.paymentNote || defaultPaymentNote,
+          },
+        });
+      }
+
+      return newSeat;
     });
+
     return success(seat, 201);
   });
 }

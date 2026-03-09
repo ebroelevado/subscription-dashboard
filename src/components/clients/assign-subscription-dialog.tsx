@@ -11,9 +11,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Eye, EyeOff } from "lucide-react";
+import { Search, Plus, Eye, EyeOff, ChevronRight, ChevronDown } from "lucide-react";
 import { addMonths, format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { Switch } from "@/components/ui/switch";
 
 interface AssignSubscriptionDialogProps {
   clientId: string;
@@ -47,17 +48,87 @@ export function AssignSubscriptionDialog({
   const [serviceUser, setServiceUser] = useState(previousServiceUser || "");
   const [servicePassword, setServicePassword] = useState(previousServicePassword || "");
   const [showPassword, setShowPassword] = useState(false);
+  const [isPaid, setIsPaid] = useState(false);
+  const [paymentNote, setPaymentNote] = useState("");
 
-  // Search filter
-  const filteredSubs = useMemo(() => {
+  // Collapsible states
+  const [expandedPlatforms, setExpandedPlatforms] = useState<Record<string, boolean>>({});
+  const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>({});
+
+  const togglePlatform = (pName: string) => {
+    setExpandedPlatforms(prev => ({ ...prev, [pName]: !prev[pName] }));
+  };
+
+  const togglePlan = (pKey: string) => {
+    setExpandedPlans(prev => ({ ...prev, [pKey]: !prev[pKey] }));
+  };
+
+  // Grouping logic
+  const groupedSubs = useMemo(() => {
     if (!subscriptions) return [];
-    if (!search.trim()) return subscriptions;
-    const q = search.toLowerCase();
-    return subscriptions.filter(
-      (s) =>
-        s.label.toLowerCase().includes(q) ||
-        s.plan.platform.name.toLowerCase().includes(q)
-    );
+    
+    // Filter first
+    let filtered = subscriptions;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filtered = subscriptions.filter(
+        (s) =>
+          s.label.toLowerCase().includes(q) ||
+          s.plan.platform.name.toLowerCase().includes(q) ||
+          s.plan.name.toLowerCase().includes(q)
+      );
+    }
+
+    // Group by platform -> plan
+    const grouped = new Map<string, { platformName: string; plans: Map<string, { planName: string; myCost: number | null; subs: any[] }> }>();
+    
+    for (const sub of filtered) {
+      const pId = sub.plan.platform.id;
+      const pName = sub.plan.platform.name;
+      const planId = sub.planId;
+      const planName = sub.plan.name;
+      const myCost = sub.plan.cost;
+
+      if (!grouped.has(pId)) {
+        grouped.set(pId, { platformName: pName, plans: new Map() });
+      }
+      
+      const platformMap = grouped.get(pId)!.plans;
+      if (!platformMap.has(planId)) {
+        platformMap.set(planId, { planName, myCost, subs: [] });
+      }
+      
+      platformMap.get(planId)!.subs.push(sub);
+    }
+
+    return Array.from(grouped.values())
+      .map(p => {
+        const plans = Array.from(p.plans.values());
+        let totalClients = 0;
+        let totalRevenue = 0;
+
+        for (const plan of plans) {
+          for (const s of plan.subs) {
+            const occupied = s.clientSubscriptions?.length || 0;
+            totalClients += occupied;
+            // Best effort revenue calc based on current subs and plan cost
+            totalRevenue += occupied * s.plan.cost;
+          }
+        }
+
+        return {
+          platformName: p.platformName,
+          plans,
+          totalClients,
+          totalRevenue
+        };
+      })
+      .sort((a, b) => {
+        if (b.totalClients !== a.totalClients) {
+          return b.totalClients - a.totalClients; // Descending by clients
+        }
+        return b.totalRevenue - a.totalRevenue; // Tie-breaker: Descending by revenue
+      });
   }, [subscriptions, search]);
 
   const selectedSub = subscriptions?.find((s) => s.id === selectedSubId);
@@ -77,6 +148,10 @@ export function AssignSubscriptionDialog({
     setServiceUser(previousServiceUser || "");
     setServicePassword(previousServicePassword || "");
     setShowPassword(false);
+    setIsPaid(false);
+    setPaymentNote("");
+    setExpandedPlatforms({});
+    setExpandedPlans({});
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -91,6 +166,8 @@ export function AssignSubscriptionDialog({
       startDate: startDate,
       serviceUser: serviceUser || null,
       servicePassword: servicePassword || null,
+      isPaid,
+      paymentNote: paymentNote || null,
     });
     resetForm();
     onOpenChange(false);
@@ -103,7 +180,7 @@ export function AssignSubscriptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="size-5" />
@@ -136,40 +213,87 @@ export function AssignSubscriptionDialog({
 
             {/* Subscription list */}
             {!selectedSubId && (
-              <div className="max-h-36 overflow-y-auto rounded-md border text-sm">
-                {filteredSubs.length === 0 ? (
+              <div className="max-h-56 overflow-y-auto rounded-md border text-sm">
+                {groupedSubs.length === 0 ? (
                   <p className="px-3 py-2 text-muted-foreground">
                     {search ? t("noSubscriptionsFound") : t("typeToSearch")}
                   </p>
                 ) : (
-                  filteredSubs.map((s) => {
-                     const occupied = s.clientSubscriptions?.length || 0;
-                     const max = s.plan.maxSeats;
-                     const isFull = max !== null && occupied >= max;
-                     return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        disabled={isFull}
-                        className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent transition-colors ${isFull ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onClick={() => {
-                          setSelectedSubId(s.id);
-                          setSearch(`${s.label} (${s.plan.platform.name})`);
-                          // Auto-fill price if empty
-                          if (!customPrice) setCustomPrice(s.plan.cost.toString());
-                        }}
-                      >
-                        <div>
-                          <p className="font-medium">{s.label}</p>
-                          <p className="text-xs text-muted-foreground">{s.plan.platform.name} · {s.plan.name}</p>
+                  <div className="divide-y divide-border/50">
+                    {groupedSubs.map((platformGroup, pIdx) => {
+                      const isPlatformExpanded = search.trim().length > 0 || expandedPlatforms[platformGroup.platformName];
+
+                      return (
+                        <div key={pIdx} className="p-1 space-y-1">
+                          <button
+                            type="button"
+                            className="flex items-center justify-between w-full font-semibold text-xs text-muted-foreground uppercase tracking-wider px-2 py-2 hover:bg-accent/50 hover:text-foreground rounded-md transition-colors"
+                            onClick={() => togglePlatform(platformGroup.platformName)}
+                          >
+                            <span>{platformGroup.platformName}</span>
+                            {isPlatformExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          </button>
+                          
+                          {isPlatformExpanded && (
+                            <div className="space-y-2 pl-3 border-l-2 border-border/40 ml-2 mt-1 mb-2">
+                              {platformGroup.plans.map((planGroup, plIdx) => {
+                                const planKey = `${platformGroup.platformName}-${planGroup.planName}`;
+                                const isPlanExpanded = search.trim().length > 0 || expandedPlans[planKey];
+
+                                return (
+                                  <div key={plIdx} className="space-y-1">
+                                    <button
+                                      type="button"
+                                      className="flex items-center justify-between w-full text-xs font-medium px-2 py-2 mb-1 text-primary/80 hover:bg-accent/70 hover:text-foreground active:scale-[0.99] rounded-md transition-all duration-200"
+                                      onClick={() => togglePlan(planKey)}
+                                    >
+                                      <span>
+                                        {planGroup.planName}
+                                        {planGroup.myCost != null && <span className="text-muted-foreground font-normal ml-1">({CURRENCIES[((session?.user as { currency?: string })?.currency as Currency) || "EUR"].symbol}{planGroup.myCost})</span>}
+                                      </span>
+                                      {isPlanExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                                    </button>
+
+                                    {isPlanExpanded && (
+                                      <div className="space-y-1.5 pl-3 border-l-2 border-border/40 ml-2 py-1">
+                                        {planGroup.subs.map((s) => {
+                                          const occupied = s.clientSubscriptions?.length || 0;
+                                          const max = s.plan.maxSeats;
+                                          const isFull = max !== null && occupied >= max;
+                                          return (
+                                            <button
+                                              key={s.id}
+                                              type="button"
+                                              disabled={isFull}
+                                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-all duration-200 ${isFull ? 'opacity-50 cursor-not-allowed bg-muted/30 grayscale-[50%]' : 'hover:bg-accent hover:text-accent-foreground border border-transparent hover:border-border/50 hover:shadow-sm active:scale-[0.98]'}`}
+                                              onClick={() => {
+                                                setSelectedSubId(s.id);
+                                                setSearch(`${s.label} (${s.plan.platform.name})`);
+                                                if (!customPrice) setCustomPrice(s.plan.cost.toString());
+                                              }}
+                                            >
+                                              <div className="truncate pr-3">
+                                                <p className="font-medium text-sm truncate">{s.label}</p>
+                                              </div>
+                                              <div className="text-xs text-right whitespace-nowrap flex-shrink-0">
+                                                <span className={isFull ? "text-destructive font-medium bg-destructive/10 px-1.5 py-0.5 rounded-sm" : "text-muted-foreground"}>
+                                                  {occupied} / {max ?? "∞"}
+                                                </span>
+                                              </div>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-right">
-                          <p>{occupied} / {max ?? "∞"}</p>
-                          {isFull && <p className="text-destructive font-medium">FULL</p>}
-                        </div>
-                      </button>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             )}
@@ -238,8 +362,36 @@ export function AssignSubscriptionDialog({
 
           {previewDate && (
              <p className="text-xs text-muted-foreground">
-               {t("activeUntil", { date: previewDate })}
+               {isPaid 
+                 ? t("activeUntil", { date: previewDate })
+                 : t("paymentDueImmediately")}
              </p>
+          )}
+
+          {/* Payment Status */}
+          <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Already paid?</Label>
+              <p className="text-[12px] text-muted-foreground">
+                If marked, a payment record will be created.
+              </p>
+            </div>
+            <Switch
+              checked={isPaid}
+              onCheckedChange={setIsPaid}
+            />
+          </div>
+
+          {isPaid && (
+            <div className="space-y-2">
+              <Label htmlFor="payment-note">Payment Note (Optional)</Label>
+              <Input
+                id="payment-note"
+                placeholder={selectedSub?.defaultPaymentNote || "como pago"}
+                value={paymentNote}
+                onChange={(e) => setPaymentNote(e.target.value)}
+              />
+            </div>
           )}
 
           {/* Service Credentials */}
