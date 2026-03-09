@@ -293,12 +293,29 @@ export function ChatInterface() {
                if (m.id.includes("embedding")) return false;
                seen.add(m.id);
                return true;
+             }).map((m: {id: string, name?: string}) => {
+                // Rename models to be more descriptive based on reasoning vs speed
+                let displayName = m.name || m.id;
+                if (m.id === "gpt-4o-mini") displayName = "⚡ Súper Rápido (Recomendado)";
+                else if (m.id === "gpt-4o") displayName = "🧠 Razonador Lento";
+                else if (m.id === "oswe-vscode-prime") displayName = "🧠 Prime (Razonador)";
+                
+                return { ...m, name: displayName };
              });
+             
+             // Sort to ensure the fast model is at the top of the list if available
+             unique.sort((a: {id: string}, b: {id: string}) => {
+                 if (a.id === "gpt-4o-mini") return -1;
+                 if (b.id === "gpt-4o-mini") return 1;
+                 return 0;
+             });
+
              setModels(unique);
              if (unique.length > 0) {
                const defaultModel = 
-                 unique.find((m: {id: string}) => m.id === "oswe-vscode-prime") || 
+                 unique.find((m: {id: string}) => m.id === "gpt-4o-mini") || 
                  unique.find((m: {id: string}) => m.id === "gpt-4o") || 
+                 unique.find((m: {id: string}) => m.id === "oswe-vscode-prime") || 
                  unique[0];
                setSelectedModel(defaultModel.id);
              }
