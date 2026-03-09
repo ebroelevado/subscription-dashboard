@@ -72,26 +72,7 @@ export async function POST(req: Request) {
       promptText = lastUserText;
     }
 
-    // 4. Auto-Routing Logic (Heuristic for difficulty)
-    let selectedModel = model || "gpt-5-mini";
-    
-    if (selectedModel === "auto") {
-      // Very simple heuristic:
-      // If conversation is long (> 3 messages) OR the user asks a complex question (keywords), use reasoning.
-      // Otherwise, use fast model.
-      const complexKeywords = [
-        "analiza", "compara", "detalla", "explica", "resume", "estrategia", "calcula", "por qué", 
-        "diferencia", "optimiza", "recomienda", "evalúa", "predice", "tendencia"
-      ];
-      const isLongConversation = messages.length > 3;
-      const isComplexPrompt = complexKeywords.some(keyword => lastUserText.toLowerCase().includes(keyword));
-      
-      if (isLongConversation || isComplexPrompt) {
-        selectedModel = "gpt-5.1"; // The reasoning mid-tier model
-      } else {
-        selectedModel = "gpt-5-mini"; // The fast, transactional model
-      }
-    }
+    const selectedModel = model || "gpt-4o";
 
     const { CopilotClient, approveAll, defineTool } = await import("@github/copilot-sdk");
 
@@ -182,16 +163,13 @@ export async function POST(req: Request) {
           "- Search payment history by client or date range",
           "- List platform renewal payments by provider or date range",
           "",
-          "FORMATTING RULES:",
-          "1. Keep responses concise and direct.",
-          "2. ALWAYS output currency values with the € symbol.",
-          "3. When listing clients and their subscriptions, ALWAYS use detailed Markdown Tables.",
-          "   - Example:",
-          "     | Plataforma | Plan | Precio/mes | Activo hasta | Último pago |",
-          "     |-----------|------|------------|--------------|-------------|",
-          "     | Spotify   | Familiar | 5,00 €  | 20/04/2026   | 20/03/2026 ✅ |",
-          "4. Use emojis for platforms and statuses if appropriate (e.g., 🟢 for good score, 🔴 for bad).",
-          "5. Answer in the same language the user writes in.",
+          "CRITICAL FORMATTING RULES:",
+          "1. NEVER output raw unformatted data or plain paragraphs.",
+          "2. YOU MUST USE MARKDOWN TABLES WHENEVER LISTING MULTIPLE ITEMS (clients, subscriptions, payments). Do not use bulleted lists for collections of data; always use a table.",
+          "3. ALWAYS use emojis to make the data visual (e.g., 🟢/🔴 for statuses, 💰 for money, 👑/✨/🎵 for platforms).",
+          "4. Emphasize important metrics using **bold** text.",
+          "5. Keep responses concise, organized, and perfectly structured into tables.",
+          "6. Answer in the same language the user writes in.",
         ].join("\n"),
       },
       tools: createUserScopedTools(defineTool, session.user.id),

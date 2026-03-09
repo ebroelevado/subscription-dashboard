@@ -20,25 +20,6 @@ export function createUserScopedTools(
   defineTool: DefineToolFn,
   userId: string,
 ) {
-  /**
-   * Helper to filter an object based on requested fields.
-   * If `fields` is empty or undefined, returns the full object.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filterFields = (data: any, fields?: string[]): any => {
-    if (!fields || fields.length === 0) return data;
-    if (Array.isArray(data)) return data.map(item => filterFields(item, fields));
-    if (typeof data !== "object" || data === null) return data;
-
-    const result: any = {};
-    for (const key of Object.keys(data)) {
-      if (fields.includes(key)) {
-        result[key] = data[key];
-      }
-    }
-    return result;
-  };
-
   return [
     // ──────────────────────────────────────────
     // 1. listClients — Search/list clients
@@ -106,12 +87,11 @@ export function createUserScopedTools(
     // ──────────────────────────────────────────
     defineTool("getClientDetails", {
       description:
-        "Get full details for specific clients. Pass an array of clientIds to fetch multiple clients at once efficiently. Optionally pass 'fields' array to only return specific columns (e.g., ['name', 'phone', 'subscriptions']) to save context window. If fields is empty, returns everything.",
+        "Get full details for specific clients including all their active subscriptions (seats), which platforms they're on, what they pay, and their recent payment history. Pass an array of clientIds to fetch multiple clients at once efficiently.",
       parameters: z.object({
         clientIds: z.union([z.string(), z.array(z.string())]).describe("A single client ID or an array of client IDs to fetch in bulk"),
-        fields: z.array(z.string()).optional().describe("Array of specific fields to return (e.g. ['name', 'subscriptions']). Supported: id, name, phone, notes, createdAt, subscriptions, ownedSubscriptions"),
       }),
-      handler: async ({ clientIds, fields }: { clientIds: string | string[], fields?: string[] }) => {
+      handler: async ({ clientIds }: { clientIds: string | string[] }) => {
         const ids = Array.isArray(clientIds) ? clientIds : [clientIds];
         const clients = await prisma.client.findMany({
           where: { id: { in: ids }, userId },
@@ -179,11 +159,9 @@ export function createUserScopedTools(
           ownedSubscriptions: client.ownedSubscriptions,
         }));
 
-        const filteredClients = filterFields(mappedClients, fields);
-
         // Return a single object if only one ID was requested to retain backward feel, though returning array is fine too.
         // Returning array always is more predictable for bulk operations.
-        return { clients: filteredClients };
+        return { clients: mappedClients };
       },
     }),
 
@@ -312,12 +290,11 @@ export function createUserScopedTools(
     // ──────────────────────────────────────────
     defineTool("getSubscriptionDetails", {
       description:
-        "Get full details of subscriptions. Pass an array of subscriptionIds to fetch multiple at once efficiently. Optionally pass 'fields' array to only return specific columns (e.g. ['label', 'owner', 'seats']) to save context window. If fields is empty, returns everything.",
+        "Get full details of subscriptions including all assigned client seats, credentials, and recent platform renewals. Pass an array of subscriptionIds to fetch multiple at once efficiently.",
       parameters: z.object({
         subscriptionIds: z.union([z.string(), z.array(z.string())]).describe("A single subscription ID or an array of subscription IDs to fetch in bulk"),
-        fields: z.array(z.string()).optional().describe("Array of specific fields to return. Supported: id, label, platform, plan, planCost, maxSeats, status, startDate, activeUntil, masterUsername, masterPassword, owner, seats, recentPlatformPayments"),
       }),
-      handler: async ({ subscriptionIds, fields }: { subscriptionIds: string | string[], fields?: string[] }) => {
+      handler: async ({ subscriptionIds }: { subscriptionIds: string | string[] }) => {
         const ids = Array.isArray(subscriptionIds) ? subscriptionIds : [subscriptionIds];
         const subs = await prisma.subscription.findMany({
           where: { id: { in: ids }, userId },
@@ -372,9 +349,7 @@ export function createUserScopedTools(
           })),
         }));
 
-        const filteredSubs = filterFields(mappedSubs, fields);
-
-        return { subscriptions: filteredSubs };
+        return { subscriptions: mappedSubs };
       },
     }),
 
