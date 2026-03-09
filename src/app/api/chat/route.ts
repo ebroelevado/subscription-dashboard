@@ -72,7 +72,26 @@ export async function POST(req: Request) {
       promptText = lastUserText;
     }
 
-    const selectedModel = model || "gpt-4o";
+    // 4. Auto-Routing Logic (Heuristic for difficulty)
+    let selectedModel = model || "gpt-5-mini";
+    
+    if (selectedModel === "auto") {
+      // Very simple heuristic:
+      // If conversation is long (> 3 messages) OR the user asks a complex question (keywords), use reasoning.
+      // Otherwise, use fast model.
+      const complexKeywords = [
+        "analiza", "compara", "detalla", "explica", "resume", "estrategia", "calcula", "por qué", 
+        "diferencia", "optimiza", "recomienda", "evalúa", "predice", "tendencia"
+      ];
+      const isLongConversation = messages.length > 3;
+      const isComplexPrompt = complexKeywords.some(keyword => lastUserText.toLowerCase().includes(keyword));
+      
+      if (isLongConversation || isComplexPrompt) {
+        selectedModel = "gpt-5.1"; // The reasoning mid-tier model
+      } else {
+        selectedModel = "gpt-5-mini"; // The fast, transactional model
+      }
+    }
 
     const { CopilotClient, approveAll, defineTool } = await import("@github/copilot-sdk");
 

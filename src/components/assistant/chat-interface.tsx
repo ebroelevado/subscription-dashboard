@@ -288,37 +288,29 @@ export function ChatInterface() {
              const seen = new Set<string>();
              const unique = data.data.filter((m: {id: string, capabilities?: {type?: string}}) => {
                if (seen.has(m.id)) return false;
-               // Filter out embeddings models, ensure it's a chat model
                if (m.capabilities?.type && m.capabilities.type !== "chat") return false;
                if (m.id.includes("embedding")) return false;
+               
+               // Keep only the selected optimal models for the user
+               if (m.id !== "gpt-5-mini" && m.id !== "gpt-5.1") return false;
+               
                seen.add(m.id);
                return true;
              }).map((m: {id: string, name?: string}) => {
-                // Rename models to be more descriptive based on reasoning vs speed
                 let displayName = m.name || m.id;
-                if (m.id === "gpt-4o-mini") displayName = "⚡ Súper Rápido (Recomendado)";
-                else if (m.id === "gpt-4o") displayName = "🧠 Razonador Lento";
-                else if (m.id === "oswe-vscode-prime") displayName = "🧠 Prime (Razonador)";
-                
+                if (m.id === "gpt-5-mini") displayName = "⚡ Rápido (gpt-5-mini)";
+                else if (m.id === "gpt-5.1") displayName = "🧠 Razonamiento (gpt-5.1)";
                 return { ...m, name: displayName };
              });
              
-             // Sort to ensure the fast model is at the top of the list if available
-             unique.sort((a: {id: string}, b: {id: string}) => {
-                 if (a.id === "gpt-4o-mini") return -1;
-                 if (b.id === "gpt-4o-mini") return 1;
-                 return 0;
+             // Add the Auto mode as the premier recommendation
+             unique.unshift({
+               id: "auto",
+               name: "🪄 Automático (Recomendado)"
              });
 
              setModels(unique);
-             if (unique.length > 0) {
-               const defaultModel = 
-                 unique.find((m: {id: string}) => m.id === "gpt-4o-mini") || 
-                 unique.find((m: {id: string}) => m.id === "gpt-4o") || 
-                 unique.find((m: {id: string}) => m.id === "oswe-vscode-prime") || 
-                 unique[0];
-               setSelectedModel(defaultModel.id);
-             }
+             setSelectedModel("auto");
           }
         })
         .catch(console.error);
