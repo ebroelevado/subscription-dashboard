@@ -10,6 +10,7 @@ A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and 
 - **🌐 Internationalization**: Multi-language support (ES, EN, ZH) powered by `next-intl`.
 - **🔐 Secure Authentication**: Robust auth system via `next-auth`.
 - **🛠️ Platform Integration**: Manage and switch between different workspace platforms easily.
+- **🕘 Conversation History**: Persistent chat history stored securely in Cloudflare R2 with undo/redo support for AI actions.
 - **🌑 Dark/Light Mode**: Beautifully crafted UI with responsive design and theme support.
 
 ## 🚀 Tech Stack
@@ -22,6 +23,7 @@ A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and 
 - **Forms**: [React Hook Form](https://react-hook-form.com/) & [Zod](https://zod.dev/)
 - **Animation**: [Framer Motion](https://www.framer.com/motion/)
 - **i18n**: [Next-Intl](https://next-intl-docs.vercel.app/)
+- **Storage**: [Cloudflare R2](https://www.cloudflare.com/developer-platform/r2/) (Conversation History)
 
 ## 🛠️ Getting Started
 
