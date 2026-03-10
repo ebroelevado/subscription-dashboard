@@ -19,6 +19,7 @@
     "@ai-sdk/openai-compatible": "^2.0.30",
     "@ai-sdk/react": "^3.0.99",
     "@auth/prisma-adapter": "^2.11.1",
+    "@aws-sdk/client-s3": "^3.1005.0",
     "@github/copilot-sdk": "^0.1.25",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/adapter-pg": "^7.4.0",

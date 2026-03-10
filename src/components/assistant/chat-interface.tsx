@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useTranslations } from "next-intl";
 import type { UIMessage } from "ai";
-import { SendHorizontal, Bot, Loader2, Github, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert } from "lucide-react";
+import { SendHorizontal, Bot, Loader2, Github, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert, Clock } from "lucide-react";
+import HistoryPanel from "@/components/assistant/history-panel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -488,8 +489,21 @@ export function ChatInterface() {
     }
   }, [hasCopilot]);
   
+  // ── Conversation History ──
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationCreatedAt, setConversationCreatedAt] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const savingRef = useRef(false);
+
   const handleNewChat = () => {
     setMessages([]);
+    stop();
+    setExecutedMutations(new Map());
+    setRejectedActionIds(new Set());
+    setAcceptedActionIds(new Set());
+    setConversationId(null);
+    setConversationCreatedAt(null);
+    setAllowDestructive(false);
   };
 
   const initiateCopilotAuth = async () => {
@@ -544,7 +558,7 @@ export function ChatInterface() {
   // Vercel AI SDK — useChat
   const { messages, sendMessage, status, setMessages, stop } = useChat({});
 
-  // HITL (Human-in-the-Loop) state — driven by backend data annotations
+  // HITL (Human-in-the-Loop) state — moved before auto-save hook to avoid ordering issues
   type HitlPending = {
     toolName: string;
     toolCallId: string;
@@ -554,11 +568,73 @@ export function ChatInterface() {
   };
   // Track executed mutations: token → { auditLogId, toolName, undone? }
   const [executedMutations, setExecutedMutations] = useState<Map<string, { auditLogId: string; toolName: string; undone?: boolean }>>(new Map());
-  // Track which toolCallIds we've already shown a confirmation panel for
+  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
+  const [acceptedActionIds, setAcceptedActionIds] = useState<Set<string>>(new Set());
+
+  // Auto-save: save conversation to R2 after each AI response completes
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const wasActive = prevStatusRef.current === "streaming" || prevStatusRef.current === "submitted";
+    const nowReady = status === "ready";
+    prevStatusRef.current = status;
+
+    if (!wasActive || !nowReady || messages.length === 0 || savingRef.current) return;
+
+    savingRef.current = true;
+    const id = conversationId || crypto.randomUUID();
+    if (!conversationId) {
+      setConversationId(id);
+      setConversationCreatedAt(new Date().toISOString());
+    }
+
+    // Generate title from first user message
+    const firstUserMsg = messages.find((m) => m.role === "user");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const titleRaw = (firstUserMsg?.parts?.find((p: any) => p.type === "text") as any)?.text
+      || (firstUserMsg as any)?.content || "Sin título";
+    const title = titleRaw.slice(0, 60) + (titleRaw.length > 60 ? "..." : "");
+
+    fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id,
+        title,
+        messages,
+        createdAt: conversationCreatedAt || new Date().toISOString(),
+        executedMutations: Array.from(executedMutations.entries()),
+      }),
+    })
+      .catch((err) => console.error("[AutoSave] Failed:", err))
+      .finally(() => { savingRef.current = false; });
+  }, [status, messages, conversationId, conversationCreatedAt, executedMutations]);
+
+  // Load a conversation from history
+  const handleLoadConversation = async (loadId: string) => {
+    try {
+      const res = await fetch(`/api/history/${loadId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setMessages(data.messages || []);
+      setConversationId(data.id);
+      setConversationCreatedAt(data.createdAt);
+
+      // Restore mutation execution state so confirmed actions show "IR ATRÁS" not "Aceptar"
+      if (data.executedMutations && Array.isArray(data.executedMutations)) {
+        setExecutedMutations(new Map(data.executedMutations));
+      } else {
+        setExecutedMutations(new Map());
+      }
+      // Clear ephemeral UI states and reset Control Total
+      setAcceptedActionIds(new Set());
+      setRejectedActionIds(new Set());
+      setAllowDestructive(false);
+    } catch (err) {
+      console.error("[History] Failed to load conversation:", err);
+    }
+  };
 
 
-  // Helper: recursively search an object tree for { status: "requires_confirmation" }
-  // Returns the matching sub-object or null
   const findConfirmation = useCallback((rawObj: unknown, depth = 0): Record<string, unknown> | null => {
     const obj = depth === 0 ? deepParseJson(rawObj) : rawObj;
     if (!obj || typeof obj !== "object" || depth > 5) return null;
@@ -571,10 +647,6 @@ export function ChatInterface() {
     }
     return null;
   }, []);
-
-  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
-  const [acceptedActionIds, setAcceptedActionIds] = useState<Set<string>>(new Set());
-
   // 🪝 HITL HOOK: Deterministically compute pending active confirmations
   const hitlPending = useMemo(() => {
     // We no longer block on `status === "streaming"` or `"submitted"`.
@@ -677,8 +749,13 @@ export function ChatInterface() {
     }
   };
 
-  const handleUndoTool = (toolName: string) => {
+  const handleUndoTool = async (toolName: string) => {
     if (!sendMessage) return;
+    // Abort any in-flight AI stream and wait for SDK cleanup before sending
+    if (status === "streaming" || status === "submitted") {
+      stop();
+      await new Promise(r => setTimeout(r, 80));
+    }
     sendMessage(
       { text: `Ir Atrás (Deshacer) <!-- [SISTEMA] Acción de ${toolName} deshecha con éxito. El usuario ha revertido los cambios. -->` },
       { body: { model: selectedModel || undefined, allowDestructive } }
@@ -687,8 +764,11 @@ export function ChatInterface() {
 
   const handleConfirmTool = async (toolName: string, args: any, accepted: boolean, toolCallId?: string) => {
     // If the user clicks Aceptar/Rechazar while the AI is still streaming its explanation,
-    // we MUST abort the stream before injecting the confirmation message, or Vercel AI SDK will throw.
-    if (status === "streaming" || status === "submitted") stop();
+    // we MUST abort the stream and wait for SDK cleanup before injecting the confirmation message.
+    if (status === "streaming" || status === "submitted") {
+      stop();
+      await new Promise(r => setTimeout(r, 80));
+    }
     
     if (!sendMessage) return;
     
@@ -828,7 +908,7 @@ export function ChatInterface() {
   }
 
 
-  return (
+  const chatContent = (
     <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* ── Header ── simplified (No border) */}
       <div className="flex items-center justify-between px-4 sm:px-6 h-14 shrink-0 bg-background/50 backdrop-blur-md sticky top-0 z-20">
@@ -839,19 +919,32 @@ export function ChatInterface() {
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-bold tracking-tight truncate">Pearfect AI</h2>
           </div>
-        </div>        {/* Restore New Chat button in Header */}
-        {messages.length > 0 && (
-          <Button 
-            variant="ghost" 
+        </div>
+        <div className="flex items-center gap-1">
+          {/* History Button */}
+          <Button
+            variant="ghost"
             size="icon"
-            onClick={handleNewChat}
+            onClick={() => setHistoryOpen(true)}
             className="text-muted-foreground hover:text-foreground size-8 sm:size-9 shrink-0"
-            disabled={isLoading}
-            title={t("common.newChat")}
+            title="Historial"
           >
-            <MessageSquarePlus className="size-4" />
+            <Clock className="size-4" />
           </Button>
-        )}
+          {/* New Chat Button */}
+          {messages.length > 0 && (
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleNewChat}
+              className="text-muted-foreground hover:text-foreground size-8 sm:size-9 shrink-0"
+              disabled={isLoading}
+              title={t("common.newChat")}
+            >
+              <MessageSquarePlus className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* ── Chat Area ── */}
@@ -1079,5 +1172,20 @@ export function ChatInterface() {
         </div>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {chatContent}
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onLoad={handleLoadConversation}
+        onDelete={(id) => {
+          if (id === conversationId) handleNewChat();
+        }}
+        currentConversationId={conversationId}
+      />
+    </>
   );
 }
