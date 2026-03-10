@@ -183,6 +183,16 @@ async function undoMutation(
             servicePassword: previousValue.servicePassword as string | null,
           })),
         });
+        // Reconnect renewal logs whose clientSubscriptionId was set to NULL on cascade
+        for (const previousValue of items) {
+          if (previousValue.renewalLogs?.length) {
+            const logIds = (previousValue.renewalLogs as any[]).map((rl: any) => rl.id as string);
+            await tx.renewalLog.updateMany({
+              where: { id: { in: logIds } },
+              data: { clientSubscriptionId: previousValue.id as string },
+            });
+          }
+        }
       });
       break;
     }
@@ -231,7 +241,69 @@ async function undoMutation(
 
     case "manageSubscriptions": {
       if (action === "delete") {
-         await prisma.subscription.createMany({ data: previousValues as any });
+        const items = previousValues as any;
+        if (!items || !items.length) break;
+        await prisma.$transaction(async (tx) => {
+          for (const sub of items) {
+            await tx.subscription.create({
+              data: {
+                id: sub.id as string,
+                userId: sub.userId as string,
+                planId: sub.planId as string,
+                label: sub.label as string,
+                startDate: new Date(sub.startDate as string),
+                activeUntil: new Date(sub.activeUntil as string),
+                status: sub.status as any,
+                isAutopayable: sub.isAutopayable as boolean,
+                createdAt: new Date(sub.createdAt as string),
+                masterUsername: (sub.masterUsername as string | null) ?? null,
+                masterPassword: (sub.masterPassword as string | null) ?? null,
+                defaultPaymentNote: (sub.defaultPaymentNote as string | null) ?? null,
+                ownerId: (sub.ownerId as string | null) ?? null,
+              },
+            });
+            if (sub.clientSubscriptions?.length) {
+              await tx.clientSubscription.createMany({
+                data: (sub.clientSubscriptions as any[]).map((cs: any) => ({
+                  id: cs.id as string,
+                  clientId: cs.clientId as string,
+                  subscriptionId: cs.subscriptionId as string,
+                  customPrice: cs.customPrice as any,
+                  activeUntil: new Date(cs.activeUntil as string),
+                  joinedAt: new Date(cs.joinedAt as string),
+                  leftAt: cs.leftAt ? new Date(cs.leftAt as string) : null,
+                  status: cs.status as any,
+                  remainingDays: (cs.remainingDays as number | null) ?? null,
+                  serviceUser: (cs.serviceUser as string | null) ?? null,
+                  servicePassword: (cs.servicePassword as string | null) ?? null,
+                })),
+              });
+              for (const cs of sub.clientSubscriptions as any[]) {
+                if (cs.renewalLogs?.length) {
+                  const csLogIds = (cs.renewalLogs as any[]).map((rl: any) => rl.id as string);
+                  await tx.renewalLog.updateMany({
+                    where: { id: { in: csLogIds } },
+                    data: { clientSubscriptionId: cs.id as string },
+                  });
+                }
+              }
+            }
+            if (sub.platformRenewals?.length) {
+              await tx.platformRenewal.createMany({
+                data: (sub.platformRenewals as any[]).map((pr: any) => ({
+                  id: pr.id as string,
+                  subscriptionId: pr.subscriptionId as string,
+                  amountPaid: pr.amountPaid as any,
+                  periodStart: new Date(pr.periodStart as string),
+                  periodEnd: new Date(pr.periodEnd as string),
+                  paidOn: new Date(pr.paidOn as string),
+                  notes: (pr.notes as string | null) ?? null,
+                  createdAt: new Date(pr.createdAt as string),
+                })),
+              });
+            }
+          }
+        });
       } else if (action === "update") {
          const items = previousValues as any;
          if (items && items[0]) await prisma.subscription.update({ where: { id: items[0].id }, data: items[0] });

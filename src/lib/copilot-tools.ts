@@ -851,13 +851,26 @@ export function createUserScopedTools(
         clientSubscriptionIds: z.array(z.string()).describe("An array of ClientSubscription pivot record IDs to delete."),
       }),
       handler: async ({ clientSubscriptionIds }: any) => {
-        const css = await prisma.clientSubscription.findMany({ where: { id: { in: clientSubscriptionIds }, client: { userId } }, include: { client: true, subscription: true } });
+        const css = await prisma.clientSubscription.findMany({ where: { id: { in: clientSubscriptionIds }, client: { userId } }, include: { client: true, subscription: true, renewalLogs: true } });
         if (!css.length) return { error: "Client subscriptions not found or access denied." };
         
         const previousValues = css.map(c => ({
             id: c.id, clientId: c.clientId, subscriptionId: c.subscriptionId, customPrice: c.customPrice,
-            activeUntil: c.activeUntil.toISOString(), joinedAt: c.joinedAt.toISOString(), leftAt: c.leftAt?.toISOString(),
-            status: c.status, remainingDays: c.remainingDays, serviceUser: c.serviceUser, servicePassword: c.servicePassword
+            activeUntil: c.activeUntil.toISOString(), joinedAt: c.joinedAt.toISOString(), leftAt: c.leftAt?.toISOString() ?? null,
+            status: c.status, remainingDays: c.remainingDays ?? null, serviceUser: c.serviceUser ?? null, servicePassword: c.servicePassword ?? null,
+            renewalLogs: c.renewalLogs.map(rl => ({
+                id: rl.id,
+                clientSubscriptionId: rl.clientSubscriptionId,
+                amountPaid: rl.amountPaid,
+                expectedAmount: rl.expectedAmount,
+                periodStart: rl.periodStart.toISOString(),
+                periodEnd: rl.periodEnd.toISOString(),
+                paidOn: rl.paidOn.toISOString(),
+                dueOn: rl.dueOn.toISOString(),
+                monthsRenewed: rl.monthsRenewed,
+                notes: rl.notes ?? null,
+                createdAt: rl.createdAt.toISOString(),
+            })),
         }));
 
         const pendingChanges = { clientSubscriptionIds };
@@ -936,8 +949,66 @@ export function createUserScopedTools(
         const pendingChanges = { operation, subscriptionIds, planId, label, status, startDate, activeUntil, masterUsername, masterPassword };
         let previousValues: any = null;
         if (operation === "delete" && subscriptionIds) {
-            const subs = await prisma.subscription.findMany({ where: { id: { in: subscriptionIds }, userId }});
-            previousValues = subs;
+            const subs = await prisma.subscription.findMany({
+                where: { id: { in: subscriptionIds }, userId },
+                include: {
+                    clientSubscriptions: {
+                        include: { renewalLogs: true },
+                    },
+                    platformRenewals: true,
+                },
+            });
+            previousValues = subs.map(sub => ({
+                id: sub.id,
+                userId: sub.userId,
+                planId: sub.planId,
+                label: sub.label,
+                startDate: sub.startDate.toISOString(),
+                activeUntil: sub.activeUntil.toISOString(),
+                status: sub.status,
+                isAutopayable: sub.isAutopayable,
+                createdAt: sub.createdAt.toISOString(),
+                masterUsername: sub.masterUsername ?? null,
+                masterPassword: sub.masterPassword ?? null,
+                defaultPaymentNote: sub.defaultPaymentNote ?? null,
+                ownerId: sub.ownerId ?? null,
+                clientSubscriptions: sub.clientSubscriptions.map(cs => ({
+                    id: cs.id,
+                    clientId: cs.clientId,
+                    subscriptionId: cs.subscriptionId,
+                    customPrice: cs.customPrice,
+                    activeUntil: cs.activeUntil.toISOString(),
+                    joinedAt: cs.joinedAt.toISOString(),
+                    leftAt: cs.leftAt?.toISOString() ?? null,
+                    status: cs.status,
+                    remainingDays: cs.remainingDays ?? null,
+                    serviceUser: cs.serviceUser ?? null,
+                    servicePassword: cs.servicePassword ?? null,
+                    renewalLogs: cs.renewalLogs.map(rl => ({
+                        id: rl.id,
+                        clientSubscriptionId: rl.clientSubscriptionId,
+                        amountPaid: rl.amountPaid,
+                        expectedAmount: rl.expectedAmount,
+                        periodStart: rl.periodStart.toISOString(),
+                        periodEnd: rl.periodEnd.toISOString(),
+                        paidOn: rl.paidOn.toISOString(),
+                        dueOn: rl.dueOn.toISOString(),
+                        monthsRenewed: rl.monthsRenewed,
+                        notes: rl.notes ?? null,
+                        createdAt: rl.createdAt.toISOString(),
+                    })),
+                })),
+                platformRenewals: sub.platformRenewals.map(pr => ({
+                    id: pr.id,
+                    subscriptionId: pr.subscriptionId,
+                    amountPaid: pr.amountPaid,
+                    periodStart: pr.periodStart.toISOString(),
+                    periodEnd: pr.periodEnd.toISOString(),
+                    paidOn: pr.paidOn.toISOString(),
+                    notes: pr.notes ?? null,
+                    createdAt: pr.createdAt.toISOString(),
+                })),
+            }));
         } else if (operation === "update" && subscriptionIds && subscriptionIds[0]) {
             const p = await prisma.subscription.findFirst({ where: { id: subscriptionIds[0], userId } });
             previousValues = p ? [p] : [];
