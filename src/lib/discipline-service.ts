@@ -120,6 +120,10 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
       let finalScore: number | null = null;
       if (totalRenewals > 0) {
           finalScore = cTotalScorePoints / totalRenewals;
+      } else if (maxDaysOverdue > 0) {
+          // Client has never paid, but is already overdue for their first payment/renewal
+          const deductions = maxDaysOverdue * effectivePenaltyPerDay;
+          finalScore = Math.max(0, 10 - deductions);
       }
 
       let healthStatus: "Excellent" | "Good" | "Late" | "Overdue" | "Critical" | "New" = "New";
