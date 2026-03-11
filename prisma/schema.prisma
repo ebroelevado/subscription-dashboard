@@ -18,9 +18,10 @@ model User {
   copilotToken      String?
   currency          String             @default("EUR") @db.VarChar(10)
   disciplinePenalty Float              @default(0.5) @map("discipline_penalty")
-  usageCredits      Float              @default(0.0) @map("usage_credits")
-  companyName       String?            @map("company_name") @db.VarChar(100)
-  accounts          Account[]
+  usageCredits       Float              @default(0.0) @map("usage_credits")
+  companyName        String?            @map("company_name") @db.VarChar(100)
+  whatsappSignatureMode String           @default("name") @map("whatsapp_signature_mode") @db.VarChar(20)
+  accounts           Account[]
   clients           Client[]
   mutationAuditLogs MutationAuditLog[]
   plans             Plan[]

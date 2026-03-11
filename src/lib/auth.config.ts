@@ -15,6 +15,7 @@ declare module "next-auth" {
       currency?: string;
       disciplinePenalty?: number;
       companyName?: string | null;
+      whatsappUseCompany?: boolean;
     };
   }
 }
@@ -27,6 +28,7 @@ declare module "next-auth/jwt" {
     currency?: string;
     disciplinePenalty?: number;
     companyName?: string | null;
+    whatsappSignatureMode?: string;
   }
 }
 
@@ -104,6 +106,7 @@ export const authConfig = {
         session.user.currency = (token.currency as string) ?? "EUR";
         session.user.disciplinePenalty = (token.disciplinePenalty as number) ?? 0.5;
         session.user.companyName = (token.companyName as string | null) ?? null;
+        session.user.whatsappUseCompany = (token.whatsappUseCompany as boolean) ?? false;
       }
       return session;
     },

@@ -8,7 +8,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { currency, disciplinePenalty, companyName } = await req.json();
+  const { currency, disciplinePenalty, companyName, whatsappSignatureMode } = await req.json();
 
   const data: any = {};
 
@@ -33,6 +33,13 @@ export async function PATCH(req: Request) {
     data.companyName = companyName || null;
   }
 
+  if (whatsappSignatureMode !== undefined) {
+    if (!['none', 'name', 'company'].includes(whatsappSignatureMode)) {
+      return NextResponse.json({ error: "Invalid WhatsApp signature mode" }, { status: 400 });
+    }
+    data.whatsappSignatureMode = whatsappSignatureMode;
+  }
+
   try {
     const user = await prisma.user.update({
       where: { id: session.user.id },
@@ -45,7 +52,8 @@ export async function PATCH(req: Request) {
         success: true, 
         currency: user.currency,
         disciplinePenalty: user.disciplinePenalty,
-        companyName: user.companyName
+        companyName: user.companyName,
+        whatsappSignatureMode: user.whatsappSignatureMode
       }
     });
   } catch (error) {

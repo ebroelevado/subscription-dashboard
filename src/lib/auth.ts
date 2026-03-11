@@ -83,7 +83,15 @@ const nextAuth = NextAuth({
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { name: true, image: true, password: true, accounts: { select: { provider: true } }, currency: true, disciplinePenalty: true, companyName: true },
+            select: {
+              name: true,
+              image: true,
+              password: true,
+              accounts: { select: { provider: true } },
+              currency: true,
+              disciplinePenalty: true,
+              companyName: true,
+            },
           });
           
           if (dbUser) {

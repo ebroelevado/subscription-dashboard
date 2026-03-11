@@ -14,6 +14,7 @@ export function buildWhatsAppUrl(
   seats: SeatWhatsAppContext[],
   lang: Lang,
   t: (key: string, values?: Record<string, string | number>) => string,
+  signature?: string,
   currency = "EUR",
   forceAll = false
 ): string {
@@ -84,7 +85,7 @@ export function buildWhatsAppUrl(
     ? " " + t("clients.reminderTotal", { total: formatPrice(totalPrice) })
     : "";
 
-  const msg = t("clients.whatsappTemplate", { name, detailBlock, totalLine });
+  const msg = t("clients.whatsappTemplate", { name, detailBlock, totalLine, signature: signature || "" });
 
   const cleanPhone = phone.replace(/[\s\-()]/g, "");
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;

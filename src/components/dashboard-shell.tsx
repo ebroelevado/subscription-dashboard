@@ -323,6 +323,7 @@ export function DashboardShell({
   children: React.ReactNode;
   defaultCollapsed?: boolean;
 }) {
+  const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const t = useTranslations("settings");
   const tc = useTranslations("common");
@@ -430,33 +431,20 @@ export function DashboardShell({
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 pt-10">
-              <div className="flex items-center gap-2.5 px-5 pb-4">
+            <SheetContent side="left" className="p-0 flex flex-col h-full bg-sidebar border-r-0">
+              <div className="flex items-center gap-2.5 px-6 h-16 border-b shrink-0 bg-sidebar">
                 <Logo size={28} className="text-primary" />
-                <span className="text-lg font-semibold tracking-tight">
+                <span className="text-lg font-semibold tracking-tight text-sidebar-foreground">
                   Pearfect S.L.
                 </span>
               </div>
-              <Separator />
-              <div className="px-3 py-4">
-                <MobileNavLinks onNavigate={() => setSheetOpen(false)} />
-              </div>
-              <Separator />
-              <div className="p-3">
-                <MobileUserMenu />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between p-4">
-                <span className="text-sm font-medium">{tc("changeLanguage")}</span>
-                <LanguageSwitcher />
-              </div>
-              <div className="flex items-center justify-between p-4 pt-0">
-                <span className="text-sm font-medium">{t("currency")}</span>
-                <CurrencySelector variant="header" />
-              </div>
-              <div className="flex items-center justify-between p-4 pt-0">
-                <span className="text-sm font-medium">{t("themeLabel")}</span>
-                <ThemeToggle />
+              <div className="flex-1 overflow-y-auto pt-2 space-y-2">
+                <div className="px-4 py-2">
+                  <MobileNavLinks onNavigate={() => setSheetOpen(false)} />
+                </div>
+                <div className="px-4 pb-8 border-t mt-auto pt-6">
+                  <MobileUserMenu />
+                </div>
               </div>
             </SheetContent>
           </Sheet>

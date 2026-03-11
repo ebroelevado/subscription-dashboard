@@ -22,7 +22,12 @@ export function useUpdateSettings() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (data: { currency?: string; disciplinePenalty?: number; companyName?: string | null }) =>
+    mutationFn: (data: { 
+      currency?: string; 
+      disciplinePenalty?: number; 
+      companyName?: string;
+      whatsappSignatureMode?: string;
+    }) =>
       fetchApi("/api/user/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

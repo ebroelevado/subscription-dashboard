@@ -42,8 +42,12 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   
   const handleCopy = () => {
-    // Strip <think> tags and their content
-    const cleanText = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    // Strip <think> tags, <tool> tags and HTML comments (system metadata)
+    const cleanText = text
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .replace(/<tool>[\s\S]*?<\/tool>/g, "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .trim();
     navigator.clipboard.writeText(cleanText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -644,16 +648,20 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
     );
   }
 
-  // Still loading
+  // Still loading (Initial dispatch/queue state)
   return (
-    <div className="my-4 flex items-center gap-3 text-xs bg-muted/20 p-3 rounded-xl border border-primary/20 shadow-sm text-muted-foreground font-medium w-full sm:max-w-[400px] border-l-2 border-l-primary/50">
-      <div className="size-5 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-        <Loader2 className="size-3 animate-spin text-primary" />
+    <div className="my-4 flex items-center gap-3 animate-in fade-in slide-in-from-left-1 duration-300">
+      <div className="relative size-5 shrink-0">
+        <span className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/60 via-violet-500/50 to-sky-400/60 animate-spin" style={{ animationDuration: '2s' }} />
+        <span className="absolute inset-[3px] rounded-full bg-background" />
+        <span className="absolute inset-[5px] rounded-full bg-primary/30" />
       </div>
       <div className="flex flex-col min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground animate-pulse font-bold tracking-tight uppercase text-[11px]">{toolName}</span>
-          <span className="text-[10px] opacity-70">{t("chat.querying")}</span>
+          <span className="text-foreground font-bold tracking-tight uppercase text-[11px]">{toolName}</span>
+          <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+            <span className="animate-pulse">{t("chat.querying")}</span>
+          </span>
         </div>
       </div>
     </div>

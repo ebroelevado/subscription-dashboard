@@ -926,32 +926,44 @@ export function createUserScopedTools(
 
         const me = await prisma.user.findUnique({
           where: { id: userId },
-          select: { companyName: true, name: true }
-        });
-        const myName = me?.companyName || me?.name || "";
-        const introPhrase = myName ? `Hola, somos ${myName}. ` : "Hola. ";
+          select: { companyName: true, name: true, whatsappSignatureMode: true }
+        }) as any;
+        const sigMode = me?.whatsappSignatureMode ?? "name";
+        let senderName = "";
+        if (sigMode === "company") {
+          senderName = me?.companyName || me?.name || "";
+        } else if (sigMode === "name") {
+          senderName = me?.name || "";
+        }
+        
+        const introPhrase = senderName 
+          ? (sigMode === "company" ? `Hola, somos ${senderName}. ` : `Hola, soy ${senderName}. `) 
+          : "Hola. ";
 
         // Normalize phone: strip spaces, dashes; if not starting with +, add +34 (Spain default)
         const rawPhone = client.phone.replace(/[\s\-()]/g, "");
         const phone = rawPhone.startsWith("+") ? rawPhone.replace("+", "") : `34${rawPhone}`;
 
+        const signature = (sigMode !== "none" && senderName) 
+          ? (sigMode === "company" ? `Gracias de parte del equipo de ${senderName}.` : `Gracias de parte de ${senderName}.`) 
+          : "Gracias.";
+  
         let messageBody = "";
-
         if (customMessage) {
           messageBody = customMessage;
         } else if (messageType === "payment_reminder") {
           const amountStr = amountDue != null ? `${amountDue} EUR` : "la cantidad pendiente";
           const dueDateStr = dueDate ? ` antes del ${new Date(dueDate).toLocaleDateString("es-ES")}` : "";
           const platformStr = platform ? ` de ${platform}` : "";
-          messageBody = `${introPhrase}${client.name}, te recordamos que tu pago de ${amountStr}${platformStr} está pendiente${dueDateStr}. Por favor, realiza el pago lo antes posible.`;
+          messageBody = `${introPhrase}${client.name}, te recordamos que tu pago de ${amountStr}${platformStr} está pendiente${dueDateStr}. Por favor, realiza el pago lo antes posible.\n\n${signature}`;
         } else if (messageType === "credentials_update") {
           const platformStr = platform ? ` para ${platform}` : "";
           const userLine = newUsername ? `Usuario: ${newUsername}` : "";
           const passLine = newPassword ? `Contraseña: ${newPassword}` : "";
           const credLines = [userLine, passLine].filter(Boolean).join("\n");
-          messageBody = `${introPhrase}${client.name}, tus credenciales de acceso${platformStr} han sido actualizadas.\n${credLines}\nPor favor, actualízalas en tu dispositivo. Contáctanos si necesitas ayuda.`;
+          messageBody = `${introPhrase}${client.name}, tus credenciales de acceso${platformStr} han sido actualizadas.\n${credLines}\nPor favor, actualízalas en tu dispositivo. Contáctanos si necesitas ayuda.\n\n${signature}`;
         } else {
-          messageBody = `${introPhrase}${client.name}.`;
+          messageBody = `${introPhrase}${client.name}.\n\n${signature}`;
         }
 
         // Encode for URL
@@ -985,6 +997,7 @@ export function createUserScopedTools(
             currency: true,
             disciplinePenalty: true,
             companyName: true,
+            whatsappSignatureMode: true,
             usageCredits: true,
             _count: {
               select: {
@@ -994,7 +1007,7 @@ export function createUserScopedTools(
               }
             }
           }
-        });
+        }) as any;
         
         if (!user) return { error: "User account not found." };
         
@@ -1008,6 +1021,7 @@ export function createUserScopedTools(
             currency: user.currency,
             dailyDisciplinePenalty: Number(user.disciplinePenalty),
             companyName: user.companyName,
+            whatsappSignatureMode: user.whatsappSignatureMode,
           },
           usage: {
             availableCredits: Number(user.usageCredits),
@@ -1054,9 +1068,10 @@ export function createUserScopedTools(
         currency: z.enum(['EUR', 'USD', 'GBP', 'CNY']).optional().describe("The base currency for all monetary displays."),
         disciplinePenalty: z.number().min(0).max(5).optional().describe("The daily monetary penalty charged to clients who pay late."),
         companyName: z.string().max(100).optional().describe("The name of the user's company or business, used in WhatsApp messages."),
+        whatsappUseCompany: z.boolean().optional().describe("Toggle whether to use company name in WhatsApp messages (true/false)."),
       }),
       handler: async (args: any) => {
-        if (!args.currency && args.disciplinePenalty === undefined && !args.companyName) {
+        if (!args.currency && args.disciplinePenalty === undefined && !args.companyName && args.whatsappUseCompany === undefined) {
           return { error: "No configuration fields provided to update." };
         }
 
@@ -1104,12 +1119,30 @@ export function createUserScopedTools(
       parameters: z.object({
         disciplinePenalty: z.number().min(0.1).max(2.0).describe("0.5 to 2.0").optional(),
         currency: z.string().length(3).describe("ISO code (e.g. EUR)").optional(),
+        companyName: z.string().optional(),
+        whatsappSignatureMode: z.enum(["none", "name", "company"]).optional(),
       }),
-      handler: async ({ disciplinePenalty, currency }: any) => {
-        const user = await prisma.user.findUnique({ where: { id: userId }, select: { disciplinePenalty: true, currency: true }});
+      handler: async ({ disciplinePenalty, currency, companyName, whatsappSignatureMode }: any) => {
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, currency: true, disciplinePenalty: true, companyName: true, whatsappSignatureMode: true } }) as any;
         if (!user) return { error: "User not found." };
-        const pendingChanges = { ...(disciplinePenalty !== undefined ? { disciplinePenalty } : {}), ...(currency ? { currency } : {}) };
-        const { token, expiresAt } = await createMutationToken(userId, { toolName: "updateUserConfig", targetId: userId, action: "update", changes: pendingChanges, previousValues: { disciplinePenalty: user.disciplinePenalty, currency: user.currency } });
+        const pendingChanges = { 
+          ...(disciplinePenalty !== undefined ? { disciplinePenalty } : {}), 
+          ...(currency ? { currency } : {}),
+          ...(companyName !== undefined ? { companyName } : {}),
+          ...(whatsappSignatureMode !== undefined ? { whatsappSignatureMode } : {})
+        };
+        const { token, expiresAt } = await createMutationToken(userId, { 
+          toolName: "updateUserConfig", 
+          targetId: userId, 
+          action: "update", 
+          changes: pendingChanges, 
+          previousValues: { 
+            disciplinePenalty: user.disciplinePenalty, 
+            currency: user.currency, 
+            companyName: user.companyName, 
+            whatsappSignatureMode: user.whatsappSignatureMode 
+          } 
+        });
         await prisma.mutationAuditLog.update({ where: { token }, data: { newValues: pendingChanges } });
         return { status: "requires_confirmation", __token: token, expiresAt, message: "I am ready to update your configuration.", pendingChanges };
       },

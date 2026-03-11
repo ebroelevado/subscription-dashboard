@@ -156,6 +156,19 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
       activeUntil: cs.activeUntil,
       platformName: cs.subscription.plan.platform.name,
     }));
+    const signatureMode = (session?.user as any)?.whatsappSignatureMode ?? "name";
+    let senderName = "";
+    
+    if (signatureMode === "company") {
+      senderName = (session?.user as any)?.companyName || session?.user?.name || "";
+    } else if (signatureMode === "name") {
+      senderName = session?.user?.name || "";
+    }
+    
+    const signature = (signatureMode !== "none" && senderName) 
+      ? t("reminderSignature", { sender: senderName }) 
+      : "";
+
     const url = buildWhatsAppUrl(
       client.phone,
       client.name,
@@ -166,6 +179,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
         if (key.startsWith("clients.")) return t(key.replace("clients.", ""), vals);
         return key;
       },
+      signature,
       currency,
       true // always include ALL seats in the global reminder
     );
@@ -179,6 +193,19 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
       activeUntil: cs.activeUntil,
       platformName: cs.subscription.plan.platform.name,
     }];
+    const signatureMode = (session?.user as any)?.whatsappSignatureMode ?? "name";
+    let senderName = "";
+    
+    if (signatureMode === "company") {
+      senderName = (session?.user as any)?.companyName || session?.user?.name || "";
+    } else if (signatureMode === "name") {
+      senderName = session?.user?.name || "";
+    }
+    
+    const signature = (signatureMode !== "none" && senderName) 
+      ? t("reminderSignature", { sender: senderName }) 
+      : "";
+
     const url = buildWhatsAppUrl(
       client.phone,
       client.name,
@@ -189,6 +216,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
         if (key.startsWith("clients.")) return t(key.replace("clients.", ""), vals);
         return key;
       },
+      signature,
       currency,
       true // force — always include this single seat regardless of days
     );

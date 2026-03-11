@@ -72,7 +72,18 @@ function ProfileTab() {
   const [name, setName] = useState(user?.name ?? "");
   const [image, setImage] = useState(user?.image ?? "");
   const [companyName, setCompanyName] = useState((user as any)?.companyName ?? "");
+  const [whatsappSignatureMode, setWhatsappSignatureMode] = useState<string>((user as any)?.whatsappSignatureMode ?? "name");
   const hasPassword = user?.hasPassword;
+
+  // Sync state if session user changes (needed when first loading the page)
+  useEffect(() => {
+    if (user) {
+      if (!name && user.name) setName(user.name);
+      if (!image && user.image) setImage(user.image);
+      if (!companyName && (user as any).companyName) setCompanyName((user as any).companyName);
+      if ((user as any).whatsappSignatureMode) setWhatsappSignatureMode((user as any).whatsappSignatureMode);
+    }
+  }, [user]);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -135,12 +146,18 @@ function ProfileTab() {
       },
       {
         onSuccess: () => {
-          // Only update settings if company name actually changed to save API calls
-          if (companyName !== ((user as any)?.companyName ?? "")) {
-            updateSettings.mutate({ companyName: companyName || null }, {
+          // Only update settings if critical values actually changed
+          if (
+            companyName !== ((user as any)?.companyName ?? "") || 
+            whatsappSignatureMode !== ((user as any)?.whatsappSignatureMode ?? "name")
+          ) {
+            updateSettings.mutate({ 
+              companyName: companyName || null,
+              whatsappSignatureMode,
+            }, {
               onSuccess: () => {
                 toast.success(t("profileUpdated"));
-                updateSession({ name, image, companyName });
+                updateSession({ name, image, companyName, whatsappSignatureMode });
               },
               onError: (err: any) => toast.error(err.message),
             });
@@ -206,16 +223,56 @@ function ProfileTab() {
 
         <div className="space-y-2">
           <Label htmlFor="companyName">{t("companyName", { fallback: "Company Name" })}</Label>
-          <Input
-            id="companyName"
-            placeholder={t("companyNamePlaceholder", { fallback: "e.g. Acme Corp" })}
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            maxLength={100}
-          />
-          <p className="text-[0.8rem] text-muted-foreground">
-            {t("companyNameDescription", { fallback: "Used in automated WhatsApp messages." })}
-          </p>
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full">
+            <div className="flex-1 space-y-1 w-full">
+              <Input
+                id="companyName"
+                placeholder={t("companyNamePlaceholder", { fallback: "e.g. Acme Corp" })}
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                maxLength={100}
+              />
+              <p className="text-[0.8rem] text-muted-foreground pt-1">
+                {t("companyNameDescription", { fallback: "Used in automated WhatsApp messages." })}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6 pt-6 border-t">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <Label className="text-base font-medium">{t("signatureMode", { fallback: "WhatsApp Signature Mode" })}</Label>
+              {!companyName && (
+                <span className="text-[0.65rem] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">
+                  {t("companyMissing", { fallback: "Setup Company for more options" })}
+                </span>
+              )}
+            </div>
+            
+            <div className="px-2 py-4">
+              <Slider
+                min={0}
+                max={companyName ? 2 : 1}
+                step={1}
+                value={[
+                  whatsappSignatureMode === "none" ? 0 : 
+                  whatsappSignatureMode === "name" ? 1 : 
+                  2
+                ]}
+                onValueChange={(val) => {
+                  const mode = val[0] === 0 ? "none" : val[0] === 1 ? "name" : "company";
+                  setWhatsappSignatureMode(mode);
+                }}
+                className="w-full"
+              />
+              <div className="flex justify-between w-full px-1 pt-2 text-[0.65rem] text-muted-foreground uppercase font-bold tracking-tighter">
+                <span>{t("signatureNone")}</span>
+                <span>{t("signatureName")}</span>
+                {companyName && <span>{t("signatureCompany")}</span>}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -303,31 +360,30 @@ function AppearanceTab() {
   // Sync state if session changes initially
   useEffect(() => {
     const sessionPenalty = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty;
-    if (sessionPenalty !== undefined && penalty === 0.5 && sessionPenalty !== 0.5) {
+    // Only sync if penalty is at default and session has a different value
+    if (sessionPenalty !== undefined && penalty !== sessionPenalty) {
       setPenalty(sessionPenalty);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user]);
 
-  // Debounced save
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      if (penalty !== initialPenalty) {
-        updateSettings.mutate(
-          { disciplinePenalty: penalty },
-          {
-            onSuccess: () => {
-              updateSession({ disciplinePenalty: penalty });
-              toast.success(t("penaltyUpdated", { fallback: "Penalty updated successfully" }));
-            },
-            onError: (err: any) => toast.error(err.message),
-          }
-        );
-      }
-    }, 500);
-    return () => clearTimeout(handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [penalty]);
+  // Handle explicitly saving the appearance settings
+  const handleSave = () => {
+    if (penalty !== initialPenalty) {
+      updateSettings.mutate(
+        { disciplinePenalty: penalty },
+        {
+          onSuccess: () => {
+            updateSession({ disciplinePenalty: penalty });
+            toast.success(t("penaltyUpdated", { fallback: "Penalty updated successfully" }));
+          },
+          onError: (err: any) => toast.error(err.message),
+        }
+      );
+    } else {
+      toast.success(t("noChanges", { fallback: "No changes to save" }));
+    }
+  };
 
   return (
     <Card>
@@ -393,6 +449,14 @@ function AppearanceTab() {
           />
         </div>
       </CardContent>
+      <CardFooter className="bg-muted/50 px-6 py-4 border-t flex justify-end">
+        <Button onClick={handleSave} disabled={updateSettings.isPending || penalty === initialPenalty}>
+          {updateSettings.isPending && (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          )}
+          {t("saveChanges")}
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
@@ -501,13 +565,32 @@ function DataTab() {
             {t("importData")}
           </Button>
         </div>
+
+        {/* Danger Zone moved here */}
+        <div className="pt-6 border-t mt-6">
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-4">
+            <div className="flex items-center gap-2 text-destructive font-semibold">
+              <AlertTriangle className="size-4" />
+              {t("danger")}
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-destructive">
+                {t("deleteAccount")}
+              </h4>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t("deleteWarning")}
+              </p>
+            </div>
+
+            <DeleteAccountButton />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-// ── Danger Zone ──
-function DangerZone() {
+function DeleteAccountButton() {
   const deleteAccount = useDeleteAccount();
   const [confirmText, setConfirmText] = useState("");
   const [open, setOpen] = useState(false);
@@ -515,93 +598,68 @@ function DangerZone() {
   const tc = useTranslations("common");
 
   return (
-    <Card className="border-destructive/50">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-destructive">
-          <AlertTriangle className="size-5" />
-          {t("danger")}
-        </CardTitle>
-        <CardDescription>
-          {t("deleteWarning")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-          <div>
-            <h4 className="text-sm font-medium text-destructive">
-              {t("deleteAccount")}
-            </h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("deleteWarning")}
-            </p>
-          </div>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive">
+          <Trash2 className="size-4 mr-2" />
+          {t("deleteAccount")}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("confirmDelete")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("deleteDescription")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
-          <AlertDialog open={open} onOpenChange={setOpen}>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive">
-                <Trash2 className="size-4" />
-                {t("deleteAccount")}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t("confirmDelete")}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t("deleteDescription")}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              {t.rich("typeDeleteToConfirm", {
-                confirmWord: t("deleteConfirmPlaceholder"),
-                word: (word) => (
-                  <span className="font-bold text-destructive underline decoration-2 underline-offset-2">
-                    {word}
-                  </span>
-                ),
-              })}
-            </p>
-            <Input
-              placeholder={t("deleteConfirmPlaceholder")}
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
-              className="font-mono"
-            />
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmText("")}>
-              {tc("cancel")}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={confirmText !== t("deleteConfirmPlaceholder") || deleteAccount.isPending}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    deleteAccount.mutate(undefined, {
-                      onError: (err) => {
-                        toast.error(err.message);
-                        setOpen(false);
-                      },
-                    });
-                  }}
-                  className="bg-destructive text-white hover:bg-destructive/90"
-                >
-                  {deleteAccount.isPending && (
-                    <Loader2 className="size-4 animate-spin" />
-                  )}
-                  {tc("delete")}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            {t.rich("typeDeleteToConfirm", {
+              confirmWord: t("deleteConfirmPlaceholder"),
+              word: (word) => (
+                <span className="font-bold text-destructive underline decoration-2 underline-offset-2">
+                  {word}
+                </span>
+              ),
+            })}
+          </p>
+          <Input
+            placeholder={t("deleteConfirmPlaceholder")}
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+            className="font-mono"
+          />
         </div>
-      </CardContent>
-    </Card>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setConfirmText("")}>
+            {tc("cancel")}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={confirmText !== t("deleteConfirmPlaceholder") || deleteAccount.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              deleteAccount.mutate(undefined, {
+                onError: (err) => {
+                  toast.error(err.message);
+                  setOpen(false);
+                },
+              });
+            }}
+            className="bg-destructive text-white hover:bg-destructive/90"
+          >
+            {deleteAccount.isPending && (
+              <Loader2 className="size-4 animate-spin mr-2" />
+            )}
+            {tc("delete")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
+
 
 // ── Assistant Tab ──
 function AssistantTab() {
@@ -643,15 +701,15 @@ function AssistantTab() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="rounded-lg border p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Github className="size-5" />
+        <div className="rounded-xl border bg-gradient-to-br from-primary/5 via-transparent to-primary/5 p-6 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="size-12 rounded-xl bg-zinc-950 dark:bg-zinc-900 flex items-center justify-center border border-zinc-800 shrink-0 shadow-lg">
+                <Github className="size-6 text-white" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className="text-sm font-medium">{t("copilotTitle")}</h4>
-                <p className="text-xs text-muted-foreground">
+              <div className="space-y-1">
+                <h4 className="text-base font-semibold tracking-tight">{t("copilotTitle")}</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
                   {t("copilotDescription")}
                 </p>
               </div>
@@ -659,27 +717,27 @@ function AssistantTab() {
             
             <AlertDialog open={open} onOpenChange={setOpen}>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <LogOut className="size-4 mr-2" />
+                <Button variant="outline" className="shrink-0 font-medium group hover:border-destructive hover:text-destructive transition-all">
+                  <LogOut className="size-4 mr-2 group-hover:scale-110 transition-transform" />
                   {t("disconnectCopilot")}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>{t("confirmDisconnect")}</AlertDialogTitle>
-                  <AlertDialogDescription>
+                  <AlertDialogTitle className="text-xl">{t("confirmDisconnect")}</AlertDialogTitle>
+                  <AlertDialogDescription className="text-base">
                     {t("disconnectDescription")}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
+                <AlertDialogFooter className="mt-6">
+                  <AlertDialogCancel className="font-medium">{tc("cancel")}</AlertDialogCancel>
                   <AlertDialogAction 
                     onClick={(e) => {
                       e.preventDefault();
                       handleDisconnect();
                     }}
                     disabled={isDisconnecting}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    className="bg-destructive text-white hover:bg-destructive/90 font-medium"
                   >
                     {isDisconnecting && <Loader2 className="size-4 animate-spin mr-2" />}
                     {t("disconnectCopilot")}
@@ -687,6 +745,11 @@ function AssistantTab() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-muted/40 px-3 py-2 rounded-lg w-fit">
+            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Connected to GitHub Copilot
           </div>
         </div>
       </CardContent>
@@ -710,14 +773,35 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="profile">{t("profile")}</TabsTrigger>
-          <TabsTrigger value="appearance">{t("appearance")}</TabsTrigger>
-          <TabsTrigger value="assistant">{t("assistant")}</TabsTrigger>
-          <TabsTrigger value="data">{t("data")}</TabsTrigger>
-          <TabsTrigger value="danger">{t("danger")}</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="profile" className="space-y-6">
+        <div className="rounded-xl border border-border bg-muted/5 shadow-sm overflow-hidden">
+          <TabsList className="grid grid-cols-4 w-full h-14 bg-transparent p-0 gap-0 border-none rounded-none divide-x divide-border/30">
+            <TabsTrigger 
+              value="profile" 
+              className="h-full rounded-none rounded-l-[11px] bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
+            >
+              {t("profile")}
+            </TabsTrigger>
+            <TabsTrigger 
+              value="appearance" 
+              className="h-full rounded-none bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
+            >
+              {t("appearance")}
+            </TabsTrigger>
+            <TabsTrigger 
+              value="assistant" 
+              className="h-full rounded-none bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
+            >
+              {t("assistant")}
+            </TabsTrigger>
+            <TabsTrigger 
+              value="data" 
+              className="h-full rounded-none rounded-r-[11px] bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
+            >
+              {t("data")}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="profile">
           <ProfileTab />
@@ -733,10 +817,6 @@ export default function SettingsPage() {
 
         <TabsContent value="data">
           <DataTab />
-        </TabsContent>
-
-        <TabsContent value="danger">
-          <DangerZone />
         </TabsContent>
       </Tabs>
     </div>
