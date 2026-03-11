@@ -1370,21 +1370,30 @@ export function ChatInterface() {
             <div className="flex items-center justify-between mt-1 pt-1">
               <div className="flex items-center gap-1.5">
                 {/* Model Selector within dock */}
-                {hasCopilot && models.length > 0 && (
-                  <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isLoading}>
-                    <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0">
-                      <SelectValue placeholder="Model" />
+                {hasCopilot && (
+                  <Select value={selectedModel || undefined} onValueChange={setSelectedModel} disabled={isLoading || models.length === 0}>
+                    <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[120px]">
+                      {models.length === 0 ? (
+                        <div className="flex items-center gap-2 text-muted-foreground w-full justify-center">
+                          <Loader2 className="size-3 animate-spin" />
+                          <div className="h-2 w-12 bg-muted-foreground/20 rounded animate-pulse" />
+                        </div>
+                      ) : (
+                        <SelectValue placeholder="Model" />
+                      )}
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-border/40">
-                      {models.map(m => {
-                        const cost = m.id === "claude-haiku-4.5" ? 0.5 : 0.3;
-                        return (
-                          <SelectItem key={m.id} value={m.id} className="text-xs font-medium rounded-lg">
-                            {m.name} <span className="text-muted-foreground ml-1">({cost})</span>
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
+                    {models.length > 0 && (
+                      <SelectContent className="rounded-xl border-border/40">
+                        {models.map(m => {
+                          const cost = m.id === "claude-haiku-4.5" ? 0.5 : 0.3;
+                          return (
+                            <SelectItem key={m.id} value={m.id} className="text-xs font-medium rounded-lg">
+                              {m.name} <span className="text-muted-foreground ml-1">({cost})</span>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    )}
                   </Select>
                 )}
                 
