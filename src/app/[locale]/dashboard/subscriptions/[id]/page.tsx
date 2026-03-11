@@ -385,6 +385,7 @@ export default function SubscriptionDetailPage({
       {/* Add Seat */}
       <AddSeatDialog
         subscriptionId={id}
+        defaultPaymentNote={sub.defaultPaymentNote}
         open={addSeatOpen}
         onOpenChange={setAddSeatOpen}
       />

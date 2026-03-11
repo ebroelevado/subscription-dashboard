@@ -419,6 +419,33 @@ async function executeMutation(
       return { message: `Payment updated successfully. New amount: €${Number(updated.amountPaid).toFixed(2)}.`, payment: updated };
     }
 
+    case "bulkManageSeats": {
+      const { operation, clientSubscriptionIds } = pendingChanges;
+      if (!clientSubscriptionIds || !Array.isArray(clientSubscriptionIds) || !clientSubscriptionIds.length) {
+        throw new Error("Missing clientSubscriptionIds");
+      }
+
+      const targetStatus = operation === "pause" ? "paused" : "active";
+
+      await prisma.$transaction(async (tx) => {
+        // Validate ownership
+        const toUpdate = await tx.clientSubscription.findMany({
+          where: { id: { in: clientSubscriptionIds as string[] }, client: { userId } },
+          select: { id: true },
+        });
+        const validIds = toUpdate.map((s) => s.id);
+        if (validIds.length > 0) {
+          await tx.clientSubscription.updateMany({
+            where: { id: { in: validIds } },
+            data: { status: targetStatus },
+          });
+        }
+      });
+
+      await setAuditLogNewValues(auditLogId, { status: targetStatus, count: (clientSubscriptionIds as string[]).length });
+      return { message: `${(clientSubscriptionIds as string[]).length} seat(s) ${targetStatus === "paused" ? "paused" : "resumed"} successfully.` };
+    }
+
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }

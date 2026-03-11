@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Search, UserPlus, Eye, EyeOff } from "lucide-react";
 import { addMonths, format } from "date-fns";
 import { useSession } from "next-auth/react";
@@ -16,13 +17,18 @@ import { CURRENCIES } from "@/lib/currency";
 
 interface AddSeatDialogProps {
   subscriptionId: string;
+  defaultPaymentNote?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDialogProps) {
+export function AddSeatDialog({ subscriptionId, defaultPaymentNote, open, onOpenChange }: AddSeatDialogProps) {
   const createSeat = useCreateSeat();
   const { data: clients } = useClients();
+  const { data: session } = useSession();
+
+  const currency = (session?.user as { currency?: string })?.currency || "EUR";
+  const symbol = (CURRENCIES[currency as keyof typeof CURRENCIES] || CURRENCIES.EUR).symbol;
 
   // Form state
   const [search, setSearch] = useState("");
@@ -33,6 +39,8 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
   const [serviceUser, setServiceUser] = useState("");
   const [servicePassword, setServicePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isPaid, setIsPaid] = useState(false);
+  const [paymentNote, setPaymentNote] = useState("");
 
   // Search filter
   const filteredClients = useMemo(() => {
@@ -63,6 +71,8 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
     setServiceUser("");
     setServicePassword("");
     setShowPassword(false);
+    setIsPaid(false);
+    setPaymentNote("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,6 +87,8 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
       startDate: startDate,
       serviceUser: serviceUser || null,
       servicePassword: servicePassword || null,
+      isPaid,
+      paymentNote: paymentNote || null,
     });
     resetForm();
     onOpenChange(false);
@@ -87,13 +99,9 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
     onOpenChange(isOpen);
   };
 
-  const { data: session } = useSession();
-  const currency = (session?.user as { currency?: string })?.currency || "EUR";
-  const symbol = (CURRENCIES[currency as keyof typeof CURRENCIES] || CURRENCIES.EUR).symbol;
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="size-5" />
@@ -123,9 +131,9 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
 
             {/* Client list */}
             {!selectedClientId && (
-              <div className="max-h-36 overflow-y-auto rounded-md border">
+              <div className="max-h-44 overflow-y-auto rounded-md border text-sm">
                 {filteredClients.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                  <p className="px-3 py-2 text-muted-foreground">
                     {search ? "No clients found" : "Type to search…"}
                   </p>
                 ) : (
@@ -133,7 +141,7 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
                     <button
                       key={c.id}
                       type="button"
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
+                      className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground border border-transparent hover:border-border/50 hover:shadow-sm active:scale-[0.98] transition-all duration-200 rounded-sm"
                       onClick={() => {
                         setSelectedClientId(c.id);
                         setSearch(c.name);
@@ -174,7 +182,7 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
 
           {/* Price + Duration */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="seat-price">Price ({symbol}/month)</Label>
               <Input
                 id="seat-price"
@@ -213,8 +221,33 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
 
           {previewDate && (
             <p className="text-xs text-muted-foreground">
-              Active until: <span className="font-medium text-foreground">{previewDate}</span>
+              {isPaid
+                ? <>Active until: <span className="font-medium text-foreground">{previewDate}</span></>
+                : "Payment due immediately — seat will be inactive until paid."}
             </p>
+          )}
+
+          {/* Payment Status */}
+          <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Already paid?</Label>
+              <p className="text-[12px] text-muted-foreground">
+                If marked, a payment record will be created.
+              </p>
+            </div>
+            <Switch checked={isPaid} onCheckedChange={setIsPaid} />
+          </div>
+
+          {isPaid && (
+            <div className="space-y-2">
+              <Label htmlFor="seat-payment-note">Payment Note (Optional)</Label>
+              <Input
+                id="seat-payment-note"
+                placeholder={defaultPaymentNote || "como pago"}
+                value={paymentNote}
+                onChange={(e) => setPaymentNote(e.target.value)}
+              />
+            </div>
           )}
 
           {/* Service Credentials */}
@@ -264,7 +297,7 @@ export function AddSeatDialog({ subscriptionId, open, onOpenChange }: AddSeatDia
               type="submit"
               disabled={createSeat.isPending || !selectedClientId || !customPrice}
             >
-              {createSeat.isPending ? "Assigning…" : "Assign Seat"}
+              {createSeat.isPending ? "Assigning…" : "Assign Client"}
             </Button>
           </DialogFooter>
         </form>

@@ -717,7 +717,159 @@ export function createUserScopedTools(
         };
       },
     }),
+
+    // ──────────────────────────────────────────
+    // 10. exportFinancialReport — Structured financial summary
+    // ──────────────────────────────────────────
+    defineTool("exportFinancialReport", {
+      description: "Generate a structured financial report covering a date range. Returns totals for revenue collected from clients, platform costs paid, net profit, per-client breakdown, and per-platform breakdown. Ideal for end-of-month summaries.",
+      parameters: z.object({
+        fromDate: z.string().describe("Start date in ISO format (e.g. 2025-01-01)"),
+        toDate: z.string().describe("End date in ISO format (e.g. 2025-01-31)"),
+      }),
+      handler: async ({ fromDate, toDate }: { fromDate: string; toDate: string }) => {
+        const from = new Date(fromDate);
+        const to = new Date(toDate);
+
+        const [clientPayments, platformPayments, activeSeats] = await Promise.all([
+          prisma.renewalLog.findMany({
+            where: {
+              paidOn: { gte: from, lte: to },
+              clientSubscription: { subscription: { userId } },
+            },
+            include: {
+              clientSubscription: {
+                include: {
+                  client: { select: { name: true } },
+                  subscription: { select: { label: true, plan: { select: { platform: { select: { name: true } } } } } },
+                },
+              },
+            },
+            orderBy: { paidOn: "asc" },
+          }),
+          prisma.platformRenewal.findMany({
+            where: {
+              paidOn: { gte: from, lte: to },
+              subscription: { userId },
+            },
+            include: {
+              subscription: {
+                select: { label: true, plan: { select: { name: true, platform: { select: { name: true } } } } },
+              },
+            },
+          }),
+          prisma.clientSubscription.findMany({
+            where: { status: "active", subscription: { userId } },
+            select: { customPrice: true, subscription: { select: { plan: { select: { platform: { select: { name: true } } } } } } },
+          }),
+        ]);
+
+        const totalRevenue = clientPayments.reduce((sum, p) => sum + Number(p.amountPaid), 0);
+        const totalCosts = platformPayments.reduce((sum, p) => sum + Number(p.amountPaid), 0);
+        const totalMRR = activeSeats.reduce((sum, s) => sum + Number(s.customPrice), 0);
+
+        // Per client breakdown
+        const perClient: Record<string, { name: string; totalPaid: number; payments: number }> = {};
+        for (const p of clientPayments) {
+          const name = p.clientSubscription?.client.name ?? "Unknown";
+          if (!perClient[name]) perClient[name] = { name, totalPaid: 0, payments: 0 };
+          perClient[name].totalPaid += Number(p.amountPaid);
+          perClient[name].payments += 1;
+        }
+
+        // Per platform breakdown
+        const perPlatform: Record<string, { platformName: string; revenueCollected: number; costsPaid: number }> = {};
+        for (const p of clientPayments) {
+          const pName = p.clientSubscription?.subscription.plan.platform.name ?? "Unknown";
+          if (!perPlatform[pName]) perPlatform[pName] = { platformName: pName, revenueCollected: 0, costsPaid: 0 };
+          perPlatform[pName].revenueCollected += Number(p.amountPaid);
+        }
+        for (const p of platformPayments) {
+          const pName = p.subscription.plan.platform.name;
+          if (!perPlatform[pName]) perPlatform[pName] = { platformName: pName, revenueCollected: 0, costsPaid: 0 };
+          perPlatform[pName].costsPaid += Number(p.amountPaid);
+        }
+
+        return {
+          period: { from: fromDate, to: toDate },
+          summary: {
+            totalRevenueCollected: totalRevenue,
+            totalPlatformCostsPaid: totalCosts,
+            netProfit: totalRevenue - totalCosts,
+            currentMRR: totalMRR,
+            totalClientPayments: clientPayments.length,
+            totalPlatformPayments: platformPayments.length,
+          },
+          perClientBreakdown: Object.values(perClient).sort((a, b) => b.totalPaid - a.totalPaid),
+          perPlatformBreakdown: Object.values(perPlatform).sort((a, b) => b.revenueCollected - a.revenueCollected),
+        };
+      },
+    }),
+
+    // ──────────────────────────────────────────
+    // 11. generateWhatsappMessage — Build a WhatsApp link
+    // ──────────────────────────────────────────
+    defineTool("generateWhatsappMessage", {
+      description: "Generate a clickable WhatsApp link to send a message to a client. Use this when the user asks to send a payment reminder, credentials update, or any custom message to a client via WhatsApp. Always fetch the client's phone number first. IMPORTANT: Never include emojis in the message — they cause rendering issues on some devices. Keep messages plain text only.",
+      parameters: z.object({
+        clientId: z.string().describe("The ID of the client to message."),
+        messageType: z.enum(["payment_reminder", "credentials_update", "custom"]).describe("The type of message to compose."),
+        customMessage: z.string().optional().describe("For 'custom' type: the exact message body to send. For other types, this will override the template."),
+        amountDue: z.number().optional().describe("For payment_reminder: the amount owed."),
+        platform: z.string().optional().describe("Platform name (for payment_reminder or credentials_update context)."),
+        newUsername: z.string().optional().describe("For credentials_update: the new username/email."),
+        newPassword: z.string().optional().describe("For credentials_update: the new password."),
+        dueDate: z.string().optional().describe("For payment_reminder: the due date (ISO format)."),
+      }),
+      handler: async ({
+        clientId, messageType, customMessage, amountDue, platform, newUsername, newPassword, dueDate,
+      }: any) => {
+        const client = await prisma.client.findFirst({
+          where: { id: clientId, userId },
+          select: { name: true, phone: true },
+        });
+        if (!client) return { error: "Client not found or access denied." };
+        if (!client.phone) return { error: `${client.name} does not have a phone number registered. Add one first.` };
+
+        // Normalize phone: strip spaces, dashes; if not starting with +, add +34 (Spain default)
+        const rawPhone = client.phone.replace(/[\s\-()]/g, "");
+        const phone = rawPhone.startsWith("+") ? rawPhone.replace("+", "") : `34${rawPhone}`;
+
+        let messageBody = "";
+
+        if (customMessage) {
+          messageBody = customMessage;
+        } else if (messageType === "payment_reminder") {
+          const amountStr = amountDue != null ? `${amountDue} EUR` : "the pending amount";
+          const dueDateStr = dueDate ? ` before ${new Date(dueDate).toLocaleDateString("es-ES")}` : "";
+          const platformStr = platform ? ` for ${platform}` : "";
+          messageBody = `Hello ${client.name}, this is a reminder that your payment of ${amountStr}${platformStr} is pending${dueDateStr}. Please arrange the payment at your earliest convenience.`;
+        } else if (messageType === "credentials_update") {
+          const platformStr = platform ? ` for ${platform}` : "";
+          const userLine = newUsername ? `Username: ${newUsername}` : "";
+          const passLine = newPassword ? `Password: ${newPassword}` : "";
+          const credLines = [userLine, passLine].filter(Boolean).join("\n");
+          messageBody = `Hello ${client.name}, your access credentials${platformStr} have been updated.\n${credLines}\nPlease update these in your device. Contact me if you need help.`;
+        } else {
+          messageBody = `Hello ${client.name}.`;
+        }
+
+        // Encode for URL
+        const encodedMessage = encodeURIComponent(messageBody);
+        const whatsappLink = `https://wa.me/${phone}?text=${encodedMessage}`;
+
+        return {
+          clientName: client.name,
+          phone: client.phone,
+          messageType,
+          messageBody,
+          whatsappLink,
+          instructions: "Click the link above to open WhatsApp with this message pre-filled. Review and send from your device.",
+        };
+      },
+    }),
   ];
+
 
   if (!allowDestructive) {
     tools.push(
@@ -1095,6 +1247,50 @@ export function createUserScopedTools(
           __token: token,
           expiresAt,
           message: `I am ready to update the payment of **${clientName}** (${platform}).`,
+          pendingChanges,
+        };
+      },
+    }),
+
+    defineTool("bulkManageSeats", {
+      description: "Propose pausing or resuming multiple client seats (ClientSubscriptions) at once. Use this to pause all expired or non-paying clients, or to resume a group. Always list the seats first to get their IDs.",
+      parameters: z.object({
+        operation: z.enum(["pause", "resume"]).describe("Whether to pause or resume the seats."),
+        clientSubscriptionIds: z.array(z.string()).describe("Array of ClientSubscription IDs to act on."),
+        reason: z.string().optional().describe("Optional reason for the bulk action, shown in the confirmation."),
+      }),
+      handler: async ({ operation, clientSubscriptionIds, reason }: any) => {
+        const seats = await prisma.clientSubscription.findMany({
+          where: { id: { in: clientSubscriptionIds }, client: { userId } },
+          include: { client: { select: { name: true } }, subscription: { select: { label: true } } },
+        });
+        if (!seats.length) return { error: "No seats found or access denied." };
+
+        const previousValues = seats.map((s) => ({
+          id: s.id,
+          clientName: s.client.name,
+          subscriptionLabel: s.subscription.label,
+          status: s.status,
+        }));
+
+        const pendingChanges = { operation, clientSubscriptionIds, reason };
+        const { token, expiresAt } = await createMutationToken(userId, {
+          toolName: "bulkManageSeats",
+          targetId: "bulk",
+          action: "update",
+          changes: pendingChanges,
+          previousValues: previousValues as any,
+        });
+        await prisma.mutationAuditLog.update({ where: { token }, data: { newValues: pendingChanges } });
+
+        const clientNames = seats.slice(0, 3).map((s) => s.client.name).join(", ");
+        const more = seats.length > 3 ? ` and ${seats.length - 3} more` : "";
+
+        return {
+          status: "requires_confirmation",
+          __token: token,
+          expiresAt,
+          message: `I am ready to **${operation}** ${seats.length} seat(s): ${clientNames}${more}.${reason ? ` Reason: ${reason}` : ""}`,
           pendingChanges,
         };
       },
