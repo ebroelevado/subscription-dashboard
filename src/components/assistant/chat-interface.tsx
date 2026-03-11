@@ -160,6 +160,43 @@ function deepParseJson(val: unknown, depth = 0): unknown {
   return val;
 }
 
+// ── Rotating phrase component — cycles through an array of phrases with a
+//    smooth slide-up-fade-out / slide-up-fade-in transition, like Gemini does.
+function RotatingPhrase({ phrases, intervalMs = 2500 }: { phrases: string[]; intervalMs?: number }) {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    if (phrases.length <= 1) return;
+    let current = 0;
+    const tick = setInterval(() => {
+      // Fade out
+      setVisible(false);
+      setTimeout(() => {
+        current = (current + 1) % phrases.length;
+        setIdx(current);
+        // Fade in
+        setVisible(true);
+      }, 280);
+    }, intervalMs);
+    return () => clearInterval(tick);
+  }, [phrases, intervalMs]);
+
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        transition: 'opacity 0.25s ease, transform 0.25s ease',
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(-6px)',
+      }}
+    >
+      {phrases[idx]}
+    </span>
+  );
+}
+
+
 function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejectedActionIds, acceptedActionIds }: { 
   part: ExtendedUIMessagePart & { toolInvocation?: { toolName?: string; state: string; result?: unknown; args?: unknown; error?: string }; errorText?: string },
   onConfirm?: (toolName: string, args: any, accepted: boolean, toolCallId?: string) => void,
@@ -203,25 +240,23 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
 
   // ── Loading state: tool call in-flight ──────────────────────────────────
   if (!isFinished) {
+    // Pick per-tool descriptive phrases; fall back to generic thinking phrases
+    const rawPhrases = (t.raw('chat.toolLoading') as Record<string, string[]> | undefined)?.[toolName];
+    const fallback = t.raw('chat.thinkingPhrases') as string[];
+    const phrases: string[] = Array.isArray(rawPhrases) && rawPhrases.length > 0 ? rawPhrases : fallback;
+
     return (
-      <div className="my-2 flex items-center gap-2.5 animate-in fade-in slide-in-from-left-1 duration-300">
-        {/* Pulsing ring */}
+      <div className="my-3 flex items-center gap-3 animate-in fade-in slide-in-from-left-1 duration-300">
+        {/* Animated gradient orb */}
         <div className="relative size-5 shrink-0">
-          <span className="absolute inset-0 rounded-full border-2 border-primary/40 animate-ping opacity-75" />
-          <span className="absolute inset-0.5 rounded-full bg-primary/20 border border-primary/40" />
+          <span className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/60 via-violet-500/50 to-sky-400/60 animate-spin" style={{ animationDuration: '2s' }} />
+          <span className="absolute inset-[3px] rounded-full bg-background" />
+          <span className="absolute inset-[5px] rounded-full bg-primary/30" />
         </div>
-        {/* Tool name pill */}
-        <div className="flex items-center gap-1.5 bg-muted/30 border border-border/50 rounded-full px-3 py-1 shadow-sm">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-foreground/70">
-            {toolName}
-          </span>
-          {/* Animated dots */}
-          <span className="flex gap-0.5 items-center">
-            <span className="size-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '900ms' }} />
-            <span className="size-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '900ms' }} />
-            <span className="size-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '300ms', animationDuration: '900ms' }} />
-          </span>
-        </div>
+        {/* Rotating phrase */}
+        <span className="text-[12px] text-muted-foreground font-medium">
+          <RotatingPhrase phrases={phrases} />
+        </span>
       </div>
     );
   }
@@ -1181,14 +1216,20 @@ export function ChatInterface() {
           
           {isLoading && messages[messages.length - 1]?.role === "user" && (
             <div className="flex animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="flex items-center gap-2 bg-muted/5 rounded-2xl px-4 py-2 border border-border/20">
-                <Loader2 className="size-3.5 animate-spin text-primary/70" />
-                <span className="text-[12px] text-muted-foreground font-bold tracking-wider uppercase">
-                  {t("chat.analyzing")}
+              <div className="flex items-center gap-3 bg-muted/5 rounded-2xl px-4 py-2.5 border border-border/20">
+                {/* Animated gradient orb — same as tool loader */}
+                <div className="relative size-4 shrink-0">
+                  <span className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/60 via-violet-500/50 to-sky-400/60 animate-spin" style={{ animationDuration: '2s' }} />
+                  <span className="absolute inset-[2px] rounded-full bg-background" />
+                  <span className="absolute inset-[4px] rounded-full bg-primary/30" />
+                </div>
+                <span className="text-[12px] text-muted-foreground font-medium">
+                  <RotatingPhrase phrases={t.raw('chat.thinkingPhrases') as string[]} />
                 </span>
               </div>
             </div>
           )}
+
 
         <div ref={bottomRef} className="h-4" />
         </div>
