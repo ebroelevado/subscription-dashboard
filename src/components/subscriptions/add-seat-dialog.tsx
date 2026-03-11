@@ -137,22 +137,24 @@ export function AddSeatDialog({ subscriptionId, defaultPaymentNote, open, onOpen
                     {search ? "No clients found" : "Type to search…"}
                   </p>
                 ) : (
-                  filteredClients.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground border border-transparent hover:border-border/50 hover:shadow-sm active:scale-[0.98] transition-all duration-200 rounded-sm"
-                      onClick={() => {
-                        setSelectedClientId(c.id);
-                        setSearch(c.name);
-                      }}
-                    >
-                      <span className="font-medium">{c.name}</span>
-                      {c.phone && (
-                        <span className="text-xs text-muted-foreground">{c.phone}</span>
-                      )}
-                    </button>
-                  ))
+                  <div className="divide-y divide-border/50">
+                    {filteredClients.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-accent hover:text-accent-foreground transition-all duration-200 active:scale-[0.99]"
+                        onClick={() => {
+                          setSelectedClientId(c.id);
+                          setSearch(c.name);
+                        }}
+                      >
+                        <span className="font-medium text-sm">{c.name}</span>
+                        {c.phone && (
+                          <span className="text-xs text-muted-foreground">{c.phone}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
