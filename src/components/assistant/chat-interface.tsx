@@ -1376,10 +1376,10 @@ export function ChatInterface() {
                       {models.length === 0 ? (
                         <div className="flex items-center gap-2 text-muted-foreground w-full justify-center">
                           <Loader2 className="size-3 animate-spin" />
-                          <div className="h-2 w-12 bg-muted-foreground/20 rounded animate-pulse" />
+                          <span>Expert</span>
                         </div>
                       ) : (
-                        <SelectValue placeholder="Model" />
+                        <SelectValue placeholder="Expert" />
                       )}
                     </SelectTrigger>
                     {models.length > 0 && (
