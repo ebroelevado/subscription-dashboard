@@ -1192,11 +1192,16 @@ export function ChatInterface() {
                             // isComplete=true  → tag closed but tool call may not have dispatched yet.
                             //
                             // FIX: The AI emits the COMPLETE <tool>text</tool> in one stream batch
-                            // so the first React render sees isComplete=true. We must NOT hide it
-                            // immediately — keep it visible while the message is still streaming.
-                            // Once streaming is done the real ToolInvocationBlock is already visible.
+                            // so the first React render sees isComplete=true.
+                            // We should keep it visible ONLY until the actual tool call part
+                            // arrives in the message. Once the tool call part is in m.parts,
+                            // we hide this text annotation because the real ToolInvocationBlock takes over.
+                            const hasToolCalls = m.parts.some(p => p.type === 'tool-invocation' || p.type.startsWith('tool-'));
                             const isActiveMessage = index === messages.length - 1 && (status === 'streaming' || status === 'submitted');
-                            if (p.isComplete && !isActiveMessage) return null;
+                            
+                            // If the tag is closed AND we already have a tool call part in the message,
+                            // or it's not the active message anymore, hide it.
+                            if (p.isComplete && (!isActiveMessage || hasToolCalls)) return null;
                             const toolLabel = p.content.trim() || (t.raw('chat.thinkingPhrases') as string[])[0];
                             return (
                               <div key={`${i}-${j}`} className="my-3 flex items-center gap-3 animate-in fade-in slide-in-from-left-1 duration-300">
