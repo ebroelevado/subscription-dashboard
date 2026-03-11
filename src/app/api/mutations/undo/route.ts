@@ -329,6 +329,114 @@ async function undoMutation(
       break;
     }
 
+    case "managePayments": {
+      const prev = previousValues as {
+        id: string;
+        amountPaid: number;
+        expectedAmount: number;
+        paidOn: string;
+        periodStart: string;
+        periodEnd: string;
+        notes: string | null;
+        clientSubscriptionId: string | null;
+      };
+
+      if (!prev?.id) throw new Error("Missing previousValues for managePayments undo.");
+
+      if (action === "delete") {
+        // The payment was deleted — we need to recreate it from previousValues
+        const exists = await prisma.renewalLog.findUnique({ where: { id: prev.id } });
+        if (!exists) {
+          // Need clientSubscription context to find the right dueOn
+          const csId = prev.clientSubscriptionId;
+          const cs = csId
+            ? await prisma.clientSubscription.findFirst({
+                where: { id: csId, subscription: { userId } },
+              })
+            : null;
+
+          await prisma.$transaction(async (tx) => {
+            await tx.renewalLog.create({
+              data: {
+                id: prev.id,
+                clientSubscriptionId: prev.clientSubscriptionId,
+                amountPaid: prev.amountPaid,
+                expectedAmount: prev.expectedAmount,
+                paidOn: new Date(prev.paidOn),
+                periodStart: new Date(prev.periodStart),
+                periodEnd: new Date(prev.periodEnd),
+                dueOn: cs?.activeUntil ?? new Date(prev.paidOn),
+                monthsRenewed: 1,
+                notes: prev.notes ?? undefined,
+              },
+            });
+
+            // Restore activeUntil on the seat to periodEnd (this payment covered up to periodEnd)
+            if (csId) {
+              await tx.clientSubscription.update({
+                where: { id: csId },
+                data: { activeUntil: new Date(prev.periodEnd) },
+              });
+            }
+          });
+        }
+      } else {
+        // The payment was updated — restore original field values
+        const log = await prisma.renewalLog.findFirst({
+          where: { id: prev.id, clientSubscription: { subscription: { userId } } },
+        });
+        if (!log) throw new Error("Payment log not found for undo.");
+
+        await prisma.$transaction(async (tx) => {
+          await tx.renewalLog.update({
+            where: { id: prev.id },
+            data: {
+              amountPaid: prev.amountPaid,
+              paidOn: new Date(prev.paidOn),
+              periodStart: new Date(prev.periodStart),
+              periodEnd: new Date(prev.periodEnd),
+              notes: prev.notes ?? null,
+            },
+          });
+        });
+      }
+      break;
+    }
+
+    case "bulkManageSeats": {
+      // previousValues is an array of { id, clientName, subscriptionLabel, status }
+      const items = previousValues as unknown as Array<{
+        id: string;
+        status: string;
+      }>;
+      if (!items || !items.length) break;
+
+      await prisma.$transaction(async (tx) => {
+        // Restore each seat to its original status, grouped by status for efficiency
+        const byStatus: Record<string, string[]> = {};
+        for (const item of items) {
+          if (!byStatus[item.status]) byStatus[item.status] = [];
+          byStatus[item.status].push(item.id);
+        }
+
+        for (const [status, ids] of Object.entries(byStatus)) {
+          // Verify ownership before updating
+          const owned = await tx.clientSubscription.findMany({
+            where: { id: { in: ids }, client: { userId } },
+            select: { id: true },
+          });
+          const validIds = owned.map((s) => s.id);
+          if (validIds.length) {
+            await tx.clientSubscription.updateMany({
+              where: { id: { in: validIds } },
+              data: { status: status as "active" | "paused" },
+            });
+          }
+        }
+      });
+      break;
+    }
+
     default:
       throw new Error(`Unknown tool for undo: ${toolName}`);
   }
