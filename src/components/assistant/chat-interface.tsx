@@ -1187,10 +1187,16 @@ export function ChatInterface() {
                             return <ReasonerBlock key={`${i}-${j}`} text={p.content.trim()} isThinking={!p.isComplete} />;
                           }
                           if (p.type === "tool") {
-                            // <tool> stream annotation — show as live loading state identical to
-                            // the ToolInvocationBlock loader, but driven by the text stream.
-                            // Completed tags (tool call already dispatched) are hidden visually.
-                            if (p.isComplete) return null;
+                            // <tool> stream annotation — immediately visible loading orb.
+                            // isComplete=false → tag still open in stream (rare, fast LLMs skip this)
+                            // isComplete=true  → tag closed but tool call may not have dispatched yet.
+                            //
+                            // FIX: The AI emits the COMPLETE <tool>text</tool> in one stream batch
+                            // so the first React render sees isComplete=true. We must NOT hide it
+                            // immediately — keep it visible while the message is still streaming.
+                            // Once streaming is done the real ToolInvocationBlock is already visible.
+                            const isActiveMessage = index === messages.length - 1 && (status === 'streaming' || status === 'submitted');
+                            if (p.isComplete && !isActiveMessage) return null;
                             const toolLabel = p.content.trim() || (t.raw('chat.thinkingPhrases') as string[])[0];
                             return (
                               <div key={`${i}-${j}`} className="my-3 flex items-center gap-3 animate-in fade-in slide-in-from-left-1 duration-300">
@@ -1203,6 +1209,7 @@ export function ChatInterface() {
                               </div>
                             );
                           }
+
                           return (
                             <div key={`${i}-${j}`} className="prose prose-sm sm:prose-base dark:prose-invert max-w-none break-words leading-relaxed last:mb-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:bg-muted/40 [&_code]:p-1 [&_code]:rounded-md [&_p]:mb-4 last:[&_p]:mb-0">
                               <ReactMarkdown
