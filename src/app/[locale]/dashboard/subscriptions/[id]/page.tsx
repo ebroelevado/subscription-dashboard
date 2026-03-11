@@ -151,24 +151,24 @@ export default function SubscriptionDetailPage({
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon">
+    <div className="space-y-6 pb-20">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-30 -mx-4 lg:-mx-6 px-4 lg:px-6 py-3 bg-background/80 backdrop-blur-md border-b border-border/10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between transition-all">
+        <div className="flex items-center gap-3 min-w-0">
+          <Button asChild variant="ghost" size="icon" className="shrink-0">
             <Link href="/dashboard/subscriptions">
               <ArrowLeft className="size-5" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{sub.label}</h1>
-            <p className="text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">{sub.label}</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">
               {sub.plan.platform.name} · {sub.plan.name}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={sub.status === "active" ? "default" : "secondary"}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant={sub.status === "active" ? "default" : "secondary"} className="h-7">
             {tc(sub.status)}
           </Badge>
           <Button
@@ -183,7 +183,7 @@ export default function SubscriptionDetailPage({
       </div>
 
       {/* Key Metrics — responsive grid */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
         {/* Actual Revenue */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
