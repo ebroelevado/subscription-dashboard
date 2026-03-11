@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useTranslations } from "next-intl";
 import type { UIMessage } from "ai";
@@ -196,8 +196,10 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
   const errorText = part.errorText || part.toolInvocation?.error;
   const isError = !!errorText || state === 'error' || state === 'output-error' || part.type === 'tool-output-error';
 
-  const formattedArgs = deepParseJson(args);
-  const formattedOutput = deepParseJson(output);
+  // Memoize expensive JSON parsing so it doesn't run on every parent re-render.
+  // deepParseJson can be slow if output contains large metadata objects.
+  const formattedArgs = useMemo(() => deepParseJson(args), [args]);
+  const formattedOutput = useMemo(() => deepParseJson(output), [output]);
 
   // ── Loading state: tool call in-flight ──────────────────────────────────
   if (!isFinished) {
@@ -746,10 +748,22 @@ export function ChatInterface() {
   const findConfirmation = useCallback((rawObj: unknown, depth = 0): Record<string, unknown> | null => {
     const obj = depth === 0 ? deepParseJson(rawObj) : rawObj;
     if (!obj || typeof obj !== "object" || depth > 5) return null;
+    // Bail out on large arrays (e.g. csvData rows) — they'll never contain a confirmation
+    if (Array.isArray(obj)) {
+      if ((obj as unknown[]).length > 20) return null;
+      for (const item of obj as unknown[]) {
+        const found = findConfirmation(item, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
     const record = obj as Record<string, unknown>;
+    // Early short-circuit: download_available results are never confirmations
+    if (record.status === "download_available") return null;
     if (record.status === "requires_confirmation") return record;
-    // Search all values (handles content, detailedContent, result, output, etc.)
-    for (const val of Object.values(record)) {
+    // Search all values but skip csvData — it's a plain array of row objects
+    for (const [key, val] of Object.entries(record)) {
+      if (key === "csvData") continue;
       const found = findConfirmation(val, depth + 1);
       if (found) return found;
     }
