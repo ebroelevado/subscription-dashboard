@@ -71,7 +71,7 @@ export function RenewPlatformDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] sm:max-w-md max-h-[92vh] sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {t("renewPlatformTitle", { name: subscription?.plan.platform.name ?? "" })}

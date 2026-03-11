@@ -151,7 +151,7 @@ export default function SubscriptionDetailPage({
   };
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="flex flex-col gap-4 sm:gap-6 pb-8 min-h-0">
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -168,7 +168,7 @@ export default function SubscriptionDetailPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={sub.status === "active" ? "default" : "secondary"} className="h-7">
+          <Badge variant={sub.status === "active" ? "default" : "secondary"}>
             {tc(sub.status)}
           </Badge>
           <Button
@@ -183,7 +183,7 @@ export default function SubscriptionDetailPage({
       </div>
 
       {/* Key Metrics — responsive grid */}
-      <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
         {/* Actual Revenue */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">

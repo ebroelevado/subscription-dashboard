@@ -180,7 +180,7 @@ export function AssignSubscriptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+      <DialogContent className="w-[95vw] sm:max-w-md p-0 overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]">
         <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden min-h-0">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="flex items-center gap-2 text-xl">
