@@ -1367,15 +1367,16 @@ export function ChatInterface() {
               style={{ maxHeight: "200px" }}
             />
             
-            <div className="flex items-center justify-end mt-1 pt-1 gap-3">
-              <div className="flex items-center">
+            <div className="flex items-center justify-between mt-1 pt-1">
+              <div className="flex items-center gap-1.5">
+                {/* Model Selector within dock */}
                 {hasCopilot && (
-                  <Select value={selectedModel || undefined} onValueChange={setSelectedModel} disabled={isLoading || models.length === 0}>
-                    <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[120px]">
+                  <Select value={selectedModel || "claude-haiku-4.5"} onValueChange={setSelectedModel} disabled={isLoading || models.length === 0}>
+                    <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[120px] flex items-center justify-between">
                       {models.length === 0 ? (
                         <div className="flex items-center gap-2 text-muted-foreground w-full justify-center">
                           <Loader2 className="size-3 animate-spin" />
-                          <span>Expert</span>
+                          <div className="h-2 w-12 bg-muted-foreground/20 rounded animate-pulse" />
                         </div>
                       ) : (
                         <SelectValue placeholder="Expert" />
@@ -1395,21 +1396,21 @@ export function ChatInterface() {
                     )}
                   </Select>
                 )}
+                
+                <div className="flex items-center space-x-2 ml-2 bg-red-500/10 dark:bg-red-500/5 px-2.5 py-1.5 rounded-full border border-red-500/20">
+                  <Switch 
+                    id="destructive-mode" 
+                    checked={allowDestructive} 
+                    onCheckedChange={setAllowDestructive}
+                    className="data-[state=checked]:bg-red-500 scale-90"
+                  />
+                  <Label htmlFor="destructive-mode" className="text-[10px] sm:text-xs font-bold text-red-500 flex items-center gap-1 cursor-pointer">
+                    <ShieldAlert className="size-3" /> {t("chat.fullControlTitle")}
+                  </Label>
+                </div>
               </div>
 
-              <div className="flex items-center space-x-2 bg-red-500/10 dark:bg-red-500/5 px-2.5 py-1.5 rounded-full border border-red-500/20">
-                <Switch 
-                  id="destructive-mode" 
-                  checked={allowDestructive} 
-                  onCheckedChange={setAllowDestructive}
-                  className="data-[state=checked]:bg-red-500 scale-90"
-                />
-                <Label htmlFor="destructive-mode" className="text-[10px] sm:text-xs font-bold text-red-500 flex items-center gap-1 cursor-pointer">
-                  <ShieldAlert className="size-3" /> {t("chat.fullControlTitle")}
-                </Label>
-              </div>
-
-              <div className="flex items-center">
+              <div className="flex items-center gap-2">
                 {isLoading || hitlPending ? (
                   <Button 
                     type="button"
