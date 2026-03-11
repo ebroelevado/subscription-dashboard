@@ -1297,7 +1297,12 @@ export function ChatInterface() {
                   {/* Action Bar — only show if not currently loading/streaming this message */}
                   {m.role !== "user" && (status !== "streaming" || messages.indexOf(m) < messages.length - 1) && (
                     <div className="flex items-center gap-1 mt-2 px-1.5 opacity-40 hover:opacity-100 transition-opacity">
-                      <CopyButton text={m.parts?.filter((p) => p.type === 'text').map((p) => p.text).join("") || ""} />
+                      <CopyButton 
+                        text={m.parts?.filter((p) => p.type === 'text').map((p) => {
+                          const parsed = parseTextWithThinking(p.text || "");
+                          return parsed.filter(t => t.type === 'text').map(t => t.content).join("").trim();
+                        }).filter(Boolean).join("\n") || ""} 
+                      />
                     </div>
                   )}
                 </div>
