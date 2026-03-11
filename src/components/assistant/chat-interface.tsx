@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useTranslations } from "next-intl";
 import type { UIMessage } from "ai";
-import { SendHorizontal, Bot, Loader2, Github, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert, Clock } from "lucide-react";
+import { SendHorizontal, Bot, Loader2, Github, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert, Clock, Download } from "lucide-react";
 import HistoryPanel from "@/components/assistant/history-panel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +15,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css"; // Required for LaTeX math to render nicely
+import { jsonToCsv } from "@/lib/csv-utils";
 
 type ExtendedUIMessagePart = {
   type: string;
@@ -275,6 +276,48 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
            };
 
            const confirmData = isFinished && !isError ? findStatus(formattedOutput) : null;
+           
+           // === DOWNLOAD BLOCK (Non-blocking) ===
+           if (isFinished && !isError && (formattedOutput as any)?.status === "download_available") {
+             const data = formattedOutput as any;
+             return (
+               <div className="px-3 pb-3 pt-1 animate-in fade-in slide-in-from-bottom-1 duration-500">
+                 <div className="rounded-xl border border-primary/30 bg-primary/5 shadow-sm p-4 flex flex-col gap-3">
+                   <div className="flex items-start gap-3">
+                     <div className="size-8 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                       <Terminal className="size-4 text-primary" />
+                     </div>
+                     <div className="flex-1 min-w-0">
+                       <p className="text-[11px] font-bold text-primary uppercase tracking-widest">{t("chat.ready")}</p>
+                       <p className="text-sm text-foreground/90 mt-0.5 leading-snug">
+                         {data.message || "Report generated successfully."}
+                       </p>
+                     </div>
+                   </div>
+                   <Button
+                     onClick={() => {
+                        if (!data.csvData) return;
+                        const csvContent = jsonToCsv(data.csvData);
+                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                        const link = document.createElement("a");
+                        const url = URL.createObjectURL(blob);
+                        link.setAttribute("href", url);
+                        link.setAttribute("download", data.filename || "export.csv");
+                        link.style.visibility = 'hidden';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                     }}
+                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
+                   >
+                     <Download className="size-4 mr-2" />
+                     {t("common.download")} CSV
+                   </Button>
+                 </div>
+               </div>
+             );
+           }
+
            if (!confirmData) return null;
 
            const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId;

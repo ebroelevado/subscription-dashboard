@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { getDisciplineAnalytics } from "@/lib/discipline-service";
 import { serializeDeletedClients } from "@/lib/client-deletion-snapshot";
 import { createMutationToken } from "@/lib/mutation-token";
+import { jsonToCsv } from "@/lib/csv-utils";
 
 // Type for defineTool — imported dynamically in route.ts
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -796,10 +797,22 @@ export function createUserScopedTools(
             totalRevenueCollected: totalRevenue,
             totalPlatformCostsPaid: totalCosts,
             netProfit: totalRevenue - totalCosts,
-            currentMRR: totalMRR,
+            totalMRR,
             totalClientPayments: clientPayments.length,
             totalPlatformPayments: platformPayments.length,
           },
+          csvData: clientPayments.map(p => ({
+            Date: p.paidOn ? new Date(p.paidOn).toLocaleDateString() : 'N/A',
+            Client: p.clientSubscription?.client.name || 'Unknown',
+            Platform: p.clientSubscription?.subscription.plan.platform.name || 'Unknown',
+            Subscription: p.clientSubscription?.subscription.label || 'N/A',
+            Amount: Number(p.amountPaid).toFixed(2),
+            Period: `${p.periodStart ? new Date(p.periodStart).toLocaleDateString() : '?'} - ${p.periodEnd ? new Date(p.periodEnd).toLocaleDateString() : '?'}`,
+            Notes: p.notes || ''
+          })),
+          status: "download_available",
+          message: `Report generated for ${fromDate} to ${toDate}. Click below to download the CSV.`,
+          filename: `reporte_financiero_${fromDate}_${toDate}.csv`,
           perClientBreakdown: Object.values(perClient).sort((a, b) => b.totalPaid - a.totalPaid),
           perPlatformBreakdown: Object.values(perPlatform).sort((a, b) => b.revenueCollected - a.revenueCollected),
         };
