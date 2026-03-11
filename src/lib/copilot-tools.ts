@@ -820,7 +820,87 @@ export function createUserScopedTools(
     }),
 
     // ──────────────────────────────────────────
-    // 11. generateWhatsappMessage — Build a WhatsApp link
+    // 11. exportClientsReport — Full client CSV export
+    // ──────────────────────────────────────────
+    defineTool("exportClientsReport", {
+      description: "Export all client data into a single CSV file, including their contact info, discipline scores, and all active/paused subscriptions (platforms, plans, and prices). This is the best way to extract the full database of clients for external use.",
+      parameters: z.object({}),
+      handler: async () => {
+        const clients = await prisma.client.findMany({
+          where: { userId },
+          include: {
+            clientSubscriptions: {
+              include: {
+                subscription: {
+                  include: {
+                    plan: { include: { platform: true } },
+                  },
+                },
+                renewalLogs: {
+                  orderBy: { paidOn: "desc" },
+                  take: 1,
+                },
+              },
+            },
+          },
+          orderBy: { name: "asc" },
+        });
+
+        const rows: any[] = [];
+        for (const client of clients) {
+          if (client.clientSubscriptions.length === 0) {
+            rows.push({
+              "ID Cliente": client.id,
+              "Nombre": client.name,
+              "Teléfono": client.phone || "",
+              "Notas": client.notes || "",
+              "Score Disciplina": client.disciplineScore ? Number(client.disciplineScore).toFixed(1) : "N/A",
+              "Estado Salud": client.healthStatus || "New",
+              "Días Vencidos": client.daysOverdue,
+              "Plataforma": "N/A",
+              "Plan": "N/A",
+              "Precio/Mes": "0.00",
+              "Estado Suscripción": "N/A",
+              "Activa Hasta": "N/A",
+              "Último Pago": "N/A",
+              "Fecha Registro": client.createdAt.toLocaleDateString(),
+            });
+          } else {
+            for (const cs of client.clientSubscriptions) {
+              const lastPayment = cs.renewalLogs[0];
+              rows.push({
+                "ID Cliente": client.id,
+                "Nombre": client.name,
+                "Teléfono": client.phone || "",
+                "Notas": client.notes || "",
+                "Score Disciplina": client.disciplineScore ? Number(client.disciplineScore).toFixed(1) : "N/A",
+                "Estado Salud": client.healthStatus || "New",
+                "Días Vencidos": client.daysOverdue,
+                "Plataforma": cs.subscription.plan.platform.name,
+                "Plan": cs.subscription.plan.name,
+                "Precio/Mes": Number(cs.customPrice).toFixed(2),
+                "Estado Suscripción": cs.status,
+                "Activa Hasta": cs.activeUntil.toLocaleDateString(),
+                "Último Pago": lastPayment ? lastPayment.paidOn.toLocaleDateString() : "Never",
+                "Fecha Registro": client.createdAt.toLocaleDateString(),
+              });
+            }
+          }
+        }
+
+        return {
+          totalClients: clients.length,
+          totalRows: rows.length,
+          csvData: rows,
+          status: "download_available",
+          filename: `clientes_pearfect_${new Date().toISOString().split('T')[0]}.csv`,
+          message: `Se han procesado ${clients.length} clientes con éxito. Haz clic abajo para descargar el archivo CSV.`,
+        };
+      },
+    }),
+
+    // ──────────────────────────────────────────
+    // 12. generateWhatsappMessage — Build a WhatsApp link
     // ──────────────────────────────────────────
     defineTool("generateWhatsappMessage", {
       description: "Generate a clickable WhatsApp link to send a message to a client. Use this when the user asks to send a payment reminder, credentials update, or any custom message to a client via WhatsApp. Always fetch the client's phone number first. IMPORTANT: Never include emojis in the message — they cause rendering issues on some devices. Keep messages plain text only.",
@@ -878,6 +958,32 @@ export function createUserScopedTools(
           messageBody,
           whatsappLink,
           instructions: "Click the link above to open WhatsApp with this message pre-filled. Review and send from your device.",
+        };
+      },
+    }),
+
+    // ──────────────────────────────────────────
+    // 13. generateCsvExport — Generic JSON → CSV download (client-side conversion)
+    // ──────────────────────────────────────────
+    defineTool("generateCsvExport", {
+      description: "Convert any JSON data into a downloadable CSV file directly in the browser. Use this whenever the user asks for a CSV, Excel, or data export of ANY kind — platforms, subscriptions, clients, payments, custom views, etc. You MUST first fetch the data using the appropriate read tools (listClients, listSubscriptions, listPlatforms, etc.), then pass the relevant fields as a JSON array to this tool. You control the exact columns: only include what the user asked for. DO NOT use bash, python, or any other method — this is the ONLY way to generate CSVs.",
+      parameters: z.object({
+        data: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))).describe("Array of objects to export. Each object's keys become column headers, values become cells. All values must be primitive (string, number, boolean, or null)."),
+        filename: z.string().optional().describe("Base filename without extension (e.g. 'clientes_marzo'). Date will be appended automatically."),
+        title: z.string().optional().describe("Short human-readable description shown in the chat, e.g. 'Reporte de clientes con pagos vencidos'."),
+      }),
+      handler: async ({ data, filename, title }: any) => {
+        if (!Array.isArray(data) || data.length === 0) {
+          return { error: "No data provided for export. Please fetch data first using a read tool and pass it here." };
+        }
+        const safeFilename = `${(filename || "export").replace(/[^a-z0-9_\-]/gi, "_")}_${new Date().toISOString().split("T")[0]}.csv`;
+        return {
+          status: "download_available",
+          csvData: data,
+          filename: safeFilename,
+          message: title || `Export ready: ${data.length} row(s).`,
+          rowCount: data.length,
+          columnCount: Object.keys(data[0] || {}).length,
         };
       },
     }),

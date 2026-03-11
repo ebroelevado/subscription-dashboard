@@ -187,6 +187,31 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
   const formattedArgs = deepParseJson(args);
   const formattedOutput = deepParseJson(output);
 
+  // ── Loading state: tool call in-flight ──────────────────────────────────
+  if (!isFinished) {
+    return (
+      <div className="my-2 flex items-center gap-2.5 animate-in fade-in slide-in-from-left-1 duration-300">
+        {/* Pulsing ring */}
+        <div className="relative size-5 shrink-0">
+          <span className="absolute inset-0 rounded-full border-2 border-primary/40 animate-ping opacity-75" />
+          <span className="absolute inset-0.5 rounded-full bg-primary/20 border border-primary/40" />
+        </div>
+        {/* Tool name pill */}
+        <div className="flex items-center gap-1.5 bg-muted/30 border border-border/50 rounded-full px-3 py-1 shadow-sm">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-foreground/70">
+            {toolName}
+          </span>
+          {/* Animated dots */}
+          <span className="flex gap-0.5 items-center">
+            <span className="size-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '900ms' }} />
+            <span className="size-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '900ms' }} />
+            <span className="size-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '300ms', animationDuration: '900ms' }} />
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (isFinished) {
     return (
       <div className="my-4 flex flex-col gap-0 text-xs bg-muted/20 dark:bg-muted/5 rounded-xl border border-border/60 shadow-sm overflow-hidden w-full sm:max-w-[400px] transition-all hover:border-primary/20">
@@ -278,8 +303,19 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
            const confirmData = isFinished && !isError ? findStatus(formattedOutput) : null;
            
            // === DOWNLOAD BLOCK (Non-blocking) ===
-           if (isFinished && !isError && (formattedOutput as any)?.status === "download_available") {
-             const data = formattedOutput as any;
+           // Recursively find { status: "download_available" } at any depth (Copilot SDK wraps results in content/detailedContent)
+           const findDownloadData = (obj: any, depth = 0): any => {
+             if (!obj || typeof obj !== 'object' || depth > 5) return null;
+             if (obj.status === "download_available" && obj.csvData) return obj;
+             for (const val of Object.values(obj)) {
+               const found = findDownloadData(val, depth + 1);
+               if (found) return found;
+             }
+             return null;
+           };
+
+           const downloadData = isFinished && !isError ? findDownloadData(formattedOutput) : null;
+           if (downloadData) {
              return (
                <div className="px-3 pb-3 pt-1 animate-in fade-in slide-in-from-bottom-1 duration-500">
                  <div className="rounded-xl border border-primary/30 bg-primary/5 shadow-sm p-4 flex flex-col gap-3">
@@ -290,23 +326,24 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
                      <div className="flex-1 min-w-0">
                        <p className="text-[11px] font-bold text-primary uppercase tracking-widest">{t("chat.ready")}</p>
                        <p className="text-sm text-foreground/90 mt-0.5 leading-snug">
-                         {data.message || "Report generated successfully."}
+                         {downloadData.message || "Report generated successfully."}
                        </p>
                      </div>
                    </div>
                    <Button
                      onClick={() => {
-                        if (!data.csvData) return;
-                        const csvContent = jsonToCsv(data.csvData);
+                        if (!downloadData.csvData) return;
+                        const csvContent = jsonToCsv(downloadData.csvData);
                         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                         const link = document.createElement("a");
                         const url = URL.createObjectURL(blob);
                         link.setAttribute("href", url);
-                        link.setAttribute("download", data.filename || "export.csv");
+                        link.setAttribute("download", downloadData.filename || "export.csv");
                         link.style.visibility = 'hidden';
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
                      }}
                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
                    >

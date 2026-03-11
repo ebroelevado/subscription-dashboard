@@ -142,11 +142,25 @@ export async function POST(req: Request) {
 
     await client.start();
 
-    // 7. Create a streaming session with user-scoped read-only tools
+    // 7. Define a secure permission handler to block dangerous tools (like 'terminal' from the CLI)
+    // and only allow our safe, user-scoped data tools.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const securePermissionRequest = async (event: any) => {
+      const forbiddenTools = ["terminal", "bash", "python", "shell", "command", "exec"];
+      if (forbiddenTools.includes(event.toolName.toLowerCase())) {
+        console.warn(`🛑 Blocked dangerous tool call: ${event.toolName}`);
+        return { 
+          kind: "denied-no-approval-rule-and-could-not-request-from-user" as const
+        };
+      }
+      return { kind: "approved" as const };
+    };
+
+    // 8. Create a streaming session with user-scoped read-only tools
     const copilotSession = await client.createSession({
       model: selectedModel,
       streaming: true,
-      onPermissionRequest: approveAll, // Auto-approve all tools (safe since they are read-only)
+      onPermissionRequest: securePermissionRequest,
       systemMessage: {
         mode: "replace" as const,
         content: [
@@ -162,6 +176,13 @@ export async function POST(req: Request) {
           "- Calculate total MRR, costs, profit, and per-platform breakdown",
           "- Search payment history by client or date range",
           "- List platform renewal payments by provider or date range",
+          "- **CSV/Data Export**: Use `generateCsvExport` to export ANY data as a downloadable CSV. Workflow: (1) fetch data with the appropriate read tool, (2) shape the JSON array with only the columns the user wants, (3) call `generateCsvExport` with that array. This works for clients, subscriptions, platforms, payments, or any custom combination.",
+          "",
+          "STRICT SECURITY GUARDRAILS:",
+          "1. **STRICTLY FORBIDDEN**: NEVER suggest, attempt to use, or tell the user to use `bash`, `python`, `terminal`, `perl`, `awk`, or any shell/terminal commands. You do NOT have permission to run commands in the terminal.",
+          "2. **CSV/EXPORTS**: For ANY export or CSV request, you MUST use `generateCsvExport`. First fetch the data, then pass the shaped array to `generateCsvExport`. Never try to manually format CSV text in your response.",
+          "3. **EXPORT PRIORITY**: If a user asks for 'CSV', 'report', 'excel', or 'data extraction', start with the appropriate read tool, then call `generateCsvExport` immediately.",
+          "4. **NO CLI INSTRUCTIONS**: Never provide instructions for the user to run commands in their local terminal.",
           ...(allowDestructive ? [
             "*** ADVANCED CONTROL TOTAL MODE ENABLED ***",
             "- **Propose** creating new clients and assigning them to seats (the UI executes after approval)",
@@ -178,6 +199,7 @@ export async function POST(req: Request) {
           "SEARCH & AUTONOMY RULES:",
           "1. BE AUTONOMOUS: If a search for a specific name (e.g. 'Angel') yields no results, DO NOT give up immediately. Try broader searches (e.g. use just 'Ang') before reporting failure.",
           "2. FUZZY MATCHING: Favor partial or similar matches.",
+          "3. EXPORT PRIORITY: If a user asks for a 'report', 'CSV', or 'excel', use the corresponding export tool immediately.",
           "",
           "DATABASE MUTATION RULES (PROPOSAL-ONLY — YOU CANNOT EXECUTE):",
           "1. **PROPOSAL ONLY**: You cannot write to the database. You only CALL mutation tools to PROPOSE changes. The UI handles the real execution via a separate secure path after the user clicks 'Aceptar'.",
