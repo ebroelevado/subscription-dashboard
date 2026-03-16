@@ -174,3 +174,40 @@ body {
     @apply font-sans;
   }
 }
+
+/* ── Premium / Gold Elements ── */
+.bg-gold-gradient {
+  background: linear-gradient(
+    135deg,
+    #bd9354 0%,
+    #eecf8e 25%,
+    #bd9354 50%,
+    #f8e0a8 75%,
+    #bd9354 100%
+  );
+  background-size: 200% auto;
+}
+
+.text-gold-gradient {
+  background: linear-gradient(
+    135deg,
+    #bd9354 0%,
+    #eecf8e 50%,
+    #bd9354 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.premium-shimmer {
+  animation: shimmer 3s infinite linear;
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.animate-sparkle {
+  animation: sparkle 2s infinite ease-in-out;
+}

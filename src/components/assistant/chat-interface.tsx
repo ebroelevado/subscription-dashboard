@@ -16,6 +16,17 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css"; // Required for LaTeX math to render nicely
 import { jsonToCsv } from "@/lib/csv-utils";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type ExtendedUIMessagePart = {
   type: string;
@@ -29,6 +40,8 @@ type ExtendedUIMessagePart = {
   toolCall?: { toolName: string; args?: unknown };
   input?: unknown;
 };
+
+const FULL_CONTROL_WARNING_KEY = "assistant-full-control-warning-dismissed";
 
 function Spinner({ className }: { className?: string }) {
   return (
@@ -676,6 +689,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { PremiumPopup } from "@/components/saas/premium-popup";
+import { useSaasStatus } from "@/hooks/use-saas-status";
+
 export function ChatInterface() {
   const t = useTranslations();
   // Copilot Auth State
@@ -686,6 +702,9 @@ export function ChatInterface() {
   // Model Selection State
   const [models, setModels] = useState<{id: string, name?: string}[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
+
+  const { data: saasStatus, isLoading: saasLoading } = useSaasStatus();
+  const isPremium = saasStatus?.plan === "PREMIUM";
 
   useEffect(() => {
     fetch("/api/copilot/status")
@@ -795,12 +814,54 @@ export function ChatInterface() {
 
   const [input, setInput] = useState("");
   const [allowDestructive, setAllowDestructive] = useState(false);
+  const [showFullControlAlert, setShowFullControlAlert] = useState(false);
+  const [dontShowFullControlWarningAgain, setDontShowFullControlWarningAgain] = useState(false);
+  const [skipFullControlWarning, setSkipFullControlWarning] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSkipFullControlWarning(window.localStorage.getItem(FULL_CONTROL_WARNING_KEY) === "1");
+  }, []);
+
+  const handleDestructiveToggle = (checked: boolean) => {
+    if (!checked) {
+      setAllowDestructive(false);
+      return;
+    }
+
+    if (skipFullControlWarning) {
+      setAllowDestructive(true);
+      return;
+    }
+
+    setShowFullControlAlert(true);
+  };
+
+  const confirmFullControl = () => {
+    setAllowDestructive(true);
+
+    if (dontShowFullControlWarningAgain && typeof window !== "undefined") {
+      window.localStorage.setItem(FULL_CONTROL_WARNING_KEY, "1");
+      setSkipFullControlWarning(true);
+    }
+
+    setShowFullControlAlert(false);
+    setDontShowFullControlWarningAgain(false);
+  };
+
+  const cancelFullControl = () => {
+    setAllowDestructive(false);
+    setShowFullControlAlert(false);
+    setDontShowFullControlWarningAgain(false);
+  };
+
   // Vercel AI SDK — useChat
-  const { messages, sendMessage, status, setMessages, stop } = useChat({});
+  const { messages, sendMessage, status, setMessages, stop, error: chatError } = useChat({});
+
+  const isPremiumRequired = chatError?.message?.includes("PREMIUM_REQUIRED") || (chatError as any)?.data?.code === "PREMIUM_REQUIRED";
 
   // HITL (Human-in-the-Loop) state — moved before auto-save hook to avoid ordering issues
   type HitlPending = {
@@ -1116,10 +1177,68 @@ export function ChatInterface() {
     scrollToBottom();
   }, [messages, isLoading]);
 
-  if (hasCopilot === null) {
+  if (hasCopilot === null || saasLoading) {
     return (
       <div className="flex items-center justify-center h-full bg-background">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isPremium === false) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center p-4 relative overflow-hidden bg-background/50">
+        <div className="absolute inset-0 z-0 opacity-20 pointer-events-none filter blur-[8px] flex flex-col pt-20 px-10 gap-8">
+          <div className="h-12 w-2/3 bg-muted rounded-xl animate-pulse" />
+          <div className="h-32 w-full bg-muted rounded-2xl animate-pulse" />
+          <div className="h-12 w-1/2 bg-muted rounded-xl self-end animate-pulse" />
+          <div className="h-24 w-4/5 bg-muted rounded-2xl animate-pulse" />
+        </div>
+
+        <div className="relative z-10 w-full max-w-md animate-fade-in">
+          <Card className="border-border/60 shadow-2xl overflow-hidden backdrop-blur-md bg-background/80 outline outline-1 outline-gold-gradient/20">
+            <CardHeader className="text-center pb-2">
+              <div className="mx-auto w-16 h-16 rounded-2xl bg-gold-gradient flex items-center justify-center mb-4 shadow-lg animate-sparkle">
+                <BrainCircuit className="size-8 text-black" />
+              </div>
+              <CardTitle className="text-2xl font-bold tracking-tight">
+                {t("nav.assistant") || "AI Assistant"}
+              </CardTitle>
+              <CardDescription className="text-base mt-2">
+                {t("saas.features.aiAssistant.description") || "Unlock the full power of our AI to automate your business management."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-4">
+              <div className="space-y-3">
+                {[
+                  "Intelligent automated responses",
+                  "Deep business analytics insights",
+                  "Automated platform management",
+                  "Priority support & higher limits"
+                ].map((feature) => (
+                  <div key={feature} className="flex items-center gap-3 text-sm font-medium">
+                    <div className="size-5 rounded-full bg-gold-gradient flex items-center justify-center shrink-0">
+                      <Check className="size-3 text-black" />
+                    </div>
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
+
+              <PremiumPopup>
+                <Button className="w-full h-12 bg-gold-gradient hover:opacity-90 text-black font-bold text-base border-none shadow-lg transition-all active:scale-[0.98]">
+                  <Sparkles className="size-5 mr-2" />
+                  {t("saas.upgradeNow") || "Upgrade to Premium"}
+                </Button>
+              </PremiumPopup>
+            </CardContent>
+            <CardFooter className="bg-muted/30 border-t py-3 justify-center">
+              <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-widest text-gold-gradient">
+                ★ {t("saas.cancelAnytime") || "Premium Exclusive Feature"} ★
+              </p>
+            </CardFooter>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -1201,8 +1320,11 @@ export function ChatInterface() {
           <div className="flex items-center justify-center size-8 rounded-full bg-primary/10 text-primary shrink-0">
             <Bot className="size-4.5" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex items-center gap-2">
             <h2 className="text-sm sm:text-base font-bold tracking-tight truncate">Pearfect AI</h2>
+            <span className="bg-primary/10 text-primary text-[10px] font-black px-2 py-0.5 rounded-full border border-primary/20">
+              {t("chat.premiumBadge")}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -1395,6 +1517,27 @@ export function ChatInterface() {
 
         <div ref={bottomRef} className="h-4" />
         </div>
+
+        {/* Premium Required Overlay */}
+        {isPremiumRequired && (
+          <div className="absolute inset-x-0 bottom-0 z-30 p-4 sm:p-20 flex items-center justify-center bg-background/40 backdrop-blur-[2px]">
+            <div className="bg-background border-2 border-primary/30 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in-95 duration-500">
+              <div className="size-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
+                <Sparkles className="size-8 text-primary animate-pulse" />
+              </div>
+              <h3 className="text-xl font-bold tracking-tight mb-2">{t("chat.premiumRequiredTitle")}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-8">
+                {t("chat.premiumRequiredDesc")}
+              </p>
+              <PremiumPopup>
+                <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-6 rounded-2xl text-lg shadow-lg transition-all active:scale-95">
+                  <BrainCircuit className="size-5 mr-3" />
+                  {t("chat.upgradeNow")}
+                </Button>
+              </PremiumPopup>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Input Area ── sticky bottom dock (No border/footer) */}
@@ -1460,7 +1603,7 @@ export function ChatInterface() {
                   <Switch 
                     id="destructive-mode" 
                     checked={allowDestructive} 
-                    onCheckedChange={setAllowDestructive}
+                    onCheckedChange={handleDestructiveToggle}
                     className="data-[state=checked]:bg-red-500 scale-90"
                   />
                   <Label htmlFor="destructive-mode" className="text-[10px] sm:text-xs font-bold text-red-500 flex items-center gap-1 cursor-pointer">
@@ -1511,6 +1654,35 @@ export function ChatInterface() {
   return (
     <>
       {chatContent}
+      <AlertDialog open={showFullControlAlert} onOpenChange={(open) => !open && cancelFullControl()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("chat.fullControlAlertTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("chat.fullControlAlertDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={dontShowFullControlWarningAgain}
+              onChange={(event) => setDontShowFullControlWarningAgain(event.target.checked)}
+              className="size-4 rounded border-input"
+            />
+            {t("chat.fullControlDontShowAgain")}
+          </label>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelFullControl}>
+              {t("cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmFullControl} className="bg-red-600 hover:bg-red-700 text-white">
+              {t("chat.fullControlAccept")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}

@@ -1,7 +1,8 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPlanSchema } from "@/lib/validations";
-import { success, withErrorHandling } from "@/lib/api-utils";
+import { success, withErrorHandling, error } from "@/lib/api-utils";
+import { checkPlanLimit } from "@/lib/saas-limits";
 
 // GET /api/plans — List all plans for the authenticated user (optionally filtered by platformId)
 export async function GET(request: NextRequest) {
@@ -32,6 +33,20 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json();
     const data = createPlanSchema.parse(body);
+
+    const platform = await prisma.platform.findUnique({
+      where: { id: data.platformId, userId },
+      select: { id: true },
+    });
+
+    if (!platform) {
+      return error("Platform not found", 404);
+    }
+
+    const limitCheck = await checkPlanLimit(userId, data.platformId);
+    if (!limitCheck.canCreate) {
+      return error(limitCheck.message || "Plan limit reached", 403);
+    }
 
     const plan = await prisma.plan.create({
       data: {

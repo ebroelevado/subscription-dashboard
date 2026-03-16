@@ -2,8 +2,23 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { addMonths, startOfDay } from "date-fns";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+      return NextResponse.json({ ok: false, error: "CRON_SECRET is not configured" }, { status: 500 });
+    }
+
+    const authHeader = req.headers.get("authorization");
+    const headerSecret = req.headers.get("x-cron-secret");
+    const bearer = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : null;
+
+    if (bearer !== secret && headerSecret !== secret) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const today = startOfDay(new Date());
 
     // 1. Find subscriptions that are autopayable and have expired
@@ -60,10 +75,11 @@ export async function GET() {
       processed: results.length,
       renewals: results,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown cron renewal error";
     console.error("[CRON RENEWAL ERROR]", err);
     return NextResponse.json(
-      { ok: false, error: err.message },
+      { ok: false, error: message },
       { status: 500 }
     );
   }

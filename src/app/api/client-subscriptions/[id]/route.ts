@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
 import { differenceInDays, addDays, startOfDay } from "date-fns";
+import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -30,7 +31,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!seat) return error("Seat not found", 404);
-    return success(seat);
+    return success({
+      ...seat,
+      serviceUser: decryptCredential(seat.serviceUser),
+      servicePassword: decryptCredential(seat.servicePassword),
+    });
   });
 }
 
@@ -58,8 +63,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (data.activeUntil !== undefined) updateData.activeUntil = data.activeUntil;
 
     // Handle credentials (stored on ClientSubscription, not Client)
-    if (data.serviceUser !== undefined) updateData.serviceUser = data.serviceUser;
-    if (data.servicePassword !== undefined) updateData.servicePassword = data.servicePassword;
+    if (data.serviceUser !== undefined) updateData.serviceUser = encryptCredential(data.serviceUser);
+    if (data.servicePassword !== undefined) updateData.servicePassword = encryptCredential(data.servicePassword);
 
     if (data.status !== undefined && data.status !== existing.status) {
       updateData.status = data.status;
@@ -90,7 +95,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       where: { id },
       data: updateData,
     });
-    return success(seat);
+    return success({
+      ...seat,
+      serviceUser: decryptCredential(seat.serviceUser),
+      servicePassword: decryptCredential(seat.servicePassword),
+    });
   });
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Link, usePathname } from "@/i18n/navigation";
+import { Link, usePathname, useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -17,6 +17,8 @@ import {
   PanelLeftOpen,
   Settings,
   Bot,
+  Sparkles,
+  Command as CommandIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,7 @@ import { Logo } from "@/components/logo";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CurrencySelector } from "@/components/currency-selector";
+import { useSaasStatus } from "@/hooks/use-saas-status";
 
 // ── Sidebar dimensions ──
 const SIDEBAR_EXPANDED = 260;
@@ -314,7 +317,6 @@ function MobileUserMenu() {
   );
 }
 
-
 // ── Shell ──
 export function DashboardShell({
   children,
@@ -323,11 +325,27 @@ export function DashboardShell({
   children: React.ReactNode;
   defaultCollapsed?: boolean;
 }) {
-  const { data: session } = useSession();
+  const { data: saas } = useSaasStatus();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
-  const t = useTranslations("settings");
   const tc = useTranslations("common");
+  const ts = useTranslations("saas");
+  const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  const nextBillingDate = saas?.stripeCurrentPeriodEnd
+    ? new Date(saas.stripeCurrentPeriodEnd)
+    : null;
+
+  const daysToBilling = nextBillingDate
+    ? Math.max(
+        0,
+        Math.ceil((nextBillingDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      )
+    : null;
+
+  const handleSubscriptionClick = () => {
+    router.push("/dashboard/settings?tab=subscription");
+  };
 
   // Sync cookie on mount (client may override SSR hint)
   useEffect(() => {
@@ -452,6 +470,37 @@ export function DashboardShell({
           <div className="flex-1" />
 
           <CommandPalette />
+          
+          {saas?.plan !== "PREMIUM" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  onClick={handleSubscriptionClick}
+                  className="hidden sm:inline-flex h-9 rounded-xl px-4 font-bold border-none bg-gold-gradient text-black shadow-[0_0_20px_rgba(189,147,84,0.45)]"
+                >
+                  <Sparkles className="size-4 mr-1.5" />
+                  {ts("upgrade")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" className="max-w-[260px] space-y-1.5">
+                <p className="text-xs font-semibold text-foreground">{ts("freePlan")}</p>
+                {nextBillingDate && daysToBilling !== null ? (
+                  <>
+                    <p className="text-[11px] text-muted-foreground">
+                      {tc("daysLeft", { count: daysToBilling })}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {ts("nextBilling")}: {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(nextBillingDate)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">{ts("upgradeToPremium")}</p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           <CurrencySelector variant="header" />
           <LanguageSwitcher />
           <ThemeToggle />

@@ -14,6 +14,7 @@ import {
   buildDeletedClientRestoreData,
   parseDeletedClientSnapshots,
 } from "@/lib/client-deletion-snapshot";
+import { encryptCredential } from "@/lib/credential-encryption";
 import { prisma } from "@/lib/prisma";
 import { markAuditLogUndone } from "@/lib/mutation-token";
 import { randomBytes } from "crypto";
@@ -183,8 +184,8 @@ async function undoMutation(
             leftAt: previousValue.leftAt ? new Date(previousValue.leftAt as string) : null,
             status: previousValue.status as any,
             remainingDays: previousValue.remainingDays as number | null,
-            serviceUser: previousValue.serviceUser as string | null,
-            servicePassword: previousValue.servicePassword as string | null,
+            serviceUser: encryptCredential((previousValue.serviceUser as string | null) ?? null),
+            servicePassword: encryptCredential((previousValue.servicePassword as string | null) ?? null),
           })),
         });
         // Reconnect renewal logs whose clientSubscriptionId was set to NULL on cascade
@@ -292,8 +293,8 @@ async function undoMutation(
                   leftAt: cs.leftAt ? new Date(cs.leftAt as string) : null,
                   status: cs.status as any,
                   remainingDays: (cs.remainingDays as number | null) ?? null,
-                  serviceUser: (cs.serviceUser as string | null) ?? null,
-                  servicePassword: (cs.servicePassword as string | null) ?? null,
+                  serviceUser: encryptCredential((cs.serviceUser as string | null) ?? null),
+                  servicePassword: encryptCredential((cs.servicePassword as string | null) ?? null),
                 })),
               });
               for (const cs of sub.clientSubscriptions as any[]) {

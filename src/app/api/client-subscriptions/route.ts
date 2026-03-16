@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createClientSubscriptionSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
 import { addMonths, startOfDay } from "date-fns";
+import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
 
 // GET /api/client-subscriptions — List all seats (scoped via subscription.userId)
 export async function GET(request: NextRequest) {
@@ -35,7 +36,13 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { joinedAt: "asc" },
     });
-    return success(seats);
+    const remappedSeats = seats.map((seat) => ({
+      ...seat,
+      serviceUser: decryptCredential(seat.serviceUser),
+      servicePassword: decryptCredential(seat.servicePassword),
+    }));
+
+    return success(remappedSeats);
   });
 }
 
@@ -47,6 +54,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const data = createClientSubscriptionSchema.parse(body);
+
+    const { checkUserLimits } = await import("@/lib/saas-limits");
+    const limitCheck = await checkUserLimits(userId);
+    if (!limitCheck.canCreate && limitCheck.type === "SEATS") {
+      throw new Error(limitCheck.message);
+    }
 
     // Verify subscription belongs to this user
     const subscription = await prisma.subscription.findUnique({
@@ -99,7 +112,7 @@ export async function POST(request: NextRequest) {
     const startDate = data.startDate ? startOfDay(data.startDate) : startOfDay(new Date());
     const activeUntil = data.isPaid ? addMonths(startDate, data.durationMonths) : startDate;
 
-    const defaultPaymentNote = (subscription as any).defaultPaymentNote || "como pago";
+    const defaultPaymentNote = subscription.defaultPaymentNote || "como pago";
 
     // If credentials are provided, update the client record
 
@@ -112,8 +125,8 @@ export async function POST(request: NextRequest) {
           activeUntil,
           joinedAt: startDate,
           status: "active",
-          serviceUser: (data as any).serviceUser ?? null,
-          servicePassword: (data as any).servicePassword ?? null,
+          serviceUser: encryptCredential(data.serviceUser),
+          servicePassword: encryptCredential(data.servicePassword),
         },
       });
 
@@ -140,6 +153,13 @@ export async function POST(request: NextRequest) {
       return newSeat;
     });
 
-    return success(seat, 201);
+    return success(
+      {
+        ...seat,
+        serviceUser: decryptCredential(seat.serviceUser),
+        servicePassword: decryptCredential(seat.servicePassword),
+      },
+      201
+    );
   });
 }

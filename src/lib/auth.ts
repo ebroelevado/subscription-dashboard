@@ -62,6 +62,7 @@ const nextAuth = NextAuth({
       if (user) {
         token.id = user.id;
         token.image = user.image;
+        token.plan = (user as any).plan;
         if (account?.provider === "google") {
           token.isOAuth = true;
         }
@@ -76,12 +77,20 @@ const nextAuth = NextAuth({
         if (session.companyName !== undefined) token.companyName = session.companyName;
       }
       
-      // Always fetch the latest critical settings from DB if we have the user ID.
-      // NextAuth tokens are stateless and can become out of sync easily if the DB is modified 
-      // via raw API routes or other devices.
-      if (token.id) {
+      // Refresh critical settings periodically instead of on every token validation.
+      // This keeps tokens in sync while avoiding a DB query on every request.
+      const shouldRefreshFromDb =
+        !!token.id &&
+        (
+          !!user ||
+          trigger === "update" ||
+          !token.lastSyncAt ||
+          Date.now() - Number(token.lastSyncAt) > 5 * 60 * 1000
+        );
+
+      if (shouldRefreshFromDb && token.id) {
         try {
-          const dbUser = await prisma.user.findUnique({
+          const dbUserRaw = await prisma.user.findUnique({
             where: { id: token.id as string },
             select: {
               name: true,
@@ -91,9 +100,11 @@ const nextAuth = NextAuth({
               currency: true,
               disciplinePenalty: true,
               companyName: true,
-            },
+              plan: true,
+            } as any,
           });
           
+          const dbUser = dbUserRaw as any;
           if (dbUser) {
             token.name = dbUser.name;
             token.image = dbUser.image;
@@ -102,6 +113,8 @@ const nextAuth = NextAuth({
             token.currency = dbUser.currency || "EUR";
             token.disciplinePenalty = dbUser.disciplinePenalty ?? 0.5;
             token.companyName = dbUser.companyName ?? null;
+            token.plan = dbUser.plan || "FREE";
+            token.lastSyncAt = Date.now();
           }
         } catch (e) {
           console.error("[Auth] Error reading user from DB:", e);

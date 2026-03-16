@@ -16,8 +16,18 @@ export async function POST(req: Request) {
     // 2. Fetch User's Copilot Token
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { copilotToken: true }
+      select: { copilotToken: true, plan: true }
     });
+
+    if (user?.plan !== "PREMIUM") {
+      return new Response(
+        JSON.stringify({ 
+          error: "AI Assistant is a Premium feature. Please upgrade your plan to continue.",
+          code: "PREMIUM_REQUIRED"
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     if (!user?.copilotToken) {
       return new Response(

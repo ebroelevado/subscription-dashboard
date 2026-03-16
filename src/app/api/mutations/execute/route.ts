@@ -10,6 +10,7 @@
  */
 
 import { auth } from "@/lib/auth";
+import { encryptCredential } from "@/lib/credential-encryption";
 import { prisma } from "@/lib/prisma";
 import {
   validateAndConsumeMutationToken,
@@ -180,8 +181,8 @@ async function executeMutation(
             joinedAt: pendingChanges.joinedAt
               ? new Date(pendingChanges.joinedAt as string)
               : new Date(),
-            serviceUser: (pendingChanges.serviceUser as string) || undefined,
-            servicePassword: (pendingChanges.servicePassword as string) || undefined,
+            serviceUser: encryptCredential((pendingChanges.serviceUser as string) || null) || undefined,
+            servicePassword: encryptCredential((pendingChanges.servicePassword as string) || null) || undefined,
             status: "active",
           },
         });
@@ -340,13 +341,13 @@ async function executeMutation(
             return tx.subscription.update({ 
                where: { id: (subscriptionIds as string[])[0], userId }, 
                data: { 
-                 label: label as string, status: (status as "active" | "paused") ?? undefined, masterUsername: masterUsername as string, masterPassword: masterPassword as string,
+                label: label as string, status: (status as "active" | "paused") ?? undefined, masterUsername: masterUsername as string, masterPassword: encryptCredential((masterPassword as string) || null),
                  ...(startDate ? { startDate: new Date(startDate as string) } : {}),
                  ...(activeUntil ? { activeUntil: new Date(activeUntil as string) } : {})
                }
             });
          } else if (operation === "create") {
-            return tx.subscription.create({ data: { userId, planId: planId as string, label: label as string, status: (status as any) ?? "active", startDate: new Date(startDate as string), activeUntil: new Date(activeUntil as string), masterUsername: masterUsername as string, masterPassword: masterPassword as string }});
+            return tx.subscription.create({ data: { userId, planId: planId as string, label: label as string, status: (status as any) ?? "active", startDate: new Date(startDate as string), activeUntil: new Date(activeUntil as string), masterUsername: masterUsername as string, masterPassword: encryptCredential((masterPassword as string) || null) }});
          }
          return null;
       });

@@ -28,6 +28,11 @@ model User {
   platforms         Platform[]
   sessions          Session[]
   subscriptions     Subscription[]
+  plan              UserPlan           @default(FREE)
+  stripeCustomerId       String?            @unique @map("stripe_customer_id")
+  stripeSubscriptionId   String?            @unique @map("stripe_subscription_id")
+  stripePriceId          String?            @map("stripe_price_id")
+  stripeCurrentPeriodEnd DateTime?          @map("stripe_current_period_end")
 
   @@map("users")
 }
@@ -230,4 +235,9 @@ enum SubscriptionStatus {
 enum ClientSubscriptionStatus {
   active
   paused
+}
+
+enum UserPlan {
+  FREE
+  PREMIUM
 }

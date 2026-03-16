@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSubscriptionSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
+import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -32,7 +33,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!subscription) return error("Subscription not found", 404);
-    return success(subscription);
+
+    return success({
+      ...subscription,
+      clientSubscriptions: subscription.clientSubscriptions.map((seat) => ({
+        ...seat,
+        serviceUser: decryptCredential(seat.serviceUser),
+        servicePassword: decryptCredential(seat.servicePassword),
+      })),
+    });
   });
 }
 
@@ -57,8 +66,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     
     // Allow clearing these fields by checking against undefined (so null sets them to null)
     if (data.masterUsername !== undefined) updateData.masterUsername = data.masterUsername;
-    if (data.masterPassword !== undefined) updateData.masterPassword = data.masterPassword;
+    if (data.masterPassword !== undefined) updateData.masterPassword = encryptCredential(data.masterPassword);
     if (data.ownerId !== undefined) {
+      if (data.ownerId) {
+        const owner = await prisma.client.findUnique({
+          where: { id: data.ownerId, userId },
+          select: { id: true },
+        });
+        if (!owner) return error("Owner client not found", 404);
+      }
       updateData.owner = data.ownerId ? { connect: { id: data.ownerId } } : { disconnect: true };
     }
     if (data.isAutopayable !== undefined) updateData.isAutopayable = data.isAutopayable;

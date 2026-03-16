@@ -15,12 +15,15 @@ import {
   BrainCircuit,
   Github,
   LogOut,
+  CreditCard,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { PremiumPopup } from "@/components/saas/premium-popup";
+import { Sparkles } from "lucide-react";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CurrencySelector } from "@/components/currency-selector";
-
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -60,6 +63,9 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { useTranslations } from "next-intl";
 import { useEffect } from "react";
+import { SubscriptionManager } from "@/components/saas/subscription-manager";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useSaasStatus } from "@/hooks/use-saas-status";
 
 
 // ── Profile Tab ──
@@ -760,6 +766,19 @@ function AssistantTab() {
 // ── Page ──
 export default function SettingsPage() {
   const t = useTranslations("settings");
+  const { data: saasStatus } = useSaasStatus();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const locale = pathname.split("/")[1] || "en";
+  const isPremiumUser = saasStatus?.plan === "PREMIUM";
+  const requestedTab = searchParams.get("tab");
+  const validTabs = new Set(["profile", "appearance", "assistant", "data", "subscription"]);
+  const defaultTab = requestedTab && validTabs.has(requestedTab) ? requestedTab : "profile";
+  const [activeTab, setActiveTab] = useState(defaultTab);
+
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
 
   return (
     <div className="space-y-6">
@@ -773,33 +792,47 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
-        <div className="rounded-xl border border-border bg-muted/5 shadow-sm overflow-hidden">
-          <TabsList className="grid grid-cols-4 w-full h-14 bg-transparent p-0 gap-0 border-none rounded-none divide-x divide-border/30">
-            <TabsTrigger 
-              value="profile" 
-              className="h-full rounded-none rounded-l-[11px] bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
-            >
-              {t("profile")}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="appearance" 
-              className="h-full rounded-none bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
-            >
-              {t("appearance")}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="assistant" 
-              className="h-full rounded-none bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
-            >
-              {t("assistant")}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="data" 
-              className="h-full rounded-none rounded-r-[11px] bg-transparent px-2 font-medium text-muted-foreground transition-all duration-200 data-[state=active]:bg-primary/5 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_0_hsl(var(--primary))] hover:bg-muted/10 hover:text-foreground/80 focus-visible:ring-0"
-            >
-              {t("data")}
-            </TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <div className="flex justify-center sm:justify-start">
+          <TabsList className="inline-flex h-12 items-center justify-center rounded-xl bg-muted/50 p-1 text-muted-foreground shadow-sm border border-border/40 w-full sm:w-auto">
+            {[
+              { value: "profile", label: t("profile"), icon: User },
+              { value: "appearance", label: t("appearance"), icon: Palette },
+              { value: "assistant", label: t("assistant"), icon: BrainCircuit, premium: true },
+              { value: "data", label: t("data"), icon: Download },
+              { value: "subscription", label: t("subscription"), icon: CreditCard },
+            ].map((tab) => {
+              const isLocked = tab.premium && !isPremiumUser;
+
+              const trigger = (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  disabled={isLocked}
+                  className={cn(
+                    "inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 h-full gap-2",
+                    "data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border/50",
+                    "hover:text-foreground/80 hover:bg-muted/30 transition-colors"
+                  )}
+                >
+                  <tab.icon className="size-4" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  {isLocked && <Sparkles className="size-3 text-gold-gradient animate-sparkle" />}
+                </TabsTrigger>
+              );
+
+              if (isLocked) {
+                return (
+                  <PremiumPopup key={tab.value}>
+                    <button className="flex-1 sm:flex-none h-full focus:outline-none">
+                      {trigger}
+                    </button>
+                  </PremiumPopup>
+                );
+              }
+
+              return trigger;
+            })}
           </TabsList>
         </div>
 
@@ -817,6 +850,10 @@ export default function SettingsPage() {
 
         <TabsContent value="data">
           <DataTab />
+        </TabsContent>
+
+        <TabsContent value="subscription">
+          <SubscriptionManager locale={locale} />
         </TabsContent>
       </Tabs>
     </div>

@@ -85,6 +85,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createClientSchema.parse(body);
 
+    const { checkUserLimits } = await import("@/lib/saas-limits");
+    const limitCheck = await checkUserLimits(userId);
+    if (!limitCheck.canCreate && limitCheck.type === "CLIENTS") {
+      throw new Error(limitCheck.message);
+    }
+
     const newClient = await prisma.client.create({
       data: {
         userId,

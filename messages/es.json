@@ -8,6 +8,9 @@
     "cancel": "Cancelar",
     "delete": "Eliminar",
     "edit": "Editar",
+    "manage": "Gestión",
+    "subscription": "Suscripción",
+    "security": "Seguridad",
     "add": "Añadir",
     "search": "Buscar",
     "download": "Descargar",
@@ -450,7 +453,15 @@
     "cogs": "COGS",
     "netMargin": "Margen Neto",
     "disciplineScore": "Puntuación de Disciplina",
-    "totalPayments": "Pagos Totales"
+    "totalPayments": "Pagos Totales",
+    "premiumAnalysis": "Análisis Premium",
+    "premiumAnalysisDesc": "Visualiza tendencias históricas y proyecciones de ingresos con el plan Premium.",
+    "disciplineScoreTitle": "Puntuación de Disciplina",
+    "disciplineScoreDesc": "Analiza la puntualidad de tus clientes y obtén scores predictivos con Premium.",
+    "topPremiumUsers": "Top Usuarios Premium",
+    "breakEvenTitle": "Análisis de Rentabilidad",
+    "breakEvenDesc": "Descubre qué suscripciones son realmente rentables y calcula tu punto de equilibrio automáticamente con Pearfect Premium.",
+    "upgradeNow": "Actualizar a Premium"
   },
   "settings": {
     "title": "Ajustes",
@@ -586,6 +597,10 @@
     "reject": "Rechazar",
     "querying": "Consultando...",
     "fullControlTitle": "Control Total",
+    "fullControlAlertTitle": "Activar Control Total",
+    "fullControlAlertDescription": "Este modo permite cambios sensibles y acciones potencialmente destructivas. Úsalo solo si revisas cuidadosamente cada operación.",
+    "fullControlDontShowAgain": "No mostrar de nuevo",
+    "fullControlAccept": "Sí, activar",
     "undo": "Ir Atrás",
     "undoing": "Deshaciendo...",
     "modifying": "Modificando...",
@@ -621,7 +636,11 @@
     "connectDeviceFlow": "Conectar vía Device Flow",
     "openVerificationLink": "1. Abre el enlace de verificación:",
     "enterCode": "2. Introduce este código:",
-    "waitingAuth": "Esperando autorización..."
+    "waitingAuth": "Esperando autorización...",
+    "premiumRequiredTitle": "Función Premium",
+    "premiumRequiredDesc": "El Asistente IA solo está disponible para usuarios Premium. Suscríbete ahora para desbloquear análisis automáticos, exportaciones CSV y más.",
+    "upgradeNow": "Actualizar a Premium",
+    "premiumBadge": "PREMIUM"
   },
   "metadata": {
     "title": "Pearfect S.L. — Gestión Profesional de Suscripciones",
@@ -638,5 +657,47 @@
     "settingsTitle": "Ajustes — Pearfect S.L.",
     "loginTitle": "Iniciar Sesión — Pearfect S.L.",
     "signupTitle": "Registrarse — Pearfect S.L."
+  },
+  "saas": {
+    "subscriptionTitle": "Plan de Suscripción",
+    "subscription": "Suscripción",
+    "freePlan": "Actualmente estás en el plan Gratuito. Algunas funciones avanzadas están limitadas.",
+    "premiumActive": "Eres suscriptor Premium. ¡Gracias por tu apoyo!",
+    "upgradeToPremium": "Mejorar a Premium",
+    "manageBilling": "Gestionar Facturación",
+    "subscribeNow": "Suscribirse a Premium",
+    "nextBilling": "Próxima fecha de facturación",
+    "labels": {
+      "plan": "Plan",
+      "platforms": "Plataformas",
+      "plans": "Planes",
+      "subscriptions": "Suscripciones"
+    },
+    "upgradeError": "Error al iniciar la actualización. Por favor, inténtelo de nuevo.",
+    "portalError": "Error al abrir el portal de facturación. Por favor, inténtelo de nuevo.",
+    "upgrade": "Mejorar Plan",
+    "popupTitle": "Pásate a Premium",
+    "popupDescription": "Desbloquea todo el potencial de Pearfect con nuestro plan Premium.",
+    "upgradeNow": "Actualizar Ahora",
+    "cancelAnytime": "Cancela cuando quieras. Pago seguro por Stripe.",
+    "features": {
+      "unlimitedPlatforms": {
+        "title": "Plataformas Ilimitadas",
+        "description": "Crea tantas plataformas como necesites sin restricciones."
+      },
+      "aiAssistant": {
+        "title": "Asistente IA Completo",
+        "description": "Obtén información inteligente y ayuda automatizada."
+      },
+      "advancedAnalytics": {
+        "title": "Analítica Avanzada",
+        "description": "Desbloquea análisis profundos y tendencias para todos tus KPIs."
+      },
+      "prioritySupport": {
+        "title": "Soporte Prioritario",
+        "description": "Acceso directo a nuestro equipo de soporte."
+      }
+    },
+    "billingManagedByStripe": "La facturación está gestionada de forma segura por Stripe."
   }
 }

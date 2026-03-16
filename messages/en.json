@@ -281,8 +281,9 @@
     "actualRevenue": "Actual Revenue",
     "platformCost": "Platform Cost",
     "revenueDelta": "+{amount} if all resumed",
-    "margin": "Margin",
-    "occupancy": "Occupancy",
+    "manage": "Management",
+    "subscription": "Subscription",
+    "security": "Security",
     "seatMap": "Seat Map",
     "pauseAll": "Pause All",
     "resumeAll": "Resume All",
@@ -458,7 +459,15 @@
     "cogs": "COGS",
     "netMargin": "Net Margin",
     "disciplineScore": "Discipline Score",
-    "totalPayments": "Total Payments"
+    "totalPayments": "Total Payments",
+    "premiumAnalysis": "Premium Analysis",
+    "premiumAnalysisDesc": "Visualize historical trends and revenue projections with the Premium plan.",
+    "disciplineScoreTitle": "Discipline Score",
+    "disciplineScoreDesc": "Analyze your clients' punctuality and get predictive scores with Premium.",
+    "topPremiumUsers": "Top Premium Users",
+    "breakEvenTitle": "Profitability Analysis",
+    "breakEvenDesc": "Discover which subscriptions are truly profitable and calculate your break-even point automatically with Pearfect Premium.",
+    "upgradeNow": "Upgrade to Premium"
   },
   "settings": {
     "title": "Settings",
@@ -596,6 +605,10 @@
     "reject": "Reject",
     "querying": "Querying...",
     "fullControlTitle": "Full Control",
+    "fullControlAlertTitle": "Enable Full Control",
+    "fullControlAlertDescription": "This mode allows sensitive changes and potentially destructive actions. Use it only if you review each operation carefully.",
+    "fullControlDontShowAgain": "Don't show again",
+    "fullControlAccept": "Yes, enable",
     "undo": "Undo",
     "undoing": "Undoing...",
     "modifying": "Modifying...",
@@ -628,7 +641,11 @@
     "connectDeviceFlow": "Connect via Device Flow",
     "openVerificationLink": "1. Open the verification link:",
     "enterCode": "2. Enter this code:",
-    "waitingAuth": "Waiting for authorization..."
+    "waitingAuth": "Waiting for authorization...",
+    "premiumRequiredTitle": "Premium Feature",
+    "premiumRequiredDesc": "The AI Assistant is only available for Premium users. Upgrade now to unlock automated analysis, CSV exports, and more.",
+    "upgradeNow": "Upgrade to Premium",
+    "premiumBadge": "PREMIUM"
   },
   "metadata": {
     "title": "Pearfect S.L. — Professional Subscription Management",
@@ -645,5 +662,47 @@
     "settingsTitle": "Settings — Pearfect S.L.",
     "loginTitle": "Sign In — Pearfect S.L.",
     "signupTitle": "Sign Up — Pearfect S.L."
+  },
+  "saas": {
+    "subscriptionTitle": "Subscription Plan",
+    "subscription": "Subscription",
+    "freePlan": "You are currently on the Free plan. Some advanced features are limited.",
+    "premiumActive": "You are a Premium subscriber. Thank you for your support!",
+    "upgradeToPremium": "Upgrade to Premium",
+    "manageBilling": "Manage Billing",
+    "subscribeNow": "Subscribe to Premium",
+    "nextBilling": "Next billing date",
+    "labels": {
+      "plan": "Plan",
+      "platforms": "Platforms",
+      "plans": "Plans",
+      "subscriptions": "Subscriptions"
+    },
+    "upgradeError": "Failed to initiate upgrade. Please try again.",
+    "portalError": "Failed to open billing portal. Please try again.",
+    "upgrade": "Upgrade",
+    "popupTitle": "Upgrade to Premium",
+    "popupDescription": "Unlock the full potential of Pearfect with our Premium plan.",
+    "upgradeNow": "Upgrade Now",
+    "cancelAnytime": "Cancel anytime. Secure checkout by Stripe.",
+    "features": {
+      "unlimitedPlatforms": {
+        "title": "Unlimited Platforms",
+        "description": "Create as many platforms as you need without restrictions."
+      },
+      "aiAssistant": {
+        "title": "Full AI Assistant",
+        "description": "Get smart insights and automated help for your subscriptions."
+      },
+      "advancedAnalytics": {
+        "title": "Advanced Analytics",
+        "description": "Unlock deep analysis and trends for all your KPIs."
+      },
+      "prioritySupport": {
+        "title": "Priority Support",
+        "description": "Direct access to our support team for any questions."
+      }
+    },
+    "billingManagedByStripe": "Billing is securely managed by Stripe."
   }
 }

@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPlatformSchema } from "@/lib/validations";
-import { success, withErrorHandling } from "@/lib/api-utils";
+import { success, withErrorHandling, error } from "@/lib/api-utils";
 
 // GET /api/platforms — List all platforms for the authenticated user
 export async function GET() {
@@ -31,6 +31,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const data = createPlatformSchema.parse(body);
+
+    const { checkUserLimits } = await import("@/lib/saas-limits");
+    const limitCheck = await checkUserLimits(userId);
+    if (!limitCheck.canCreate && limitCheck.type === "PLATFORMS") {
+      return error(limitCheck.message, 403);
+    }
 
     const platform = await prisma.platform.create({ 
       data: { ...data, userId } 

@@ -1,7 +1,9 @@
 import { type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSubscriptionSchema } from "@/lib/validations";
-import { success, withErrorHandling } from "@/lib/api-utils";
+import { success, withErrorHandling, error } from "@/lib/api-utils";
+import { checkSubscriptionLimit } from "@/lib/saas-limits";
+import { encryptCredential } from "@/lib/credential-encryption";
 
 // GET /api/subscriptions — List all subscriptions for the authenticated user (optionally filtered by planId)
 export async function GET(request: NextRequest) {
@@ -48,6 +50,31 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createSubscriptionSchema.parse(body);
 
+    const plan = await prisma.plan.findUnique({
+      where: { id: data.planId, userId },
+      select: { id: true },
+    });
+
+    if (!plan) {
+      return error("Plan not found", 404);
+    }
+
+    if (data.ownerId) {
+      const owner = await prisma.client.findUnique({
+        where: { id: data.ownerId, userId },
+        select: { id: true },
+      });
+
+      if (!owner) {
+        return error("Owner client not found", 404);
+      }
+    }
+
+    const limitCheck = await checkSubscriptionLimit(userId);
+    if (!limitCheck.canCreate) {
+      return error(limitCheck.message || "Subscription limit reached", 403);
+    }
+
     const activeUntil = data.isPaid ? addMonths(data.startDate, data.durationMonths) : data.startDate;
     const defaultPaymentNote = data.defaultPaymentNote || "como pago";
 
@@ -60,7 +87,7 @@ export async function POST(request: NextRequest) {
           activeUntil,
           status: data.status,
           masterUsername: data.masterUsername,
-          masterPassword: data.masterPassword,
+          masterPassword: encryptCredential(data.masterPassword),
           isAutopayable: data.isAutopayable,
           defaultPaymentNote,
           user: { connect: { id: userId } },

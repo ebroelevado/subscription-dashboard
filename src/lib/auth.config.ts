@@ -29,6 +29,7 @@ declare module "next-auth/jwt" {
     disciplinePenalty?: number;
     companyName?: string | null;
     whatsappSignatureMode?: string;
+    lastSyncAt?: number;
   }
 }
 

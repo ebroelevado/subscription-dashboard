@@ -24,6 +24,14 @@ export async function withErrorHandling(
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof NextResponse) {
+      return err;
+    }
+
+    if (err instanceof Response) {
+      return NextResponse.json({ ok: false, error: err.statusText || "Request failed" }, { status: err.status || 500 });
+    }
+
     if (err instanceof ZodError) {
       const messages = err.issues.map(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

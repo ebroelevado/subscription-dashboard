@@ -451,7 +451,15 @@
     "cogs": "COGS",
     "netMargin": "净利润率",
     "disciplineScore": "付款信誉得分",
-    "totalPayments": "总计付款"
+    "totalPayments": "付款总计",
+    "premiumAnalysis": "高级分析",
+    "premiumAnalysisDesc": "使用高级版查看历史趋势和收入预测。",
+    "disciplineScoreTitle": "付款信誉得分",
+    "disciplineScoreDesc": "分析客户的守时情况并获取高级版的预测得分。",
+    "topPremiumUsers": "高级用户排行",
+    "breakEvenTitle": "盈亏平衡分析",
+    "breakEvenDesc": "发现哪些订阅真正盈利，并使用 Pearfect 高级版自动计算您的盈亏平衡点。",
+    "upgradeNow": "升级到高级版"
   },
   "settings": {
     "title": "设置",
@@ -589,6 +597,10 @@
     "reject": "拒绝",
     "querying": "查询中...",
     "fullControlTitle": "完全控制",
+    "fullControlAlertTitle": "启用完全控制",
+    "fullControlAlertDescription": "该模式允许敏感变更和潜在破坏性操作。仅在你会逐项仔细确认时使用。",
+    "fullControlDontShowAgain": "不再提示",
+    "fullControlAccept": "是，启用",
     "undo": "撤销",
     "undoing": "撤销中...",
     "modifying": "修改中...",
@@ -621,7 +633,11 @@
     "connectDeviceFlow": "通过设备流程连接",
     "openVerificationLink": "1. 打开验证链接：",
     "enterCode": "2. 输入此代码：",
-    "waitingAuth": "等待授权..."
+    "waitingAuth": "等待授权...",
+    "premiumRequiredTitle": "高级功能",
+    "premiumRequiredDesc": "AI助手仅供高级用户使用。立即升级以解锁自动分析、CSV导出等功能。",
+    "upgradeNow": "升级到高级版",
+    "premiumBadge": "高级"
   },
   "metadata": {
     "title": "Pearfect S.L. — 专业订阅管理",
@@ -638,5 +654,25 @@
     "settingsTitle": "设置 — Pearfect S.L.",
     "loginTitle": "登录 — Pearfect S.L.",
     "signupTitle": "注册 — Pearfect S.L."
+  },
+  "saas": {
+    "subscriptionTitle": "订阅计划",
+    "subscription": "订阅",
+    "upgrade": "升级",
+    "freePlan": "您当前使用的是免费计划。一些高级功能受到限制。",
+    "premiumActive": "您是高级订阅者。感谢您的支持！",
+    "upgradeToPremium": "升级到高级版",
+    "manageBilling": "管理账单与计划",
+    "subscribeNow": "订阅高级版",
+    "nextBilling": "下次账单日期",
+    "labels": {
+      "plan": "方案",
+      "platforms": "平台",
+      "plans": "计划",
+      "subscriptions": "订阅"
+    },
+    "upgradeError": "无法启动升级。请稍后再试。",
+    "portalError": "无法打开账单门户。请稍后再试。",
+    "billingManagedByStripe": "账单由 Stripe 安全管理。"
   }
 }
