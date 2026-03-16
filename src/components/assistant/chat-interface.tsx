@@ -1675,7 +1675,7 @@ export function ChatInterface() {
 
           <AlertDialogFooter>
             <AlertDialogCancel onClick={cancelFullControl}>
-              {t("cancel")}
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={confirmFullControl} className="bg-red-600 hover:bg-red-700 text-white">
               {t("chat.fullControlAccept")}
