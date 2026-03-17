@@ -792,8 +792,8 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Mobile: Horizontal Icon Tabs */}
-      <div className="lg:hidden flex gap-1 overflow-x-auto pb-4 border-b border-border/50 -mx-4 px-4 scroll-smooth">
+      {/* Top Bar Navigation */}
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-1 border-b border-border/50 pb-4">
         {[
           { value: "profile", label: t("profile"), icon: User },
           { value: "appearance", label: t("appearance"), icon: Palette },
@@ -808,16 +808,17 @@ export default function SettingsPage() {
               key={tab.value}
               onClick={() => !isLocked && setActiveTab(tab.value)}
               disabled={isLocked}
-              title={tab.label}
               className={cn(
-                "flex items-center justify-center size-10 rounded-lg gap-0 shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
+                "relative flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 whitespace-nowrap",
+                "sm:flex-1 justify-center sm:justify-start",
                 activeTab === tab.value
-                  ? "bg-primary/10 text-primary"
-                  : "hover:bg-muted text-muted-foreground"
+                  ? "bg-primary/10 text-primary border-b-2 sm:border-b-0 sm:border-l-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50 sm:hover:bg-transparent"
               )}
             >
-              <tab.icon className="size-4" />
-              {isLocked && <Sparkles className="absolute size-2 top-1 right-1 text-gold-gradient animate-sparkle" />}
+              <tab.icon className="size-4 shrink-0" />
+              <span className="hidden sm:inline">{tab.label}</span>
+              {isLocked && <Sparkles className="size-2.5 text-gold-gradient animate-sparkle" />}
             </button>
           );
 
@@ -835,63 +836,8 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {/* Desktop: Vertical Sidebar + Content */}
-      <div className="hidden lg:flex gap-8">
-        <aside className="w-48 shrink-0">
-          <nav className="sticky top-20 flex flex-col gap-1">
-            {[
-              { value: "profile", label: t("profile"), icon: User },
-              { value: "appearance", label: t("appearance"), icon: Palette },
-              { value: "assistant", label: t("assistant"), icon: BrainCircuit, premium: true },
-              { value: "data", label: t("data"), icon: Download },
-              { value: "subscription", label: t("subscription"), icon: CreditCard },
-            ].map((tab) => {
-              const isLocked = tab.premium && !isPremiumUser;
-
-              const trigger = (
-                <button
-                  key={tab.value}
-                  onClick={() => !isLocked && setActiveTab(tab.value)}
-                  disabled={isLocked}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
-                    activeTab === tab.value
-                      ? "bg-muted text-foreground font-semibold"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  )}
-                >
-                  <tab.icon className="size-4 shrink-0" />
-                  <span>{tab.label}</span>
-                  {isLocked && <Sparkles className="size-3 text-gold-gradient animate-sparkle shrink-0 ml-auto" />}
-                </button>
-              );
-
-              if (isLocked) {
-                return (
-                  <PremiumPopup key={tab.value}>
-                    <div>
-                      {trigger}
-                    </div>
-                  </PremiumPopup>
-                );
-              }
-
-              return trigger;
-            })}
-          </nav>
-        </aside>
-
-        <div className="flex-1 min-w-0">
-          {activeTab === "profile" && <ProfileTab />}
-          {activeTab === "appearance" && <AppearanceTab />}
-          {activeTab === "assistant" && <AssistantTab />}
-          {activeTab === "data" && <DataTab />}
-          {activeTab === "subscription" && <SubscriptionManager locale={locale} />}
-        </div>
-      </div>
-
-      {/* Mobile: Content below tabs */}
-      <div className="lg:hidden">
+      {/* Content */}
+      <div className="w-full">
         {activeTab === "profile" && <ProfileTab />}
         {activeTab === "appearance" && <AppearanceTab />}
         {activeTab === "assistant" && <AssistantTab />}
