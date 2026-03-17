@@ -793,7 +793,8 @@ export default function SettingsPage() {
       </div>
 
       {/* Top Bar Navigation */}
-      <div className="flex flex-row gap-1 border-b border-border/50 pb-4 overflow-x-auto sm:overflow-visible">
+      <div className="space-y-4">
+        <div className="grid grid-cols-5 gap-1.5 rounded-xl border border-border/60 bg-muted/20 p-1.5">
         {[
           { value: "profile", label: t("profile"), icon: User },
           { value: "appearance", label: t("appearance"), icon: Palette },
@@ -809,14 +810,14 @@ export default function SettingsPage() {
               onClick={() => !isLocked && setActiveTab(tab.value)}
               disabled={isLocked}
               className={cn(
-                "relative flex items-center gap-2 rounded-none px-2 sm:px-4 py-2.5 text-xs sm:text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 whitespace-nowrap flex-1 sm:flex-initial justify-center sm:justify-start",
+                "relative flex w-full items-center justify-center gap-2 rounded-lg px-2 sm:px-3 py-2.5 text-xs sm:text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
                 activeTab === tab.value
-                  ? "bg-primary/5 text-primary border-t-2 border-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                  ? "bg-background text-foreground shadow-sm ring-1 ring-border after:absolute after:top-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
               )}
             >
               <tab.icon className="size-4 shrink-0" />
-              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="hidden sm:inline truncate">{tab.label}</span>
               {isLocked && <Sparkles className="size-2.5 text-gold-gradient animate-sparkle" />}
             </button>
           );
@@ -824,7 +825,7 @@ export default function SettingsPage() {
           if (isLocked) {
             return (
               <PremiumPopup key={tab.value}>
-                <div>
+                <div className="w-full">
                   {trigger}
                 </div>
               </PremiumPopup>
@@ -833,6 +834,8 @@ export default function SettingsPage() {
 
           return trigger;
         })}
+        </div>
+        <div className="h-px bg-border/50" />
       </div>
 
       {/* Content */}
