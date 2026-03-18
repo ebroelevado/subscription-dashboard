@@ -86,9 +86,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-8 z-10">
         {/* Logo area */}
         <div className="flex flex-col items-center gap-3">
-          <div className="p-3 bg-muted/50 rounded-2xl border border-border/50 shadow-sm">
-            <Logo size={40} className="text-primary" />
-          </div>
+          <Logo size={48} className="text-primary" />
           <h1 className="text-2xl font-bold tracking-tight">Pearfect S.L.</h1>
         </div>
 

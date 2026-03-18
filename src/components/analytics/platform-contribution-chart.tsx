@@ -75,8 +75,9 @@ export default function PlatformContributionChart({
   const barColor = mode === "income" ? "#10b981" : mode === "cost" ? "#ef4444" : "#3b82f6";
 
   return (
-    <ResponsiveContainer width="100%" height={360}>
-      <BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+    <div className="h-full">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={chartData} layout="vertical" barSize={32} margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
         <XAxis
           type="number"
@@ -87,7 +88,7 @@ export default function PlatformContributionChart({
         <YAxis
           type="category"
           dataKey="platform"
-          width={120}
+          width={70}
           tick={{ fontSize: 12 }}
           className="fill-muted-foreground"
         />
@@ -100,5 +101,6 @@ export default function PlatformContributionChart({
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    </div>
   );
 }

@@ -72,15 +72,15 @@ export default function ClientPieChart({ data, currency }: { data: PieDataPoint[
   const total = normalizedData.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div className="space-y-3">
-      <ResponsiveContainer width="100%" height={320}>
+    <div className="flex flex-col h-full gap-3">
+      <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie
             data={normalizedData}
             cx="50%"
-            cy="46%"
-            innerRadius={66}
-            outerRadius={104}
+            cy="50%"
+            innerRadius={80}
+            outerRadius={114}
             paddingAngle={2}
             cornerRadius={6}
             dataKey="value"
@@ -123,7 +123,7 @@ export default function ClientPieChart({ data, currency }: { data: PieDataPoint[
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
         {normalizedData.map((entry) => (
-          <div key={entry.name} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 bg-muted/20">
+          <div key={entry.name} className="flex items-center justify-between gap-3 rounded-md px-2 py-0.5 bg-muted/20">
             <div className="flex items-center gap-2 min-w-0">
               <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.fill }} />
               <span className="truncate text-foreground">{entry.name}</span>

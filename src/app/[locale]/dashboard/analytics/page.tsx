@@ -248,33 +248,33 @@ export default function AnalyticsPage() {
         />
       </div>
 
-      {/* Charts row */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        {/* Revenue vs Cost Area Chart */}
-        <div className={cn("lg:col-span-3 rounded-xl border bg-card p-5 relative overflow-hidden flex flex-col", premiumHighlight)}>
-          <div className="flex items-center justify-between mb-4">
+      {/* Charts — uniform 2×2 grid */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* ── 1. Revenue vs Cost Area Chart ── */}
+        <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden flex flex-col h-[500px]", premiumHighlight)}>
+          <div className="mb-3">
             <h2 className="text-base font-semibold">
               {t("revenueVsCost")}
             </h2>
-            <div className="flex items-center rounded-lg border bg-muted/50 p-0.5">
-              {SCALE_OPTIONS.map(({ value, label, icon: ScaleIcon }) => (
-                <button
-                  key={value}
-                  onClick={() => setTrendScale(value)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all",
-                    trendScale === value
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <ScaleIcon className="size-3.5" />
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
-          <div className="relative flex-1 min-h-[380px]">
+          <div className="flex items-center rounded-lg border bg-muted/50 p-0.5 w-fit mb-3">
+            {SCALE_OPTIONS.map(({ value, label, icon: ScaleIcon }) => (
+              <button
+                key={value}
+                onClick={() => setTrendScale(value)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all",
+                  trendScale === value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <ScaleIcon className="size-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1">
             {trendsLoading ? (
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -310,13 +310,13 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Client Weight Pie Chart */}
-        <div className={cn("lg:col-span-2 rounded-xl border bg-card p-5 relative overflow-hidden", premiumHighlight)}>
-          <h2 className="text-base font-semibold mb-4">
+        {/* ── 2. Client Weight Pie Chart ── */}
+        <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden flex flex-col h-[500px]", premiumHighlight)}>
+          <h2 className="text-base font-semibold mb-1">
             {t("topClients")}
           </h2>
-          <div className="relative">
-            <div className={cn("transition-all duration-500", isFree && "blur-md select-none pointer-events-none opacity-40")}>
+          <div className="relative flex-1">
+            <div className={cn("h-full transition-all duration-500", isFree && "blur-md select-none pointer-events-none opacity-40")}>
               {pieData.length > 0 ? (
                 <ClientPieChart data={pieData} currency={currency} />
               ) : (
@@ -327,21 +327,26 @@ export default function AnalyticsPage() {
             </div>
             
             {isFree && (
-              <PremiumPopup>
-                <button className="absolute inset-0 z-10 flex items-center justify-center group focus:outline-none">
-                  <div className="bg-background/90 backdrop-blur-md border border-gold-gradient/20 rounded-full size-24 flex items-center justify-center animate-in zoom-in-75 duration-500 shadow-xl group-hover:scale-110 transition-transform">
-                    <Sparkles className="size-8 text-gold-gradient animate-sparkle" />
-                  </div>
-                </button>
-              </PremiumPopup>
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center">
+                <div className="bg-background/90 backdrop-blur-md border border-gold-gradient/20 rounded-2xl p-6 shadow-2xl max-w-[280px] animate-in zoom-in-95 duration-500 outline outline-1 outline-gold-gradient/10">
+                  <Sparkles className="size-6 text-gold-gradient mx-auto mb-3 animate-pulse" />
+                  <h3 className="text-sm font-bold mb-1 text-gold-gradient">{t("topClients")}</h3>
+                  <p className="text-[11px] text-muted-foreground mb-4">
+                    {t("premiumAnalysisDesc")}
+                  </p>
+                  <PremiumPopup>
+                    <Button size="sm" className="w-full h-8 text-[11px] font-bold rounded-xl bg-gold-gradient hover:opacity-90 text-black border-none shadow-md">
+                       {t("upgradeNow")}
+                    </Button>
+                  </PremiumPopup>
+                </div>
+              </div>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Payment Discipline — Granular */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden", premiumHighlight)}>
+        {/* ── 3. Payment Discipline ── */}
+        <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden flex flex-col h-[560px]", premiumHighlight)}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold">{t("discipline")}</h2>
             {hasDisciplineFilter && (
@@ -356,8 +361,8 @@ export default function AnalyticsPage() {
             )}
           </div>
 
-          {/* Discipline Filters */}
-          <div className="flex flex-wrap gap-2 mb-4">
+          {/* Discipline Filters — single row */}
+          <div className="flex gap-2 mb-4">
             <Select
               value={disciplineFilters.planId ?? "all"}
               onValueChange={(v) =>
@@ -367,7 +372,7 @@ export default function AnalyticsPage() {
                 }))
               }
             >
-              <SelectTrigger className="w-36 h-8 text-xs">
+              <SelectTrigger className="flex-1 h-8 text-xs min-w-0">
                 <SelectValue placeholder={tc("allPlans")} />
               </SelectTrigger>
               <SelectContent>
@@ -389,7 +394,7 @@ export default function AnalyticsPage() {
                 }))
               }
             >
-              <SelectTrigger className="w-40 h-8 text-xs">
+              <SelectTrigger className="flex-1 h-8 text-xs min-w-0">
                 <SelectValue placeholder={tc("subscriptions")} />
               </SelectTrigger>
               <SelectContent>
@@ -411,7 +416,7 @@ export default function AnalyticsPage() {
                 }))
               }
             >
-              <SelectTrigger className="w-36 h-8 text-xs">
+              <SelectTrigger className="flex-1 h-8 text-xs min-w-0">
                 <SelectValue placeholder={tc("clients")} />
               </SelectTrigger>
               <SelectContent>
@@ -433,7 +438,7 @@ export default function AnalyticsPage() {
                 </div>
               ) : (
                 <>
-                  <div className="space-y-6">
+                  <div className="space-y-3">
                     <div className="flex items-center gap-6">
                       <div className="flex items-center gap-3 flex-1">
                         <div className="rounded-full bg-emerald-100 p-3 dark:bg-emerald-900/40">
@@ -464,13 +469,13 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
 
-                    {/* VISUAL SCORE GAUGE - FULL WIDTH CENTERED */}
-                    <div className="w-full flex flex-col items-center justify-center py-8 px-6 rounded-2xl bg-muted/20 border border-border/50 relative overflow-hidden">
+                    {/* VISUAL SCORE GAUGE */}
+                    <div className="w-full flex-1 flex flex-col items-center justify-center py-5 px-4 rounded-2xl bg-muted/20 border border-border/50 relative overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
-                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground mb-6 text-center">{t("disciplineScore")}</p>
+                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2 text-center">{t("disciplineScore")}</p>
                       
                       <div className="relative flex items-center justify-center">
-                        <svg className="size-32 -rotate-90">
+                        <svg className="size-52 -rotate-90" viewBox="0 0 128 128">
                           <circle
                             cx="64"
                             cy="64"
@@ -492,22 +497,22 @@ export default function AnalyticsPage() {
                             strokeLinecap="round"
                             className={cn(
                               "transition-all duration-1000 ease-out",
-                              (discipline?.score ?? 10) >= 9 ? "text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]" :
+                              (discipline?.score ?? 10) >= 9 ? "text-emerald-500" :
                               (discipline?.score ?? 10) >= 7 ? "text-yellow-500" :
                               (discipline?.score ?? 10) >= 5 ? "text-orange-500" : "text-red-500"
                             )}
                           />
                         </svg>
                         <div className="absolute flex flex-col items-center justify-center leading-none">
-                          <span className="text-3xl font-black tabular-nums">{(discipline?.score ?? 10).toFixed(1)}</span>
-                          <span className="text-xs font-bold opacity-40 mt-1">/10</span>
+                          <span className="text-4xl font-black tabular-nums">{(discipline?.score ?? 10).toFixed(1)}</span>
+                          <span className="text-sm font-bold opacity-40 mt-1">/10</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Visual bar & Stats footer */}
-                  <div className="mt-8 flex flex-col gap-5">
+                  <div className="mt-3 flex flex-col gap-2">
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
                         className="h-full rounded-full bg-emerald-500 transition-all duration-1000"
@@ -531,26 +536,26 @@ export default function AnalyticsPage() {
             </div>
             
             {isFree && (
-               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center">
-                  <div className="bg-background/95 backdrop-blur-md border border-gold-gradient/20 rounded-2xl p-6 shadow-2xl max-w-[280px] outline outline-1 outline-gold-gradient/10 transition-all hover:scale-[1.02]">
-                    <AlertTriangle className="size-6 text-gold-gradient mx-auto mb-3 animate-bounce" />
-                    <h3 className="text-sm font-bold mb-1 text-gold-gradient">{t("disciplineScoreTitle")}</h3>
-                    <p className="text-[11px] text-muted-foreground mb-4">
-                      {t("disciplineScoreDesc")}
-                    </p>
-                    <PremiumPopup>
-                      <Button size="sm" className="w-full h-8 text-[11px] font-bold rounded-xl bg-gold-gradient hover:opacity-90 text-black border-none shadow-md">
-                         {t("upgradeNow")}
-                      </Button>
-                    </PremiumPopup>
-                  </div>
-               </div>
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center">
+                <div className="bg-background/90 backdrop-blur-md border border-gold-gradient/20 rounded-2xl p-6 shadow-2xl max-w-[280px] animate-in zoom-in-95 duration-500 outline outline-1 outline-gold-gradient/10">
+                  <Sparkles className="size-6 text-gold-gradient mx-auto mb-3 animate-pulse" />
+                  <h3 className="text-sm font-bold mb-1 text-gold-gradient">{t("disciplineScoreTitle")}</h3>
+                  <p className="text-[11px] text-muted-foreground mb-4">
+                    {t("disciplineScoreDesc")}
+                  </p>
+                  <PremiumPopup>
+                    <Button size="sm" className="w-full h-8 text-[11px] font-bold rounded-xl bg-gold-gradient hover:opacity-90 text-black border-none shadow-md">
+                       {t("upgradeNow")}
+                    </Button>
+                  </PremiumPopup>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Platform Contribution (Monthly) */}
-        <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden", premiumHighlight)}>
+        {/* ── 4. Platform Contribution ── */}
+        <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden flex flex-col h-[560px]", premiumHighlight)}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h2 className="text-base font-semibold">
@@ -598,47 +603,44 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          <div className="relative">
-            <div className={cn("transition-all duration-500", isFree && "blur-md select-none pointer-events-none opacity-40")}>
+          <div className="relative flex-1">
+            <div className={cn("h-full transition-all duration-500", isFree && "blur-md select-none pointer-events-none opacity-40")}>
               {platformContributionLoading ? (
-            <div className="flex items-center justify-center py-14">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : platformContribution && platformContribution.rows.length > 0 ? (
-            <PlatformContributionChart
-              data={platformContribution.rows}
-              mode={platformMode}
-              currency={currency}
-            />
-          ) : (
-            <p className="text-muted-foreground text-sm py-8 text-center">
-              {t("noDataAvailable")}
-            </p>
-          )}
+                <div className="flex items-center justify-center py-14">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : platformContribution && platformContribution.rows.length > 0 ? (
+                <PlatformContributionChart
+                  data={platformContribution.rows}
+                  mode={platformMode}
+                  currency={currency}
+                />
+              ) : (
+                <p className="text-muted-foreground text-sm py-8 text-center">
+                  {t("noDataAvailable")}
+                </p>
+              )}
             </div>
 
             {isFree && (
-               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-12 text-center">
-                  <div className="bg-background/98 border-2 border-gold-gradient/20 rounded-[32px] p-10 shadow-[0_20px_50px_rgba(189,147,84,0.15)] max-w-md animate-in fade-in zoom-in-95 duration-700 outline outline-1 outline-gold-gradient/10">
-                     <div className="size-16 rounded-2xl bg-gold-gradient flex items-center justify-center mx-auto mb-6 shadow-lg">
-                        <BrainCircuit className="size-8 text-black" />
-                     </div>
-                     <h3 className="text-2xl font-black tracking-tight mb-3 text-gold-gradient">{t("breakEvenTitle")}</h3>
-                     <p className="text-sm text-muted-foreground leading-relaxed mb-8">
-                      {t("platformContributionPremiumDesc")}
-                     </p>
-                     <PremiumPopup>
-                        <Button className="w-full bg-gold-gradient hover:opacity-90 text-black font-black py-7 h-auto rounded-2xl text-lg shadow-xl border-none active:scale-[0.98] transition-all">
-                           <Sparkles className="size-6 mr-2" />
-                           {t("upgradeNow")}
-                        </Button>
-                     </PremiumPopup>
-                  </div>
-               </div>
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center">
+                <div className="bg-background/90 backdrop-blur-md border border-gold-gradient/20 rounded-2xl p-6 shadow-2xl max-w-[280px] animate-in zoom-in-95 duration-500 outline outline-1 outline-gold-gradient/10">
+                  <Sparkles className="size-6 text-gold-gradient mx-auto mb-3 animate-pulse" />
+                  <h3 className="text-sm font-bold mb-1 text-gold-gradient">{t("breakEvenTitle")}</h3>
+                  <p className="text-[11px] text-muted-foreground mb-4">
+                    {t("platformContributionPremiumDesc")}
+                  </p>
+                  <PremiumPopup>
+                    <Button size="sm" className="w-full h-8 text-[11px] font-bold rounded-xl bg-gold-gradient hover:opacity-90 text-black border-none shadow-md">
+                       {t("upgradeNow")}
+                    </Button>
+                  </PremiumPopup>
+                </div>
+              </div>
             )}
           </div>
+        </div>
       </div>
-    </div>
     </div>
   );
 }
