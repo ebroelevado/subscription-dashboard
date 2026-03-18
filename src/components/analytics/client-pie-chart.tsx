@@ -6,6 +6,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Tooltip,
   ResponsiveContainer,
 } from "recharts";
 import { formatCurrency } from "@/lib/currency";
@@ -16,29 +17,28 @@ const COLORS = [
 ];
 
 function PieTooltip({
-  name,
-  value,
-  amount,
-  fill,
+  active,
+  payload,
   currency,
 }: {
-  name: string;
-  value: number;
-  amount: number;
-  fill: string;
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; payload?: { fill?: string; amount?: number } }>;
   currency: string;
 }) {
+  if (!active || !payload?.length) return null;
+  const data = payload[0];
+  const amount = Number(data.payload?.amount ?? 0);
   return (
     <div className="rounded-xl border bg-popover/95 px-3 py-2 text-sm shadow-xl min-w-[150px] backdrop-blur">
       <div className="flex items-center gap-2 mb-1">
         <div
           className="size-3 rounded-full"
-          style={{ backgroundColor: fill }}
+          style={{ backgroundColor: data.payload?.fill }}
         />
-        <span className="font-semibold">{name}</span>
+        <span className="font-semibold">{data.name}</span>
       </div>
       <p className="text-muted-foreground text-xs">
-        Weight: <span className="font-semibold text-foreground">{value.toFixed(1)}%</span>
+        Weight: <span className="font-semibold text-foreground">{(data.value ?? 0).toFixed(1)}%</span>
       </p>
       <p className="text-muted-foreground text-xs">
         Amount: <span className="font-semibold text-foreground">{formatCurrency(amount, currency)}</span>
@@ -67,15 +67,14 @@ export default function ClientPieChart({ data, currency }: { data: PieDataPoint[
     [data],
   );
 
-  const [activeSlice, setActiveSlice] = useState<(PieDataPoint & { fill: string }) | null>(null);
+  const [selectedSlice, setSelectedSlice] = useState<(PieDataPoint & { fill: string }) | null>(null);
 
   const total = normalizedData.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <ResponsiveContainer width="100%" height={320}>
-          <PieChart>
+      <ResponsiveContainer width="100%" height={320}>
+        <PieChart>
           <Pie
             data={normalizedData}
             cx="50%"
@@ -89,16 +88,13 @@ export default function ClientPieChart({ data, currency }: { data: PieDataPoint[
             strokeWidth={2}
             startAngle={90}
             endAngle={-270}
-            onMouseEnter={(entry) => setActiveSlice(entry as PieDataPoint & { fill: string })}
-            onMouseLeave={() => setActiveSlice(null)}
-            onTouchStart={(entry) => setActiveSlice(entry as PieDataPoint & { fill: string })}
-            onTouchMove={(entry) => setActiveSlice(entry as PieDataPoint & { fill: string })}
-            onTouchEnd={() => setActiveSlice(null)}
+            onClick={(_, index) => setSelectedSlice(normalizedData[index] ?? null)}
           >
             {normalizedData.map((entry) => (
               <Cell key={entry.name} fill={entry.fill} />
             ))}
           </Pie>
+          <Tooltip content={<PieTooltip currency={currency} />} />
           <text x="50%" y="43%" textAnchor="middle" className="fill-muted-foreground text-[11px]">
             Top Clients
           </text>
@@ -108,21 +104,22 @@ export default function ClientPieChart({ data, currency }: { data: PieDataPoint[
           <text x="50%" y="58%" textAnchor="middle" className="fill-muted-foreground text-[11px]">
             Revenue share
           </text>
-          </PieChart>
-        </ResponsiveContainer>
+        </PieChart>
+      </ResponsiveContainer>
 
-        {activeSlice && (
-          <div className="absolute right-2 top-2 pointer-events-none">
-            <PieTooltip
-              name={activeSlice.name}
-              value={activeSlice.value}
-              amount={activeSlice.amount}
-              fill={activeSlice.fill}
-              currency={currency}
-            />
+      {selectedSlice && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="size-2.5 rounded-full" style={{ backgroundColor: selectedSlice.fill }} />
+            <span className="font-semibold">{selectedSlice.name}</span>
           </div>
-        )}
-      </div>
+          <div className="mt-1 text-muted-foreground">
+            <span>{selectedSlice.value.toFixed(1)}%</span>
+            <span className="mx-2">·</span>
+            <span className="font-medium text-foreground">{formatCurrency(selectedSlice.amount, currency)}</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
         {normalizedData.map((entry) => (
