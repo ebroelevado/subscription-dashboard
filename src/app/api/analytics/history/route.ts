@@ -1,4 +1,14 @@
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc, count, sql, gte, lte, inArray, isNotNull } from "drizzle-orm";
+import { db } from "@/db";
+import {
+  renewalLogs,
+  clientSubscriptions,
+  subscriptions,
+  platformRenewals,
+  clients,
+  plans,
+  platforms,
+} from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
 import { NextRequest } from "next/server";
 
@@ -34,67 +44,68 @@ export async function GET(request: NextRequest) {
     const dateFrom = params.get("dateFrom") ?? undefined;
     const dateTo = params.get("dateTo") ?? undefined;
 
-    // --- Build shared date filter ---
-    const dateFilter: { gte?: Date; lte?: Date } = {};
-    if (dateFrom) dateFilter.gte = new Date(dateFrom);
-    if (dateTo) dateFilter.lte = new Date(dateTo);
-    const hasDates = Object.keys(dateFilter).length > 0;
-
     // --- Income rows ---
     let incomeRows: UnifiedRow[] = [];
     let incomeCount = 0;
 
     if (type === "all" || type === "income") {
-      const where = {
-        clientSubscription: {
-          subscription: {
-            userId,
-            ...(subscriptionId ? { id: subscriptionId } : {}),
-            ...(planId ? { planId } : {}),
-            ...(platformId ? { plan: { platformId } } : {}),
-          },
-          ...(clientId ? { clientId } : {}),
-        },
-        ...(hasDates ? { paidOn: dateFilter } : {}),
-      };
+      // Build where conditions for renewalLogs
+      const conditions = [eq(subscriptions.userId, userId)];
 
-      const [logs, count] = await Promise.all([
-        prisma.renewalLog.findMany({
-          where,
-          include: {
-            clientSubscription: {
-              include: {
-                client: { select: { name: true } },
-                subscription: {
-                  include: {
-                    plan: {
-                      include: { platform: { select: { name: true } } },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { paidOn: "desc" },
-        }),
-        prisma.renewalLog.count({ where }),
+      if (subscriptionId) conditions.push(eq(subscriptions.id, subscriptionId));
+      if (planId) conditions.push(eq(subscriptions.planId, planId));
+      if (platformId) conditions.push(eq(plans.platformId, platformId));
+      if (clientId) conditions.push(eq(clientSubscriptions.clientId, clientId));
+      if (dateFrom) conditions.push(gte(renewalLogs.paidOn, dateFrom));
+      if (dateTo) conditions.push(lte(renewalLogs.paidOn, dateTo));
+
+      const [logs, cnt] = await Promise.all([
+        db
+          .select({
+            id: renewalLogs.id,
+            amountPaid: renewalLogs.amountPaid,
+            paidOn: renewalLogs.paidOn,
+            periodStart: renewalLogs.periodStart,
+            periodEnd: renewalLogs.periodEnd,
+            notes: renewalLogs.notes,
+            platformName: platforms.name,
+            planName: plans.name,
+            subscriptionLabel: subscriptions.label,
+            subscriptionId: subscriptions.id,
+            clientName: clients.name,
+          })
+          .from(renewalLogs)
+          .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .innerJoin(clients, eq(clientSubscriptions.clientId, clients.id))
+          .leftJoin(plans, eq(subscriptions.planId, plans.id))
+          .leftJoin(platforms, eq(plans.platformId, platforms.id))
+          .where(and(...conditions))
+          .orderBy(desc(renewalLogs.paidOn)),
+        db
+          .select({ total: sql<number>`COUNT(*)` })
+          .from(renewalLogs)
+          .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .leftJoin(plans, eq(subscriptions.planId, plans.id))
+          .where(and(...conditions)),
       ]);
 
-      incomeRows = logs.map((l) => ({
+      incomeRows = logs.map((l: any) => ({
         id: l.id,
         type: "income" as const,
         amount: Number(l.amountPaid),
-        paidOn: l.paidOn.toISOString().split("T")[0],
-        periodStart: l.periodStart.toISOString().split("T")[0],
-        periodEnd: l.periodEnd.toISOString().split("T")[0],
-        platform: l.clientSubscription?.subscription.plan.platform.name ?? "Deleted",
-        plan: l.clientSubscription?.subscription.plan.name ?? "Deleted",
-        subscriptionLabel: l.clientSubscription?.subscription.label ?? "Deleted",
-        subscriptionId: l.clientSubscription?.subscription.id ?? "deleted",
-        clientName: l.clientSubscription?.client.name ?? "Deleted Client",
+        paidOn: l.paidOn,
+        periodStart: l.periodStart,
+        periodEnd: l.periodEnd,
+        platform: l.platformName ?? "Deleted",
+        plan: l.planName ?? "Deleted",
+        subscriptionLabel: l.subscriptionLabel ?? "Deleted",
+        subscriptionId: l.subscriptionId ?? "deleted",
+        clientName: l.clientName ?? "Deleted Client",
         notes: l.notes,
       }));
-      incomeCount = count;
+      incomeCount = Number(cnt[0]?.total ?? 0);
     }
 
     // --- Cost rows ---
@@ -102,49 +113,56 @@ export async function GET(request: NextRequest) {
     let costCount = 0;
 
     if ((type === "all" || type === "cost") && !clientId) {
-      // Cost rows don't have clientId — skip if filtering by client
-      const where = {
-        subscription: {
-          userId,
-          ...(subscriptionId ? { id: subscriptionId } : {}),
-          ...(planId ? { planId } : {}),
-          ...(platformId ? { plan: { platformId } } : {}),
-        },
-        ...(hasDates ? { paidOn: dateFilter } : {}),
-      };
+      const conditions = [eq(subscriptions.userId, userId)];
 
-      const [renewals, count] = await Promise.all([
-        prisma.platformRenewal.findMany({
-          where,
-          include: {
-            subscription: {
-              include: {
-                plan: {
-                  include: { platform: { select: { name: true } } },
-                },
-              },
-            },
-          },
-          orderBy: { paidOn: "desc" },
-        }),
-        prisma.platformRenewal.count({ where }),
+      if (subscriptionId) conditions.push(eq(subscriptions.id, subscriptionId));
+      if (planId) conditions.push(eq(subscriptions.planId, planId));
+      if (platformId) conditions.push(eq(plans.platformId, platformId));
+      if (dateFrom) conditions.push(gte(platformRenewals.paidOn, dateFrom));
+      if (dateTo) conditions.push(lte(platformRenewals.paidOn, dateTo));
+
+      const [renewals, cnt] = await Promise.all([
+        db
+          .select({
+            id: platformRenewals.id,
+            amountPaid: platformRenewals.amountPaid,
+            paidOn: platformRenewals.paidOn,
+            periodStart: platformRenewals.periodStart,
+            periodEnd: platformRenewals.periodEnd,
+            platformName: platforms.name,
+            planName: plans.name,
+            subscriptionLabel: subscriptions.label,
+            subscriptionId: subscriptions.id,
+          })
+          .from(platformRenewals)
+          .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
+          .leftJoin(plans, eq(subscriptions.planId, plans.id))
+          .leftJoin(platforms, eq(plans.platformId, platforms.id))
+          .where(and(...conditions))
+          .orderBy(desc(platformRenewals.paidOn)),
+        db
+          .select({ total: sql<number>`COUNT(*)` })
+          .from(platformRenewals)
+          .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
+          .leftJoin(plans, eq(subscriptions.planId, plans.id))
+          .where(and(...conditions)),
       ]);
 
-      costRows = renewals.map((r) => ({
+      costRows = renewals.map((r: any) => ({
         id: r.id,
         type: "cost" as const,
         amount: Number(r.amountPaid),
-        paidOn: r.paidOn.toISOString().split("T")[0],
-        periodStart: r.periodStart.toISOString().split("T")[0],
-        periodEnd: r.periodEnd.toISOString().split("T")[0],
-        platform: r.subscription.plan.platform.name,
-        plan: r.subscription.plan.name,
-        subscriptionLabel: r.subscription.label,
-        subscriptionId: r.subscription.id,
-        clientName: r.subscription.label,
+        paidOn: r.paidOn,
+        periodStart: r.periodStart,
+        periodEnd: r.periodEnd,
+        platform: r.platformName ?? "Deleted",
+        plan: r.planName ?? "Deleted",
+        subscriptionLabel: r.subscriptionLabel ?? "Deleted",
+        subscriptionId: r.subscriptionId ?? "deleted",
+        clientName: r.subscriptionLabel ?? "Deleted",
         notes: "platform_payment",
       }));
-      costCount = count;
+      costCount = Number(cnt[0]?.total ?? 0);
     }
 
     // --- Merge + sort + paginate ---

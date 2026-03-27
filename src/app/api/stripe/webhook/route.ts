@@ -2,12 +2,14 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 
-function getStripeCurrentPeriodEndDate(subscription: unknown): Date | undefined {
+function getStripeCurrentPeriodEndDate(subscription: unknown): string | undefined {
   const currentPeriodEnd = (subscription as { current_period_end?: unknown }).current_period_end;
   if (typeof currentPeriodEnd !== "number") return undefined;
-  return new Date(currentPeriodEnd * 1000);
+  return new Date(currentPeriodEnd * 1000).toISOString();
 }
 
 function getInvoiceSubscriptionId(invoice: unknown): string | null {
@@ -45,23 +47,22 @@ export async function POST(req: Request) {
     return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
   }
 
-  await prisma.$executeRawUnsafe(`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS stripe_webhook_events (
       event_id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
-      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      processed_at TIMESTAMPTZ NULL,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      processed_at TEXT NULL,
       error_message TEXT NULL
     )
   `);
 
-  const insertedRows = await prisma.$executeRaw`
-    INSERT INTO stripe_webhook_events (event_id, event_type)
+  const insertResult = await db.execute(sql`
+    INSERT OR IGNORE INTO stripe_webhook_events (event_id, event_type)
     VALUES (${event.id}, ${event.type})
-    ON CONFLICT (event_id) DO NOTHING
-  `;
+  `);
 
-  if (insertedRows === 0) {
+  if (insertResult.meta?.changes === 0) {
     return new NextResponse(null, { status: 200 });
   }
 
@@ -80,16 +81,13 @@ export async function POST(req: Request) {
         throw new Error("No userId in checkout session metadata");
       }
 
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          stripeSubscriptionId: subscription.id,
-          stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : null,
-          stripePriceId: subscription.items.data[0]?.price.id,
-          stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
-          plan: "PREMIUM",
-        },
-      });
+      await db.update(users).set({
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : null,
+        stripePriceId: subscription.items.data[0]?.price.id,
+        stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
+        plan: "PREMIUM",
+      }).where(eq(users.id, userId));
     }
 
     if (event.type === "invoice.payment_succeeded") {
@@ -99,14 +97,11 @@ export async function POST(req: Request) {
       if (subscriptionId) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-        await prisma.user.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: {
-            stripePriceId: subscription.items.data[0]?.price.id,
-            stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
-            plan: "PREMIUM",
-          },
-        });
+        await db.update(users).set({
+          stripePriceId: subscription.items.data[0]?.price.id,
+          stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
+          plan: "PREMIUM",
+        }).where(eq(users.stripeSubscriptionId, subscription.id));
       }
     }
 
@@ -118,37 +113,31 @@ export async function POST(req: Request) {
       const canceled = subscription.status === "canceled" || subscription.status === "unpaid";
 
       if (canceled) {
-        await prisma.user.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: {
-            plan: "FREE",
-            stripeCurrentPeriodEnd: null,
-          },
-        });
+        await db.update(users).set({
+          plan: "FREE",
+          stripeCurrentPeriodEnd: null,
+        }).where(eq(users.stripeSubscriptionId, subscription.id));
       } else {
-        await prisma.user.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: {
-            plan: "PREMIUM",
-            stripePriceId: subscription.items.data[0]?.price.id,
-            stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
-          },
-        });
+        await db.update(users).set({
+          plan: "PREMIUM",
+          stripePriceId: subscription.items.data[0]?.price.id,
+          stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
+        }).where(eq(users.stripeSubscriptionId, subscription.id));
       }
     }
 
-    await prisma.$executeRaw`
+    await db.execute(sql`
       UPDATE stripe_webhook_events
-      SET processed_at = NOW(), error_message = NULL
+      SET processed_at = datetime('now'), error_message = NULL
       WHERE event_id = ${event.id}
-    `;
+    `);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown Stripe webhook error";
-    await prisma.$executeRaw`
+    await db.execute(sql`
       UPDATE stripe_webhook_events
       SET error_message = ${message}
       WHERE event_id = ${event.id}
-    `;
+    `);
 
     console.error("[STRIPE_WEBHOOK_ERROR]", error);
     return new NextResponse("Webhook processing error", { status: 500 });

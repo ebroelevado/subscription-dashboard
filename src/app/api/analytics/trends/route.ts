@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { eq, and, gte, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { renewalLogs, clientSubscriptions, subscriptions, platformRenewals } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
 import {
   subMonths,
@@ -88,37 +90,53 @@ export async function GET(req: NextRequest) {
 
     const now = new Date();
     const lookbackDate = getLookbackDate(scale, now);
+    const lookbackStr = lookbackDate.toISOString().split("T")[0];
 
-    const [renewalLogs, platformRenewals] = await Promise.all([
-      prisma.renewalLog.findMany({
-        where: {
-          paidOn: { gte: lookbackDate },
-          clientSubscription: { subscription: { userId } },
-        },
-        select: { amountPaid: true, paidOn: true },
-      }),
-      prisma.platformRenewal.findMany({
-        where: {
-          paidOn: { gte: lookbackDate },
-          subscription: { userId },
-        },
-        select: { amountPaid: true, paidOn: true },
-      }),
+    const [renewalLogsResult, platformRenewalsResult] = await Promise.all([
+      db
+        .select({
+          amount_paid: renewalLogs.amountPaid,
+          paid_on: renewalLogs.paidOn,
+        })
+        .from(renewalLogs)
+        .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+        .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            gte(renewalLogs.paidOn, lookbackStr)
+          )
+        ),
+      db
+        .select({
+          amount_paid: platformRenewals.amountPaid,
+          paid_on: platformRenewals.paidOn,
+        })
+        .from(platformRenewals)
+        .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            gte(platformRenewals.paidOn, lookbackStr)
+          )
+        ),
     ]);
 
     const buckets = buildBuckets(scale, now);
     const bucketMap = new Map(buckets.map((b) => [b.period, b]));
 
-    for (const log of renewalLogs) {
-      const key = dateToKey(new Date(log.paidOn), scale);
+    const renewalRows = renewalLogsResult || [];
+    for (const row of renewalRows) {
+      const key = dateToKey(new Date(row.paid_on), scale);
       const bucket = bucketMap.get(key);
-      if (bucket) bucket.revenue += Number(log.amountPaid);
+      if (bucket) bucket.revenue += Number(row.amount_paid);
     }
 
-    for (const pr of platformRenewals) {
-      const key = dateToKey(new Date(pr.paidOn), scale);
+    const platformRows = platformRenewalsResult || [];
+    for (const row of platformRows) {
+      const key = dateToKey(new Date(row.paid_on), scale);
       const bucket = bucketMap.get(key);
-      if (bucket) bucket.cost += Number(pr.amountPaid);
+      if (bucket) bucket.cost += Number(row.amount_paid);
     }
 
     return success(buckets);

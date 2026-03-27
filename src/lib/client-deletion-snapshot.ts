@@ -1,42 +1,33 @@
-import type { Prisma } from "@prisma/client";
-
-type DecimalValue = {
-  toString(): string;
-};
-
-type DecimalLike = DecimalValue | number | string | null;
-type RequiredDecimalLike = DecimalValue | number | string;
-
 type DeletionSnapshotSource = {
   id: string;
   name: string;
   phone: string | null;
   notes: string | null;
   createdAt: Date;
-  disciplineScore: DecimalLike;
-  dailyPenalty: DecimalLike;
+  disciplineScore: string | null;
+  dailyPenalty: number | null;
   daysOverdue: number;
   healthStatus: string | null;
   clientSubscriptions: Array<{
     id: string;
     clientId: string;
     subscriptionId: string;
-    customPrice: RequiredDecimalLike;
-    activeUntil: Date;
-    joinedAt: Date;
-    leftAt: Date | null;
+    customPrice: number;
+    activeUntil: string;
+    joinedAt: string;
+    leftAt: string | null;
     status: "active" | "paused";
     remainingDays: number | null;
     serviceUser: string | null;
     servicePassword: string | null;
     renewalLogs: Array<{
       id: string;
-      amountPaid: RequiredDecimalLike;
-      expectedAmount: RequiredDecimalLike;
-      periodStart: Date;
-      periodEnd: Date;
-      paidOn: Date;
-      dueOn: Date;
+      amountPaid: number;
+      expectedAmount: number;
+      periodStart: string;
+      periodEnd: string;
+      paidOn: string;
+      dueOn: string;
       monthsRenewed: number;
       notes: string | null;
       createdAt: Date;
@@ -54,14 +45,14 @@ export type DeletedClientSnapshot = {
   notes: string | null;
   createdAt: string;
   disciplineScore: string | null;
-  dailyPenalty: string | null;
+  dailyPenalty: number | null;
   daysOverdue: number;
   healthStatus: string | null;
   clientSubscriptions: Array<{
     id: string;
     clientId: string;
     subscriptionId: string;
-    customPrice: string;
+    customPrice: number;
     activeUntil: string;
     joinedAt: string;
     leftAt: string | null;
@@ -71,8 +62,8 @@ export type DeletedClientSnapshot = {
     servicePassword: string | null;
     renewalLogs: Array<{
       id: string;
-      amountPaid: string;
-      expectedAmount: string;
+      amountPaid: number;
+      expectedAmount: number;
       periodStart: string;
       periodEnd: string;
       paidOn: string;
@@ -94,30 +85,30 @@ export function serializeDeletedClients(
     phone: client.phone,
     notes: client.notes,
     createdAt: client.createdAt.toISOString(),
-    disciplineScore: decimalToString(client.disciplineScore),
-    dailyPenalty: decimalToString(client.dailyPenalty),
+    disciplineScore: client.disciplineScore,
+    dailyPenalty: client.dailyPenalty,
     daysOverdue: client.daysOverdue,
     healthStatus: client.healthStatus,
     clientSubscriptions: client.clientSubscriptions.map((clientSubscription) => ({
       id: clientSubscription.id,
       clientId: clientSubscription.clientId,
       subscriptionId: clientSubscription.subscriptionId,
-      customPrice: decimalToRequiredString(clientSubscription.customPrice),
-      activeUntil: clientSubscription.activeUntil.toISOString(),
-      joinedAt: clientSubscription.joinedAt.toISOString(),
-      leftAt: clientSubscription.leftAt?.toISOString() ?? null,
+      customPrice: clientSubscription.customPrice,
+      activeUntil: clientSubscription.activeUntil,
+      joinedAt: clientSubscription.joinedAt,
+      leftAt: clientSubscription.leftAt,
       status: clientSubscription.status,
       remainingDays: clientSubscription.remainingDays,
       serviceUser: clientSubscription.serviceUser,
       servicePassword: clientSubscription.servicePassword,
       renewalLogs: clientSubscription.renewalLogs.map((renewalLog) => ({
         id: renewalLog.id,
-        amountPaid: decimalToRequiredString(renewalLog.amountPaid),
-        expectedAmount: decimalToRequiredString(renewalLog.expectedAmount),
-        periodStart: renewalLog.periodStart.toISOString(),
-        periodEnd: renewalLog.periodEnd.toISOString(),
-        paidOn: renewalLog.paidOn.toISOString(),
-        dueOn: renewalLog.dueOn.toISOString(),
+        amountPaid: renewalLog.amountPaid,
+        expectedAmount: renewalLog.expectedAmount,
+        periodStart: renewalLog.periodStart,
+        periodEnd: renewalLog.periodEnd,
+        paidOn: renewalLog.paidOn,
+        dueOn: renewalLog.dueOn,
         monthsRenewed: renewalLog.monthsRenewed,
         notes: renewalLog.notes,
         createdAt: renewalLog.createdAt.toISOString(),
@@ -137,7 +128,18 @@ export function buildDeletedClientRestoreData(
   userId: string,
   snapshots: DeletedClientSnapshot[],
 ) {
-  const clients: Prisma.ClientCreateManyInput[] = snapshots.map((snapshot) => ({
+  const clients: Array<{
+    id: string;
+    userId: string;
+    name: string;
+    phone: string | null;
+    notes: string | null;
+    createdAt: Date;
+    disciplineScore: string | null;
+    dailyPenalty: number | null;
+    daysOverdue: number;
+    healthStatus: string | null;
+  }> = snapshots.map((snapshot) => ({
     id: snapshot.id,
     userId,
     name: snapshot.name,
@@ -150,16 +152,28 @@ export function buildDeletedClientRestoreData(
     healthStatus: snapshot.healthStatus,
   }));
 
-  const clientSubscriptions: Prisma.ClientSubscriptionCreateManyInput[] = snapshots.flatMap(
+  const clientSubscriptions: Array<{
+    id: string;
+    clientId: string;
+    subscriptionId: string;
+    customPrice: number;
+    activeUntil: string;
+    joinedAt: string;
+    leftAt: string | null;
+    status: "active" | "paused";
+    remainingDays: number | null;
+    serviceUser: string | null;
+    servicePassword: string | null;
+  }> = snapshots.flatMap(
     (snapshot) =>
       snapshot.clientSubscriptions.map((clientSubscription) => ({
         id: clientSubscription.id,
         clientId: clientSubscription.clientId,
         subscriptionId: clientSubscription.subscriptionId,
         customPrice: clientSubscription.customPrice,
-        activeUntil: new Date(clientSubscription.activeUntil),
-        joinedAt: new Date(clientSubscription.joinedAt),
-        leftAt: clientSubscription.leftAt ? new Date(clientSubscription.leftAt) : null,
+        activeUntil: clientSubscription.activeUntil,
+        joinedAt: clientSubscription.joinedAt,
+        leftAt: clientSubscription.leftAt,
         status: clientSubscription.status,
         remainingDays: clientSubscription.remainingDays,
         serviceUser: clientSubscription.serviceUser,
@@ -174,13 +188,13 @@ export function buildDeletedClientRestoreData(
         clientSubscriptionId: clientSubscription.id,
         amountPaid: renewalLog.amountPaid,
         expectedAmount: renewalLog.expectedAmount,
-        periodStart: new Date(renewalLog.periodStart),
-        periodEnd: new Date(renewalLog.periodEnd),
-        paidOn: new Date(renewalLog.paidOn),
-        dueOn: new Date(renewalLog.dueOn),
+        periodStart: renewalLog.periodStart,
+        periodEnd: renewalLog.periodEnd,
+        paidOn: renewalLog.paidOn,
+        dueOn: renewalLog.dueOn,
         monthsRenewed: renewalLog.monthsRenewed,
         notes: renewalLog.notes,
-        createdAt: new Date(renewalLog.createdAt),
+        createdAt: renewalLog.createdAt,
       })),
     ),
   );
@@ -198,24 +212,4 @@ export function buildDeletedClientRestoreData(
     renewalLogs,
     subscriptionOwners,
   };
-}
-
-function decimalToString(value: DecimalLike): string | null {
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value === "number" || typeof value === "string") {
-    return String(value);
-  }
-
-  return value.toString();
-}
-
-function decimalToRequiredString(value: RequiredDecimalLike): string {
-  if (typeof value === "number" || typeof value === "string") {
-    return String(value);
-  }
-
-  return value.toString();
 }

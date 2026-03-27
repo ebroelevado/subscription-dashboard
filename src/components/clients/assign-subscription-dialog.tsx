@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useSubscriptions } from "@/hooks/use-subscriptions";
 import { useCreateSeat } from "@/hooks/use-seats";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, type Currency } from "@/lib/currency";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -73,9 +73,9 @@ export function AssignSubscriptionDialog({
       const q = search.toLowerCase();
       filtered = subscriptions.filter(
         (s) =>
-          s.label.toLowerCase().includes(q) ||
-          s.plan.platform.name.toLowerCase().includes(q) ||
-          s.plan.name.toLowerCase().includes(q)
+          s.label?.toLowerCase().includes(q) ||
+          s.plan?.platform?.name?.toLowerCase().includes(q) ||
+          s.plan?.name?.toLowerCase().includes(q)
       );
     }
 
@@ -83,6 +83,8 @@ export function AssignSubscriptionDialog({
     const grouped = new Map<string, { platformName: string; plans: Map<string, { planName: string; myCost: number | null; subs: any[] }> }>();
     
     for (const sub of filtered) {
+      if (!sub.plan || !sub.plan.platform) continue; // Skip orphaned subscriptions
+
       const pId = sub.plan.platform.id;
       const pName = sub.plan.platform.name;
       const planId = sub.planId;
@@ -303,7 +305,7 @@ export function AssignSubscriptionDialog({
               {selectedSub && (
                 <div className="flex items-center gap-2 rounded-md bg-accent/50 px-3 py-1.5 text-sm">
                   <span className="font-medium">{selectedSub.label}</span>
-                  <span className="text-xs text-muted-foreground">({selectedSub.plan.platform.name})</span>
+                  <span className="text-xs text-muted-foreground">({selectedSub.plan?.platform?.name ?? tc("deleted")})</span>
                   <button
                     type="button"
                     className="ml-auto h-6 px-2 text-xs hover:bg-accent/80 rounded-sm transition-colors"

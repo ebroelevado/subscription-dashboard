@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and } from "drizzle-orm";
+import { db } from "@/db";
+import { subscriptions, clientSubscriptions } from "@/db/schema";
 import { withErrorHandling, success, error } from "@/lib/api-utils";
 import { differenceInDays, addDays, startOfDay } from "date-fns";
 import { z } from "zod";
@@ -19,9 +21,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { action } = bulkStatusSchema.parse(body);
 
     // Verify subscription belongs to user
-    const sub = await prisma.subscription.findFirst({
-      where: { id, userId },
-      select: { id: true },
+    const sub = await db.query.subscriptions.findFirst({
+      where: and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)),
+      columns: { id: true },
     });
     if (!sub) return error("Subscription not found", 404);
 
@@ -29,47 +31,55 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (action === "pause") {
       // First get all active seats to calculate individual remaining days
-      const activeSeats = await prisma.clientSubscription.findMany({
-        where: { subscriptionId: id, status: "active" },
-        select: { id: true, activeUntil: true },
-      });
+      const activeSeats = await db.select({
+        id: clientSubscriptions.id,
+        activeUntil: clientSubscriptions.activeUntil,
+      })
+        .from(clientSubscriptions)
+        .where(and(
+          eq(clientSubscriptions.subscriptionId, id),
+          eq(clientSubscriptions.status, "active")
+        ));
 
       // Update each seat individually to store its own remaining days
       let count = 0;
       for (const seat of activeSeats) {
         const expiry = startOfDay(new Date(seat.activeUntil));
         const remaining = Math.max(0, differenceInDays(expiry, today));
-        await prisma.clientSubscription.update({
-          where: { id: seat.id },
-          data: {
+        await db.update(clientSubscriptions)
+          .set({
             status: "paused",
-            leftAt: today,
+            leftAt: today.toISOString().split("T")[0],
             remainingDays: remaining,
-          },
-        });
+          })
+          .where(eq(clientSubscriptions.id, seat.id));
         count++;
       }
       return success({ updated: count, action: "paused" });
     }
 
     // Resume all paused seats — restore their individual remaining days
-    const pausedSeats = await prisma.clientSubscription.findMany({
-      where: { subscriptionId: id, status: "paused" },
-      select: { id: true, remainingDays: true },
-    });
+    const pausedSeats = await db.select({
+      id: clientSubscriptions.id,
+      remainingDays: clientSubscriptions.remainingDays,
+    })
+      .from(clientSubscriptions)
+      .where(and(
+        eq(clientSubscriptions.subscriptionId, id),
+        eq(clientSubscriptions.status, "paused")
+      ));
 
     let count = 0;
     for (const seat of pausedSeats) {
       const days = seat.remainingDays ?? 0;
-      await prisma.clientSubscription.update({
-        where: { id: seat.id },
-        data: {
+      await db.update(clientSubscriptions)
+        .set({
           status: "active",
           leftAt: null,
-          activeUntil: days > 0 ? addDays(today, days) : today,
+          activeUntil: days > 0 ? addDays(today, days).toISOString().split("T")[0] : today.toISOString().split("T")[0],
           remainingDays: null,
-        },
-      });
+        })
+        .where(eq(clientSubscriptions.id, seat.id));
       count++;
     }
     return success({ updated: count, action: "resumed" });

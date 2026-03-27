@@ -1,7 +1,10 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc } from "drizzle-orm";
+import { db } from "@/db";
+import { subscriptions, plans, clients, clientSubscriptions, platformRenewals } from "@/db/schema";
 import { createSubscriptionSchema } from "@/lib/validations";
 import { success, withErrorHandling, error } from "@/lib/api-utils";
+import { amountToCents } from "@/lib/currency";
 import { checkSubscriptionLimit } from "@/lib/saas-limits";
 import { encryptCredential } from "@/lib/credential-encryption";
 
@@ -14,29 +17,24 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const planId = searchParams.get("planId");
 
-    const subscriptions = await prisma.subscription.findMany({
-      where: {
-        userId,
-        ...(planId && { planId }),
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
+    const subsList = await db.query.subscriptions.findMany({
+      where: and(
+        eq(subscriptions.userId, userId),
+        planId ? eq(subscriptions.planId, planId) : undefined
+      ),
+      orderBy: [desc(subscriptions.createdAt)],
+      with: {
         plan: {
-          select: {
-            id: true,
-            name: true,
-            cost: true,
-            maxSeats: true,
-            platform: { select: { id: true, name: true } },
-          },
+          columns: { id: true, name: true, cost: true, maxSeats: true },
+          with: { platform: { columns: { id: true, name: true } } },
         },
         clientSubscriptions: {
-          where: { status: "active" },
-          select: { id: true, customPrice: true, status: true },
+          where: eq(clientSubscriptions.status, "active"),
+          columns: { id: true, customPrice: true, status: true },
         },
       },
     });
-    return success(subscriptions);
+    return success(subsList);
   });
 }
 
@@ -50,9 +48,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createSubscriptionSchema.parse(body);
 
-    const plan = await prisma.plan.findUnique({
-      where: { id: data.planId, userId },
-      select: { id: true },
+    const plan = await db.query.plans.findFirst({
+      where: and(eq(plans.id, data.planId), eq(plans.userId, userId)),
+      columns: { id: true },
     });
 
     if (!plan) {
@@ -60,9 +58,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (data.ownerId) {
-      const owner = await prisma.client.findUnique({
-        where: { id: data.ownerId, userId },
-        select: { id: true },
+      const owner = await db.query.clients.findFirst({
+        where: and(eq(clients.id, data.ownerId), eq(clients.userId, userId)),
+        columns: { id: true },
       });
 
       if (!owner) {
@@ -79,44 +77,42 @@ export async function POST(request: NextRequest) {
     const defaultPaymentNote = data.defaultPaymentNote || "como pago";
 
     // Create subscription and potentially the initial PlatformRenewal if paid
-    const subscription = await prisma.$transaction(async (tx) => {
-      const sub = await tx.subscription.create({
-        data: {
-          label: data.label,
-          startDate: data.startDate,
-          activeUntil,
-          status: data.status,
-          masterUsername: data.masterUsername,
-          masterPassword: encryptCredential(data.masterPassword),
-          isAutopayable: data.isAutopayable,
-          defaultPaymentNote,
-          user: { connect: { id: userId } },
-          plan: { connect: { id: data.planId } },
-          ...(data.ownerId && { owner: { connect: { id: data.ownerId } } }),
-        },
-        include: {
-          plan: true,
-        },
+    const subscription = await db.transaction(async (tx) => {
+      const [sub] = await tx.insert(subscriptions).values({
+        label: data.label,
+        startDate: data.startDate instanceof Date ? data.startDate.toISOString().split("T")[0] : data.startDate,
+        activeUntil: activeUntil instanceof Date ? activeUntil.toISOString().split("T")[0] : activeUntil,
+        status: data.status,
+        masterUsername: data.masterUsername,
+        masterPassword: await encryptCredential(data.masterPassword),
+        isAutopayable: data.isAutopayable,
+        defaultPaymentNote,
+        userId,
+        planId: data.planId,
+        ownerId: data.ownerId ?? null,
+      }).returning();
+
+      // Fetch the plan cost
+      const planData = await tx.query.plans.findFirst({
+        where: eq(plans.id, data.planId),
+        columns: { cost: true },
       });
 
-      if (data.isPaid) {
-        // Find how much plan costs
-        const planCost = Number(sub.plan.cost);
+      if (data.isPaid && planData) {
+        const planCost = Number(planData.cost);
         const { startOfDay, addDays } = await import("date-fns");
         
         const periodStart = startOfDay(data.startDate);
         const periodEnd = startOfDay(activeUntil);
         const paidOn = startOfDay(new Date());
 
-        await tx.platformRenewal.create({
-          data: {
-            subscriptionId: sub.id,
-            amountPaid: planCost,
-            periodStart,
-            periodEnd,
-            paidOn,
-            notes: data.paymentNote || defaultPaymentNote,
-          },
+        await tx.insert(platformRenewals).values({
+          subscriptionId: sub.id,
+          amountPaid: amountToCents(planCost),
+          periodStart: periodStart.toISOString().split("T")[0],
+          periodEnd: periodEnd.toISOString().split("T")[0],
+          paidOn: paidOn.toISOString().split("T")[0],
+          notes: data.paymentNote || defaultPaymentNote,
         });
       }
 

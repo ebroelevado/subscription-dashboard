@@ -15,9 +15,9 @@ export async function GET(req: NextRequest) {
     const clientId = url.searchParams.get("clientId") ?? undefined;
 
     const data = await getDisciplineAnalytics(userId, { clientId, subscriptionId, planId });
-    
+
     const stats = clientId ? data.perClient[clientId] : data.global;
-    
+
     if (!stats) {
       return success({
         totalPayments: 0,
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       lateCount: stats.lateCount,
       onTimeRate: stats.onTimeRate,
       avgDaysLate: stats.avgDaysLate,
-      score: stats.score ?? 10,
+      score: Number(stats.score ?? 10),
     });
   });
 }

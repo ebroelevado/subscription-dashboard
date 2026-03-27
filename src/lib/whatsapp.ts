@@ -28,13 +28,13 @@ export function buildWhatsAppUrl(
 
   const relevantSeats = forceAll || urgentSeats.length === 0 ? seats : urgentSeats;
 
-  const formatPrice = (amount: number) =>
+  const formatPrice = (cents: number) =>
     new Intl.NumberFormat(langToLocale(lang), {
       style: "currency",
       currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(cents / 100);
 
   const formatDate = (dateStr: string) =>
     format(startOfDay(new Date(dateStr)), "dd/MM/yyyy");

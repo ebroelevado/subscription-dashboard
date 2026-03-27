@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/auth-utils";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function PATCH(req: Request) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { currency, disciplinePenalty, companyName, whatsappSignatureMode } = await req.json();
 
-  const data: any = {};
+  const data: Record<string, unknown> = {};
 
   if (currency) {
     if (!['EUR', 'USD', 'GBP', 'CNY'].includes(currency)) {
@@ -41,10 +43,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const user = await prisma.user.update({
-      where: { id: session.user.id },
-      data,
-    });
+    const [user] = await db.update(users).set(data).where(eq(users.id, session.user.id)).returning();
 
     return NextResponse.json({ 
       ok: true, 

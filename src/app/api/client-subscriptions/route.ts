@@ -1,7 +1,10 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, asc, inArray, count } from "drizzle-orm";
+import { db } from "@/db";
+import { clientSubscriptions, subscriptions, clients, renewalLogs, plans, platforms } from "@/db/schema";
 import { createClientSubscriptionSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
+import { amountToCents } from "@/lib/currency";
 import { addMonths, startOfDay } from "date-fns";
 import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
 
@@ -16,31 +19,39 @@ export async function GET(request: NextRequest) {
     const subscriptionId = searchParams.get("subscriptionId");
     const status = searchParams.get("status");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = { subscription: { userId } };
-    if (clientId) where.clientId = clientId;
-    if (subscriptionId) where.subscriptionId = subscriptionId;
-    if (status) where.status = status;
+    // Get subscription IDs that belong to this user
+    const userSubs = await db.select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    const userSubIds = userSubs.map(s => s.id);
 
-    const seats = await prisma.clientSubscription.findMany({
-      where,
-      include: {
-        client: { select: { id: true, name: true, phone: true } },
+    if (userSubIds.length === 0) return success([]);
+
+    const conditions = [inArray(clientSubscriptions.subscriptionId, userSubIds)];
+    if (clientId) conditions.push(eq(clientSubscriptions.clientId, clientId));
+    if (subscriptionId) conditions.push(eq(clientSubscriptions.subscriptionId, subscriptionId));
+    if (status) conditions.push(eq(clientSubscriptions.status, status as any));
+
+    const seats = await db.query.clientSubscriptions.findMany({
+      where: and(...conditions),
+      orderBy: [asc(clientSubscriptions.joinedAt)],
+      with: {
+        client: { columns: { id: true, name: true, phone: true } },
         subscription: {
-          include: {
+          with: {
             plan: {
-              include: { platform: { select: { id: true, name: true } } },
+              with: { platform: { columns: { id: true, name: true } } },
             },
           },
         },
       },
-      orderBy: { joinedAt: "asc" },
     });
-    const remappedSeats = seats.map((seat) => ({
+
+    const remappedSeats = await Promise.all(seats.map(async (seat) => ({
       ...seat,
-      serviceUser: decryptCredential(seat.serviceUser),
-      servicePassword: decryptCredential(seat.servicePassword),
-    }));
+      serviceUser: await decryptCredential(seat.serviceUser),
+      servicePassword: await decryptCredential(seat.servicePassword),
+    })));
 
     return success(remappedSeats);
   });
@@ -62,9 +73,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify subscription belongs to this user
-    const subscription = await prisma.subscription.findUnique({
-      where: { id: data.subscriptionId, userId },
-      include: { plan: { select: { maxSeats: true } } },
+    const subscription = await db.query.subscriptions.findFirst({
+      where: and(eq(subscriptions.id, data.subscriptionId), eq(subscriptions.userId, userId)),
+      with: { plan: { columns: { maxSeats: true } } },
     });
 
     if (!subscription) {
@@ -72,8 +83,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify client belongs to this user
-    const client = await prisma.client.findUnique({
-      where: { id: data.clientId, userId },
+    const client = await db.query.clients.findFirst({
+      where: and(eq(clients.id, data.clientId), eq(clients.userId, userId)),
     });
 
     if (!client) {
@@ -81,12 +92,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Unique constraint: reject if client already has an active or paused seat
-    const existingSeat = await prisma.clientSubscription.findFirst({
-      where: {
-        clientId: data.clientId,
-        subscriptionId: data.subscriptionId,
-        status: { in: ["active", "paused"] },
-      },
+    const existingSeat = await db.query.clientSubscriptions.findFirst({
+      where: and(
+        eq(clientSubscriptions.clientId, data.clientId),
+        eq(clientSubscriptions.subscriptionId, data.subscriptionId),
+        inArray(clientSubscriptions.status, ["active", "paused"])
+      ),
     });
     if (existingSeat) {
       return error(
@@ -97,9 +108,13 @@ export async function POST(request: NextRequest) {
 
     // Capacity check (if max_seats is defined)
     if (subscription.plan.maxSeats !== null) {
-      const currentOccupied = await prisma.clientSubscription.count({
-        where: { subscriptionId: data.subscriptionId, status: "active" },
-      });
+      const [{ currentOccupied }] = await db
+        .select({ currentOccupied: count() })
+        .from(clientSubscriptions)
+        .where(and(
+          eq(clientSubscriptions.subscriptionId, data.subscriptionId),
+          eq(clientSubscriptions.status, "active")
+        ));
       if (currentOccupied >= subscription.plan.maxSeats) {
         return error(
           `Subscription is full (${currentOccupied}/${subscription.plan.maxSeats} seats occupied)`,
@@ -114,39 +129,33 @@ export async function POST(request: NextRequest) {
 
     const defaultPaymentNote = subscription.defaultPaymentNote || "como pago";
 
-    // If credentials are provided, update the client record
-
-    const seat = await prisma.$transaction(async (tx) => {
-      const newSeat = await tx.clientSubscription.create({
-        data: {
-          clientId: data.clientId,
-          subscriptionId: data.subscriptionId,
-          customPrice: data.customPrice,
-          activeUntil,
-          joinedAt: startDate,
-          status: "active",
-          serviceUser: encryptCredential(data.serviceUser),
-          servicePassword: encryptCredential(data.servicePassword),
-        },
-      });
+    const seat = await db.transaction(async (tx) => {
+      const [newSeat] = await tx.insert(clientSubscriptions).values({
+        clientId: data.clientId,
+        subscriptionId: data.subscriptionId,
+        customPrice: amountToCents(data.customPrice),
+        activeUntil: activeUntil.toISOString().split("T")[0],
+        joinedAt: startDate.toISOString().split("T")[0],
+        status: "active",
+        serviceUser: await encryptCredential(data.serviceUser),
+        servicePassword: await encryptCredential(data.servicePassword),
+      }).returning();
 
       if (data.isPaid) {
         const periodStart = startDate;
         const periodEnd = activeUntil;
         const paidOn = startOfDay(new Date());
 
-        await tx.renewalLog.create({
-          data: {
-            clientSubscriptionId: newSeat.id,
-            amountPaid: data.customPrice,
-            expectedAmount: data.customPrice,
-            periodStart,
-            periodEnd,
-            paidOn,
-            dueOn: startDate,
-            monthsRenewed: data.durationMonths,
-            notes: data.paymentNote || defaultPaymentNote,
-          },
+        await tx.insert(renewalLogs).values({
+          clientSubscriptionId: newSeat.id,
+          amountPaid: amountToCents(data.customPrice),
+          expectedAmount: amountToCents(data.customPrice),
+          periodStart: periodStart.toISOString().split("T")[0],
+          periodEnd: periodEnd.toISOString().split("T")[0],
+          paidOn: paidOn.toISOString().split("T")[0],
+          dueOn: startDate.toISOString().split("T")[0],
+          monthsRenewed: data.durationMonths,
+          notes: data.paymentNote || defaultPaymentNote,
         });
       }
 
@@ -156,8 +165,8 @@ export async function POST(request: NextRequest) {
     return success(
       {
         ...seat,
-        serviceUser: decryptCredential(seat.serviceUser),
-        servicePassword: decryptCredential(seat.servicePassword),
+        serviceUser: await decryptCredential(seat.serviceUser),
+        servicePassword: await decryptCredential(seat.servicePassword),
       },
       201
     );

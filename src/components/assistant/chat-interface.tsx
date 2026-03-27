@@ -694,63 +694,17 @@ import { useSaasStatus } from "@/hooks/use-saas-status";
 
 export function ChatInterface() {
   const t = useTranslations();
-  // Copilot Auth State
-  const [hasCopilot, setHasCopilot] = useState<boolean | null>(null);
-  const [userCode, setUserCode] = useState<string | null>(null);
-  const [verificationUri, setVerificationUri] = useState<string | null>(null);
-  
-  // Model Selection State
-  const [models, setModels] = useState<{id: string, name?: string}[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>("");
+
+  // AI Model Selection — 3 static modes routed through Cloudflare AI Gateway
+  const AI_MODELS = [
+    { id: "ultra-fast", name: "⚡ Ultra Fast", description: "Cerebras" },
+    { id: "fast",       name: "🚀 Fast",       description: "Groq" },
+    { id: "default",   name: "🧠 Default",    description: "Workers AI" },
+  ];
+  const [selectedModel, setSelectedModel] = useState<string>("ultra-fast");
 
   const { data: saasStatus, isLoading: saasLoading } = useSaasStatus();
   const isPremium = saasStatus?.plan === "PREMIUM";
-
-  useEffect(() => {
-    fetch("/api/copilot/status")
-      .then(res => res.json())
-      .then(data => setHasCopilot(data.hasToken))
-      .catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    if (hasCopilot) {
-      fetch("/api/copilot/models")
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.data && Array.isArray(data.data)) {
-             const allowed = [
-               { id: "claude-haiku-4.5", name: "🧠 Expert" },
-               { id: "grok-code-fast-1", name: "⚡ Fast" }
-             ];
-             
-             // Filter down to the models we specifically want that the API returned
-             const availableAllowed = allowed.filter(a => data.data.some((m: {id: string}) => m.id === a.id));
-             
-             if (availableAllowed.length > 0) {
-               setModels(availableAllowed);
-               setSelectedModel(availableAllowed[0].id);
-             } else {
-               // Fallback deduplication just in case the Github models change IDs abruptly
-               const seen = new Set<string>();
-               const unique = data.data.filter((m: {id: string, capabilities?: {type?: string}}) => {
-                 if (seen.has(m.id)) return false;
-                 if (m.capabilities?.type && m.capabilities.type !== "chat") return false;
-                 if (m.id.includes("embedding")) return false;
-                 seen.add(m.id);
-                 return true;
-               });
-               setModels(unique);
-               if (unique.length > 0) {
-                 const defaultModel = unique.find((m: {id: string}) => m.id === "claude-haiku-4.5") || unique[0];
-                 setSelectedModel(defaultModel.id);
-               }
-             }
-          }
-        })
-        .catch(console.error);
-    }
-  }, [hasCopilot]);
   
   // ── Conversation History ──
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -769,48 +723,6 @@ export function ChatInterface() {
     setAllowDestructive(false);
   };
 
-  const initiateCopilotAuth = async () => {
-    try {
-      setUserCode(null);
-      const res = await fetch("/api/copilot/device-code", { method: "POST" });
-      const data = await res.json();
-      
-      setUserCode(data.user_code);
-      setVerificationUri(data.verification_uri);
-      
-      pollForToken(data.device_code, data.interval || 5);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const pollForToken = async (deviceCodeStr: string, intervalSeconds: number) => {
-    let polling = true;
-    while (polling) {
-      await new Promise(r => setTimeout(r, intervalSeconds * 1000));
-      try {
-        const res = await fetch("/api/copilot/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ device_code: deviceCodeStr })
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-          setHasCopilot(true);
-          polling = false;
-        } else if (data.pending) {
-          // keep polling
-        } else {
-          console.error("Polling error:", data.error);
-          polling = false;
-        }
-      } catch (err) {
-        console.error(err);
-        polling = false;
-      }
-    }
-  };
 
   const [input, setInput] = useState("");
   const [allowDestructive, setAllowDestructive] = useState(false);
@@ -1047,8 +959,8 @@ export function ChatInterface() {
     e?.preventDefault();
     if (hitlPending || !input.trim() || !sendMessage) return;
 
-    // SaaS Usage Tracking: Increment points
-    const cost = selectedModel === "claude-haiku-4.5" ? 0.5 : 0.3;
+    // SaaS Usage Tracking: Increment points (ultra-fast costs 0.2, fast 0.3, default 0.5)
+    const cost = selectedModel === "ultra-fast" ? 0.2 : selectedModel === "fast" ? 0.3 : 0.5;
     fetch("/api/user/usage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1177,7 +1089,7 @@ export function ChatInterface() {
     scrollToBottom();
   }, [messages, isLoading]);
 
-  if (hasCopilot === null || saasLoading) {
+  if (saasLoading) {
     return (
       <div className="flex items-center justify-center h-full bg-background">
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
@@ -1243,44 +1155,7 @@ export function ChatInterface() {
     );
   }
 
-  if (hasCopilot === false) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-background p-6">
-        <div className="max-w-md w-full flex flex-col items-center text-center space-y-6">
-          <div className="size-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <Github className="size-8 text-foreground" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Connect GitHub Copilot</h2>
-            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-              Pearfect AI uses your existing GitHub Copilot subscription to answer questions and analyze your revenue securely.
-            </p>
-          </div>
-          
-          {!userCode ? (
-            <Button onClick={initiateCopilotAuth} size="lg" className="w-full sm:w-auto">
-              Connect via Device Flow
-            </Button>
-          ) : (
-            <div className="flex flex-col items-center space-y-4 w-full p-6 bg-muted/30 border rounded-xl">
-              <p className="text-sm font-medium">1. Open the verification link:</p>
-              <a href={verificationUri || "#"} target="_blank" rel="noreferrer" className="text-primary hover:underline text-sm font-medium">
-                {verificationUri}
-              </a>
-              <p className="text-sm font-medium mt-4">2. Enter this code:</p>
-              <div className="text-3xl font-mono font-bold tracking-widest text-primary p-4 bg-background border rounded-lg shadow-inner w-full text-center">
-                {userCode}
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-4">
-                <Loader2 className="size-4 animate-spin" />
-                Waiting for authorization...
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+
 
 
   // Determine if we should show the bottom generic analyzing orb
@@ -1572,32 +1447,21 @@ export function ChatInterface() {
             <div className="flex items-center justify-between mt-1 pt-1">
               <div className="flex items-center gap-1.5">
                 {/* Model Selector within dock */}
-                {hasCopilot && (
-                  <Select value={selectedModel || "claude-haiku-4.5"} onValueChange={setSelectedModel} disabled={isLoading || models.length === 0}>
-                    <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[120px] flex items-center justify-between">
-                      {models.length === 0 ? (
-                        <div className="flex items-center gap-2 text-muted-foreground w-full justify-center">
-                          <Loader2 className="size-3 animate-spin" />
-                          <div className="h-2 w-12 bg-muted-foreground/20 rounded animate-pulse" />
-                        </div>
-                      ) : (
-                        <SelectValue placeholder="Expert" />
-                      )}
-                    </SelectTrigger>
-                    {models.length > 0 && (
-                      <SelectContent className="rounded-xl border-border/40">
-                        {models.map(m => {
-                          const cost = m.id === "claude-haiku-4.5" ? 0.5 : 0.3;
-                          return (
-                            <SelectItem key={m.id} value={m.id} className="text-xs font-medium rounded-lg">
-                              {m.name} <span className="text-muted-foreground ml-1">({cost})</span>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    )}
-                  </Select>
-                )}
+                <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isLoading}>
+                  <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[130px] flex items-center justify-between">
+                    <SelectValue placeholder="Ultra Fast" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-border/40">
+                    {AI_MODELS.map(m => {
+                      const cost = m.id === "ultra-fast" ? 0.2 : m.id === "fast" ? 0.3 : 0.5;
+                      return (
+                        <SelectItem key={m.id} value={m.id} className="text-xs font-medium rounded-lg">
+                          {m.name} <span className="text-muted-foreground ml-1">({m.description})</span>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
                 
                 <div className="flex items-center space-x-2 ml-2 bg-red-500/10 dark:bg-red-500/5 px-2.5 py-1.5 rounded-full border border-red-500/20">
                   <Switch 

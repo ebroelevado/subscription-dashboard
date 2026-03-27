@@ -1,11 +1,11 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useSession, authClient } from "@/lib/auth-client";
 import { useEffect, useState } from "react";
 import { Currency } from "@/lib/currency";
 
 export function useCurrency() {
-  const { data: session, update: updateSession } = useSession();
+  const { data: session } = useSession();
   const [guestCurrency, setGuestCurrency] = useState<Currency>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("NEXT_CURRENCY") as Currency;
@@ -14,15 +14,12 @@ export function useCurrency() {
     return "EUR";
   });
 
-  const currentCurrency = (session?.user as { currency?: string })?.currency || guestCurrency;
+  const currentCurrency = session?.user?.currency || guestCurrency;
 
   const setCurrency = async (newCurrency: Currency) => {
     if (session?.user) {
-      await updateSession({
-        user: {
-          ...session.user,
-          currency: newCurrency,
-        },
+      await authClient.updateUser({
+        currency: newCurrency,
       });
     } else {
       localStorage.setItem("NEXT_CURRENCY", newCurrency);

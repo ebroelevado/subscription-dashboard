@@ -1,5 +1,7 @@
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/auth-utils";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -10,7 +12,7 @@ const setPasswordSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -28,10 +30,12 @@ export async function POST(req: Request) {
     const { password } = result.data;
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const updatedUser = await prisma.user.update({
-      where: { id: session.user.id },
-      data: { password: hashedPassword },
-      select: { id: true, email: true, name: true }
+    const [updatedUser] = await db.update(users).set({
+      password: hashedPassword,
+    }).where(eq(users.id, session.user.id)).returning({
+      id: users.id,
+      email: users.email,
+      name: users.name,
     });
 
     return NextResponse.json({ success: true, user: updatedUser });

@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/fetch-api";
-import { signOut } from "next-auth/react";
+import { signOut } from "@/lib/auth-client";
 import type { UpdateProfileInput } from "@/lib/validations/account";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -98,7 +98,13 @@ export function useDeleteAccount() {
         throw new Error(json.error ?? "Deletion failed");
       }
       // Destroy session + redirect to landing
-      await signOut({ callbackUrl: "/" });
+      await signOut({
+        fetchOptions: {
+          onSuccess: () => {
+             window.location.href = "/";
+          }
+        }
+      });
     },
   });
 }

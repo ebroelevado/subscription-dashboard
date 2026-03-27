@@ -18,7 +18,7 @@ import { Pencil, Trash2, Eye, CreditCard, RefreshCw } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useTranslations } from "next-intl";
 import { differenceInDays, startOfDay } from "date-fns";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
 
 interface SubscriptionsTableProps {
@@ -121,9 +121,9 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
           </TableHeader>
           <TableBody>
             {subscriptions.map((sub) => {
-              const occupied = sub.clientSubscriptions.length;
-              const max = sub.plan.maxSeats;
-              const isFull = max !== null && occupied >= max;
+              const occupied = sub.clientSubscriptions?.length || 0;
+              const max = sub.plan?.maxSeats;
+              const isFull = max != null && occupied >= max;
 
               return (
                 <TableRow 
@@ -133,7 +133,7 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
                 >
                   <TableCell className="text-center font-medium">{sub.label}</TableCell>
                   <TableCell className="text-center text-muted-foreground">
-                    {sub.plan.platform.name} → {sub.plan.name}
+                    {sub.plan?.platform?.name ?? tc("deleted")} → {sub.plan?.name ?? tc("deleted")}
                   </TableCell>
                   <TableCell className="text-center">
                     <TooltipProvider>
@@ -195,7 +195,7 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
                     {formatDate(sub.activeUntil)}
                   </TableCell>
                   <TableCell className="text-center font-medium whitespace-nowrap">
-                    {formatCurrency(sub.plan.cost, currency)}
+                    {formatCurrency(sub.plan?.cost ?? 0, currency)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">

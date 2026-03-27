@@ -18,7 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Pencil, Trash2, CreditCard } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useTranslations } from "next-intl";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
 
 interface PlansTableProps {
@@ -103,7 +103,7 @@ export function PlansTable({ plans, isLoading }: PlansTableProps) {
               <TableRow key={plan.id}>
                 <TableCell className="text-center font-medium">{plan.name}</TableCell>
                 <TableCell className="text-center text-muted-foreground">
-                  {plan.platform.name}
+                  {plan.platform?.name ?? tc("deleted")}
                 </TableCell>
                 <TableCell className="text-center font-mono tabular-nums">
                   {formatCurrencyVal(Number(plan.cost))}

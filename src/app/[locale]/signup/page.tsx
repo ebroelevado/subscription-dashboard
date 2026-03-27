@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { signIn } from "next-auth/react";
+import { signIn } from "@/lib/auth-client";
 import { Link } from "@/i18n/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -56,10 +56,9 @@ export default function SignupPage() {
       }
 
       // 2. Auto sign-in
-      const signInRes = await signIn("credentials", {
+      const signInRes = await signIn.email({
         email: data.email,
         password: data.password,
-        redirect: false,
       });
 
       if (signInRes?.error) {

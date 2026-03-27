@@ -13,7 +13,7 @@ import { differenceInDays, startOfDay } from "date-fns";
 import { useTranslations } from "next-intl";
 
 import { formatCurrency } from "@/lib/currency";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 
 type ExpiryStatus = "ok" | "expiring" | "expired";
 

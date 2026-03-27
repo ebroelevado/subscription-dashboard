@@ -6,7 +6,10 @@
  * No raw SQL, no mutations, no cross-tenant data access.
  */
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc, asc, count, sum, gte, lte, inArray, or, ilike } from "drizzle-orm";
+import { db } from "@/db";
+import { amountToCents } from "@/lib/currency";
+import { users, clients, clientSubscriptions, subscriptions, plans, platforms, renewalLogs, platformRenewals } from "@/db/schema";
 import { getDisciplineAnalytics } from "@/lib/discipline-service";
 
 // Type for defineTool — imported dynamically in route.ts
@@ -44,39 +47,41 @@ export function createUserScopedTools(
                 search?: string;
                 limit?: number;
             }) => {
-                const clients = await prisma.client.findMany({
-                    where: {
-                        userId,
-                        ...(search
-                            ? {
-                                OR: [
-                                    { name: { contains: search, mode: "insensitive" } },
-                                    { phone: { contains: search, mode: "insensitive" } },
-                                    { notes: { contains: search, mode: "insensitive" } },
-                                ],
-                            }
-                            : {}),
-                    },
-                    select: {
+                const whereConditions = [eq(clients.userId, userId)];
+                if (search) {
+                    whereConditions.push(or(
+                        ilike(clients.name, `%${search}%`),
+                        ilike(clients.phone, `%${search}%`),
+                        ilike(clients.notes, `%${search}%`)
+                    )!);
+                }
+
+                const clientsList = await db.query.clients.findMany({
+                    where: and(...whereConditions),
+                    columns: {
                         id: true,
                         name: true,
                         phone: true,
                         notes: true,
                         createdAt: true,
-                        _count: { select: { clientSubscriptions: true } },
                     },
-                    orderBy: { name: "asc" },
-                    take: Math.min(limit, 50),
+                    with: {
+                        clientSubscriptions: {
+                            columns: { id: true },
+                        },
+                    },
+                    orderBy: [asc(clients.name)],
+                    limit: Math.min(limit, 50),
                 });
 
                 return {
-                    totalFound: clients.length,
-                    clients: clients.map((c) => ({
+                    totalFound: clientsList.length,
+                    clients: clientsList.map((c) => ({
                         id: c.id,
                         name: c.name,
                         phone: c.phone,
                         notes: c.notes,
-                        activeSubscriptions: c._count.clientSubscriptions,
+                        activeSubscriptions: c.clientSubscriptions.length,
                         createdAt: c.createdAt,
                     })),
                 };
@@ -94,48 +99,50 @@ export function createUserScopedTools(
             }),
             handler: async ({ clientIds }: { clientIds: string | string[] }) => {
                 const ids = Array.isArray(clientIds) ? clientIds : [clientIds];
-                const clients = await prisma.client.findMany({
-                    where: { id: { in: ids }, userId },
-                    select: {
+                const clientsList = await db.query.clients.findMany({
+                    where: and(inArray(clients.id, ids), eq(clients.userId, userId)),
+                    columns: {
                         id: true,
                         name: true,
                         phone: true,
                         notes: true,
                         createdAt: true,
+                    },
+                    with: {
                         clientSubscriptions: {
-                            select: {
+                            columns: {
                                 id: true,
                                 status: true,
                                 customPrice: true,
                                 activeUntil: true,
                                 joinedAt: true,
+                            },
+                            with: {
                                 subscription: {
-                                    select: {
-                                        label: true,
+                                    columns: { label: true },
+                                    with: {
                                         plan: {
-                                            select: {
-                                                name: true,
-                                                platform: { select: { name: true } }
-                                            }
+                                            columns: { name: true },
+                                            with: { platform: { columns: { name: true } } }
                                         }
                                     }
                                 },
                                 renewalLogs: {
-                                    select: { amountPaid: true, periodStart: true, periodEnd: true, paidOn: true },
-                                    orderBy: { paidOn: "desc" },
-                                    take: 5,
+                                    columns: { amountPaid: true, periodStart: true, periodEnd: true, paidOn: true },
+                                    orderBy: [desc(renewalLogs.paidOn)],
+                                    limit: 5,
                                 },
                             },
                         },
                         ownedSubscriptions: {
-                            select: { id: true, label: true },
+                            columns: { id: true, label: true },
                         },
                     },
                 });
 
-                if (!clients.length) return { error: "No clients found or access denied" };
+                if (!clientsList.length) return { error: "No clients found or access denied" };
 
-                const mappedClients = clients.map(client => ({
+                const mappedClients = clientsList.map((client) => ({
                     id: client.id,
                     name: client.name,
                     phone: client.phone,
@@ -160,8 +167,6 @@ export function createUserScopedTools(
                     ownedSubscriptions: client.ownedSubscriptions,
                 }));
 
-                // Return a single object if only one ID was requested to retain backward feel, though returning array is fine too.
-                // Returning array always is more predictable for bulk operations.
                 return { clients: mappedClients };
             },
         }),
@@ -174,25 +179,25 @@ export function createUserScopedTools(
                 "List all platforms (Netflix, Spotify, etc.) with their plans, number of active subscriptions, total seats, and costs.",
             parameters: z.object({}),
             handler: async () => {
-                const platforms = await prisma.platform.findMany({
-                    where: { userId },
-                    include: {
+                const platformsList = await db.query.platforms.findMany({
+                    where: eq(platforms.userId, userId),
+                    orderBy: [asc(platforms.name)],
+                    with: {
                         plans: {
-                            include: {
+                            with: {
                                 subscriptions: {
-                                    include: {
-                                        _count: {
-                                            select: { clientSubscriptions: true },
+                                    with: {
+                                        clientSubscriptions: {
+                                            columns: { id: true, status: true },
                                         },
                                     },
                                 },
                             },
                         },
                     },
-                    orderBy: { name: "asc" },
                 });
 
-                return platforms.map((p) => ({
+                return platformsList.map((p) => ({
                     id: p.id,
                     name: p.name,
                     plans: p.plans.map((plan) => ({
@@ -206,7 +211,7 @@ export function createUserScopedTools(
                             label: sub.label,
                             status: sub.status,
                             activeUntil: sub.activeUntil,
-                            seatsUsed: sub._count.clientSubscriptions,
+                            seatsUsed: sub.clientSubscriptions.filter(cs => cs.status === "active").length,
                         })),
                     })),
                 }));
@@ -236,35 +241,43 @@ export function createUserScopedTools(
                 status?: "active" | "paused";
                 platformName?: string;
             }) => {
-                const subscriptions = await prisma.subscription.findMany({
-                    where: {
-                        userId,
-                        ...(status ? { status } : {}),
-                        ...(platformName
-                            ? {
-                                plan: {
-                                    platform: {
-                                        name: { contains: platformName, mode: "insensitive" },
-                                    },
-                                },
-                            }
-                            : {}),
-                    },
-                    include: {
-                        plan: { include: { platform: true } },
-                        clientSubscriptions: {
-                            where: { status: "active" },
-                            select: { customPrice: true },
+                const whereConditions = [eq(subscriptions.userId, userId)];
+                if (status) whereConditions.push(eq(subscriptions.status, status));
+
+                // For platformName filter, we need to get platform IDs first
+                let platformIds: string[] | undefined;
+                if (platformName) {
+                    const matchedPlatforms = await db.select({ id: platforms.id })
+                        .from(platforms)
+                        .where(ilike(platforms.name, `%${platformName}%`));
+                    platformIds = matchedPlatforms.map(p => p.id);
+                    if (platformIds.length === 0) return [];
+                }
+
+                const subsList = await db.query.subscriptions.findMany({
+                    where: and(...whereConditions),
+                    orderBy: [desc(subscriptions.createdAt)],
+                    with: {
+                        plan: {
+                            columns: { id: true, name: true, cost: true, maxSeats: true, platformId: true },
+                            with: { platform: { columns: { id: true, name: true } } },
                         },
-                        _count: { select: { clientSubscriptions: true } },
-                        owner: { select: { name: true } },
+                        clientSubscriptions: {
+                            where: eq(clientSubscriptions.status, "active"),
+                            columns: { customPrice: true },
+                        },
+                        owner: { columns: { name: true } },
                     },
-                    orderBy: { createdAt: "desc" },
                 });
 
-                return subscriptions.map((sub) => {
+                // Filter by platform if needed (post-query filter since we can't filter nested)
+                const filtered = platformIds
+                    ? subsList.filter(s => platformIds!.includes(s.plan.platformId))
+                    : subsList;
+
+                return filtered.map((sub) => {
                     const monthlyRevenue = sub.clientSubscriptions.reduce(
-                        (sum, cs) => sum + Number(cs.customPrice),
+                        (acc, cs) => acc + Number(cs.customPrice),
                         0,
                     );
                     return {
@@ -274,7 +287,7 @@ export function createUserScopedTools(
                         plan: sub.plan.name,
                         planCost: Number(sub.plan.cost),
                         maxSeats: sub.plan.maxSeats,
-                        seatsUsed: sub._count.clientSubscriptions,
+                        seatsUsed: sub.clientSubscriptions.length,
                         status: sub.status,
                         activeUntil: sub.activeUntil,
                         monthlyRevenue,
@@ -297,21 +310,23 @@ export function createUserScopedTools(
             }),
             handler: async ({ subscriptionIds }: { subscriptionIds: string | string[] }) => {
                 const ids = Array.isArray(subscriptionIds) ? subscriptionIds : [subscriptionIds];
-                const subs = await prisma.subscription.findMany({
-                    where: { id: { in: ids }, userId },
-                    include: {
-                        plan: { include: { platform: true } },
+                const subs = await db.query.subscriptions.findMany({
+                    where: and(inArray(subscriptions.id, ids), eq(subscriptions.userId, userId)),
+                    with: {
+                        plan: {
+                            with: { platform: { columns: { id: true, name: true } } },
+                        },
                         clientSubscriptions: {
-                            include: {
-                                client: { select: { id: true, name: true, phone: true } },
+                            orderBy: [desc(clientSubscriptions.joinedAt)],
+                            with: {
+                                client: { columns: { id: true, name: true, phone: true } },
                             },
-                            orderBy: { joinedAt: "desc" },
                         },
                         platformRenewals: {
-                            orderBy: { paidOn: "desc" },
-                            take: 5,
+                            orderBy: [desc(platformRenewals.paidOn)],
+                            limit: 5,
                         },
-                        owner: { select: { name: true, phone: true } },
+                        owner: { columns: { name: true, phone: true } },
                     },
                 });
 
@@ -337,8 +352,8 @@ export function createUserScopedTools(
                         clientId: cs.client.id,
                         price: Number(cs.customPrice),
                         status: cs.status,
-                        serviceUser: (cs as any).serviceUser,
-                        servicePassword: (cs as any).servicePassword,
+                        serviceUser: cs.serviceUser,
+                        servicePassword: cs.servicePassword,
                         activeUntil: cs.activeUntil,
                         joinedAt: cs.joinedAt,
                     })),
@@ -362,59 +377,60 @@ export function createUserScopedTools(
                 "Get comprehensive revenue statistics: monthly recurring revenue (MRR), total platform costs, net profit, per-platform breakdown, and key metrics like total clients and seats.",
             parameters: z.object({}),
             handler: async () => {
-                // Optimize: Use DB aggregations instead of downloading all rows
                 const [
-                    mrrAgg,
-                    costAgg,
-                    totalClients,
-                    activeSeatsCount,
-                    platforms
+                    mrrResult,
+                    totalClientsResult,
+                    activeSeatsResult,
+                    platformsList,
+                    activeSubs
                 ] = await Promise.all([
-                    prisma.clientSubscription.aggregate({
-                        where: { status: "active", subscription: { userId } },
-                        _sum: { customPrice: true }
-                    }),
-                    prisma.subscription.aggregate({
-                        where: { status: "active", userId },
-                        // Prisma aggregate on relations sum is tricky, let's fetch active subscriptions with their plans
-                        // Actually, we'll keep the subscription fetch but ONLY the cost
-                    }).catch(() => null), // Catch just in case
-                    prisma.client.count({ where: { userId } }),
-                    prisma.clientSubscription.count({
-                        where: { status: "active", subscription: { userId } }
-                    }),
-                    prisma.platform.findMany({
-                        where: { userId },
-                        select: {
-                            name: true,
+                    db.select({ total: sum(clientSubscriptions.customPrice) })
+                        .from(clientSubscriptions)
+                        .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+                        .where(and(
+                            eq(subscriptions.userId, userId),
+                            eq(clientSubscriptions.status, "active")
+                        )),
+                    db.select({ count: count() }).from(clients).where(eq(clients.userId, userId)),
+                    db.select({ count: count() })
+                        .from(clientSubscriptions)
+                        .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+                        .where(and(
+                            eq(subscriptions.userId, userId),
+                            eq(clientSubscriptions.status, "active")
+                        )),
+                    db.query.platforms.findMany({
+                        where: eq(platforms.userId, userId),
+                        with: {
                             plans: {
-                                select: {
-                                    cost: true,
+                                columns: { id: true, name: true, cost: true },
+                                with: {
                                     subscriptions: {
-                                        where: { status: "active" },
-                                        select: {
+                                        where: eq(subscriptions.status, "active"),
+                                        columns: { id: true },
+                                        with: {
                                             clientSubscriptions: {
-                                                where: { status: "active" },
-                                                select: { customPrice: true }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    })
+                                                where: eq(clientSubscriptions.status, "active"),
+                                                columns: { customPrice: true },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    }),
+                    db.query.subscriptions.findMany({
+                        where: and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active")),
+                        with: { plan: { columns: { cost: true } } },
+                    }),
                 ]);
 
-                // Fallback for costs if aggregate isn't perfectly supported on relations in this prisma version
-                const activeSubs = await prisma.subscription.findMany({
-                    where: { userId, status: "active" },
-                    select: { plan: { select: { cost: true } } },
-                });
+                const totalMRR = Number(mrrResult[0]?.total || 0);
+                const totalClients = totalClientsResult[0]?.count || 0;
+                const activeSeatsCount = activeSeatsResult[0]?.count || 0;
+                const totalCosts = activeSubs.reduce((acc, s) => acc + Number(s.plan.cost), 0);
 
-                const totalMRR = Number(mrrAgg._sum.customPrice || 0);
-                const totalCosts = activeSubs.reduce((sum, s) => sum + Number(s.plan.cost), 0);
-
-                const perPlatform = platforms.map((p) => {
+                const perPlatform = platformsList.map((p) => {
                     let revenue = 0;
                     let costs = 0;
                     let activeSeats = 0;
@@ -484,46 +500,55 @@ export function createUserScopedTools(
                 toDate?: string;
                 limit?: number;
             }) => {
-                const logs = await prisma.renewalLog.findMany({
-                    where: {
+                const conditions = [];
+
+                // Filter by userId through subscription
+                const userSubs = await db.select({ id: subscriptions.id })
+                    .from(subscriptions)
+                    .where(eq(subscriptions.userId, userId));
+                const userSubIds = userSubs.map(s => s.id);
+                if (userSubIds.length === 0) return { totalFound: 0, payments: [] };
+                conditions.push(inArray(renewalLogs.clientSubscriptionId, userSubIds));
+
+                // Filter by client name
+                if (clientName) {
+                    const matchedClients = await db.select({ id: clients.id })
+                        .from(clients)
+                        .where(ilike(clients.name, `%${clientName}%`));
+                    const clientIds = matchedClients.map(c => c.id);
+                    if (clientIds.length === 0) return { totalFound: 0, payments: [] };
+                    const matchedCS = await db.select({ id: clientSubscriptions.id })
+                        .from(clientSubscriptions)
+                        .where(inArray(clientSubscriptions.clientId, clientIds));
+                    const csIds = matchedCS.map(cs => cs.id);
+                    conditions.push(inArray(renewalLogs.clientSubscriptionId, csIds));
+                }
+
+                // Date filters
+                if (fromDate) conditions.push(gte(renewalLogs.paidOn, fromDate));
+                if (toDate) conditions.push(lte(renewalLogs.paidOn, toDate));
+
+                const logs = await db.query.renewalLogs.findMany({
+                    where: and(...conditions),
+                    orderBy: [desc(renewalLogs.paidOn)],
+                    limit: Math.min(limit, 50),
+                    with: {
                         clientSubscription: {
-                            subscription: { userId },
-                            ...(clientName
-                                ? {
-                                    client: {
-                                        name: { contains: clientName, mode: "insensitive" },
-                                    },
-                                }
-                                : {}),
-                        },
-                        ...(fromDate || toDate
-                            ? {
-                                paidOn: {
-                                    ...(fromDate ? { gte: new Date(fromDate) } : {}),
-                                    ...(toDate ? { lte: new Date(toDate) } : {}),
-                                },
-                            }
-                            : {}),
-                    },
-                    include: {
-                        clientSubscription: {
-                            include: {
-                                client: { select: { name: true } },
+                            columns: { id: true },
+                            with: {
+                                client: { columns: { name: true } },
                                 subscription: {
-                                    select: {
-                                        label: true,
+                                    columns: { label: true },
+                                    with: {
                                         plan: {
-                                            select: {
-                                                platform: { select: { name: true } },
-                                            },
-                                        },
-                                    },
+                                            columns: { name: true },
+                                            with: { platform: { columns: { name: true } } }
+                                        }
+                                    }
                                 },
                             },
                         },
                     },
-                    orderBy: { paidOn: "desc" },
-                    take: Math.min(limit, 50),
                 });
 
                 return {
@@ -580,47 +605,50 @@ export function createUserScopedTools(
                 toDate?: string;
                 limit?: number;
             }) => {
-                const renewals = await prisma.platformRenewal.findMany({
-                    where: {
+                const conditions = [];
+
+                // Filter by userId through subscription
+                const userSubs = await db.select({ id: subscriptions.id })
+                    .from(subscriptions)
+                    .where(eq(subscriptions.userId, userId));
+                const userSubIds = userSubs.map(s => s.id);
+                if (userSubIds.length === 0) return { totalFound: 0, renewals: [] };
+                conditions.push(inArray(platformRenewals.subscriptionId, userSubIds));
+
+                // Filter by platform name
+                if (platformName) {
+                    const matchedPlatforms = await db.select({ id: platforms.id })
+                        .from(platforms)
+                        .where(ilike(platforms.name, `%${platformName}%`));
+                    const platIds = matchedPlatforms.map(p => p.id);
+                    if (platIds.length === 0) return { totalFound: 0, renewals: [] };
+                    const matchedSubs = await db.select({ id: subscriptions.id })
+                        .from(subscriptions)
+                        .innerJoin(plans, eq(subscriptions.planId, plans.id))
+                        .where(inArray(plans.platformId, platIds));
+                    const subIds = matchedSubs.map(s => s.id);
+                    conditions.push(inArray(platformRenewals.subscriptionId, subIds));
+                }
+
+                // Date filters
+                if (fromDate) conditions.push(gte(platformRenewals.paidOn, fromDate));
+                if (toDate) conditions.push(lte(platformRenewals.paidOn, toDate));
+
+                const renewals = await db.query.platformRenewals.findMany({
+                    where: and(...conditions),
+                    orderBy: [desc(platformRenewals.paidOn)],
+                    limit: Math.min(limit, 50),
+                    with: {
                         subscription: {
-                            userId,
-                            ...(platformName
-                                ? {
-                                    plan: {
-                                        platform: {
-                                            name: {
-                                                contains: platformName,
-                                                mode: "insensitive",
-                                            },
-                                        },
-                                    },
-                                }
-                                : {}),
-                        },
-                        ...(fromDate || toDate
-                            ? {
-                                paidOn: {
-                                    ...(fromDate ? { gte: new Date(fromDate) } : {}),
-                                    ...(toDate ? { lte: new Date(toDate) } : {}),
-                                },
-                            }
-                            : {}),
-                    },
-                    include: {
-                        subscription: {
-                            select: {
-                                label: true,
+                            columns: { label: true },
+                            with: {
                                 plan: {
-                                    select: {
-                                        name: true,
-                                        platform: { select: { name: true } },
-                                    },
-                                },
+                                    columns: { name: true },
+                                    with: { platform: { columns: { name: true } } }
+                                }
                             },
                         },
                     },
-                    orderBy: { paidOn: "desc" },
-                    take: Math.min(limit, 50),
                 });
 
                 return {
@@ -647,21 +675,20 @@ export function createUserScopedTools(
                 "Get pre-calculated payment discipline scores (0.0 to 10.0) for every client. Use this to find 'worst clients' (scores < 5.0) or 'best clients' (score = 10.0) instantly, WITHOUT downloading raw payment histories.",
             parameters: z.object({}),
             handler: async () => {
-                // Fetch clients with persisted metrics
-                const clients = await (prisma.client as any).findMany({
-                    where: { userId },
-                    select: {
+                const clientsList = await db.query.clients.findMany({
+                    where: eq(clients.userId, userId),
+                    columns: {
                         id: true,
                         name: true,
                         phone: true,
                         disciplineScore: true,
                         healthStatus: true,
                         daysOverdue: true,
-                        dailyPenalty: true
-                    }
+                        dailyPenalty: true,
+                    },
                 });
 
-                const results = clients.map((c: any) => ({
+                const results = clientsList.map((c) => ({
                     clientId: c.id,
                     name: c.name,
                     phone: c.phone || "Unknown",
@@ -672,7 +699,7 @@ export function createUserScopedTools(
                 }));
 
                 // Sort worst to best by default to prioritize answering "worst clients"
-                results.sort((a: any, b: any) => {
+                results.sort((a, b) => {
                     if (a.healthStatus === "Critical" && b.healthStatus !== "Critical") return -1;
                     if (a.healthStatus !== "Critical" && b.healthStatus === "Critical") return 1;
                     if (a.score === null) return 1;
@@ -698,10 +725,9 @@ export function createUserScopedTools(
                 __safe_user_approval_ui_only: z.boolean().default(false).describe("SYSTEM-ONLY: Do not use. The UI will set this when the user clicks confirm."),
             }),
             handler: async ({ disciplinePenalty, currency, __safe_user_approval_ui_only }: { disciplinePenalty?: number, currency?: string, __safe_user_approval_ui_only: boolean }) => {
-                // Fetch previous state for undo capability
-                const user = await prisma.user.findUnique({
-                    where: { id: userId },
-                    select: { disciplinePenalty: true, currency: true }
+                const user = await db.query.users.findFirst({
+                    where: eq(users.id, userId),
+                    columns: { disciplinePenalty: true, currency: true }
                 });
                 if (!user) return { error: "User not found." };
 
@@ -716,13 +742,17 @@ export function createUserScopedTools(
                     };
                 }
 
-                const updated = await prisma.user.update({
-                    where: { id: userId },
-                    data: {
-                        ...(disciplinePenalty !== undefined ? { disciplinePenalty } : {}),
-                        ...(currency ? { currency } : {}),
-                    },
-                    select: { disciplinePenalty: true, currency: true }
+                const updateData: Record<string, any> = {};
+                if (disciplinePenalty !== undefined) updateData.disciplinePenalty = disciplinePenalty;
+                if (currency) updateData.currency = currency;
+
+                await db.update(users)
+                    .set(updateData)
+                    .where(eq(users.id, userId));
+
+                const updated = await db.query.users.findFirst({
+                    where: eq(users.id, userId),
+                    columns: { disciplinePenalty: true, currency: true }
                 });
 
                 return {
@@ -734,8 +764,8 @@ export function createUserScopedTools(
                         currency: user.currency
                     },
                     config: {
-                        disciplinePenalty: updated.disciplinePenalty,
-                        currency: updated.currency
+                        disciplinePenalty: updated?.disciplinePenalty,
+                        currency: updated?.currency
                     }
                 };
             },
@@ -755,8 +785,7 @@ export function createUserScopedTools(
                 __safe_user_approval_ui_only: z.boolean().default(false).describe("SYSTEM-ONLY: Do not use."),
             }),
             handler: async ({ clientId, name, phone, notes, __safe_user_approval_ui_only }: { clientId: string, name?: string, phone?: string, notes?: string, __safe_user_approval_ui_only: boolean }) => {
-                // Verify ownership
-                const client = await prisma.client.findFirst({ where: { id: clientId, userId } });
+                const client = await db.query.clients.findFirst({ where: and(eq(clients.id, clientId), eq(clients.userId, userId)) });
                 if (!client) return { error: "Client not found or access denied." };
 
                 if (!__safe_user_approval_ui_only) {
@@ -767,19 +796,21 @@ export function createUserScopedTools(
                     };
                 }
 
-                const updated = await prisma.client.update({
-                    where: { id: clientId },
-                    data: {
-                        ...(name ? { name } : {}),
-                        ...(phone ? { phone } : {}),
-                        ...(notes ? { notes } : {}),
-                    }
-                });
+                const updateData: Record<string, any> = {};
+                if (name) updateData.name = name;
+                if (phone) updateData.phone = phone;
+                if (notes) updateData.notes = notes;
+
+                await db.update(clients)
+                    .set(updateData)
+                    .where(eq(clients.id, clientId));
+
+                const updated = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
 
                 return {
                     success: true,
                     status: "executed",
-                    message: `Client ${updated.name} updated successfully.`,
+                    message: `Client ${updated?.name} updated successfully.`,
                     previousValues: {
                         name: client.name,
                         phone: client.phone,
@@ -803,42 +834,61 @@ export function createUserScopedTools(
             }),
             handler: async ({ type, targetId, previousValues }: { type: string, targetId: string, previousValues: any }) => {
                 if (type === "userConfig") {
-                    await prisma.user.update({
-                        where: { id: userId },
-                        data: previousValues
-                    });
+                    await db.update(users)
+                        .set(previousValues)
+                        .where(eq(users.id, userId));
                 } else if (type === "client") {
-                    const client = await prisma.client.findFirst({ where: { id: targetId, userId } });
+                    const client = await db.query.clients.findFirst({ where: and(eq(clients.id, targetId), eq(clients.userId, userId)) });
                     if (!client) return { error: "Client not found or unauthorized for undo." };
 
-                    // If previousValues is null/empty, it means we are UNDOING a CREATION (so delete)
                     if (!previousValues || Object.keys(previousValues).length === 0) {
-                        await prisma.client.delete({ where: { id: targetId } });
+                        await db.delete(clients).where(eq(clients.id, targetId));
                         return { success: true, message: "Client creation reverted (deleted)." };
                     }
 
-                    await prisma.client.update({ where: { id: targetId }, data: previousValues });
+                    await db.update(clients)
+                        .set(previousValues)
+                        .where(eq(clients.id, targetId));
                 } else if (type === "clientSubscription") {
-                    // Undoing a seat assignment (deletion)
-                    const cs = await prisma.clientSubscription.findFirst({
-                        where: { id: targetId, client: { userId } }
+                    // Get user's client IDs first
+                    const userClients = await db.select({ id: clients.id }).from(clients).where(eq(clients.userId, userId));
+                    const userClientIds = userClients.map(c => c.id);
+
+                    const cs = await db.query.clientSubscriptions.findFirst({
+                        where: and(
+                            eq(clientSubscriptions.id, targetId),
+                            inArray(clientSubscriptions.clientId, userClientIds)
+                        )
                     });
                     if (cs) {
-                        await prisma.clientSubscription.delete({ where: { id: targetId } });
+                        await db.delete(clientSubscriptions).where(eq(clientSubscriptions.id, targetId));
                         return { success: true, message: "Assignment reverted (deleted)." };
                     }
                 } else if (type === "payment") {
-                    // For payments, 'undo' means deleting the log and restoring subscription date
-                    const log = await prisma.renewalLog.findFirst({
-                        where: { id: targetId, clientSubscription: { subscription: { userId } } },
-                        include: { clientSubscription: true }
+                    // Get user's subscription IDs first
+                    const userSubs = await db.select({ id: subscriptions.id })
+                        .from(subscriptions)
+                        .where(eq(subscriptions.userId, userId));
+                    const userSubIds = userSubs.map(s => s.id);
+
+                    // Get client subscription IDs
+                    const userCS = await db.select({ id: clientSubscriptions.id })
+                        .from(clientSubscriptions)
+                        .where(inArray(clientSubscriptions.subscriptionId, userSubIds));
+                    const userCSIds = userCS.map(cs => cs.id);
+
+                    const log = await db.query.renewalLogs.findFirst({
+                        where: and(
+                            eq(renewalLogs.id, targetId),
+                            inArray(renewalLogs.clientSubscriptionId, userCSIds)
+                        ),
+                        with: { clientSubscription: true }
                     });
-                    if (log) {
-                        await prisma.clientSubscription.update({
-                            where: { id: log.clientSubscriptionId! },
-                            data: { activeUntil: log.dueOn }
-                        });
-                        await prisma.renewalLog.delete({ where: { id: targetId } });
+                    if (log && log.clientSubscriptionId) {
+                        await db.update(clientSubscriptions)
+                            .set({ activeUntil: log.dueOn })
+                            .where(eq(clientSubscriptions.id, log.clientSubscriptionId));
+                        await db.delete(renewalLogs).where(eq(renewalLogs.id, targetId));
                     }
                 }
 
@@ -866,16 +916,16 @@ export function createUserScopedTools(
                     };
                 }
 
-                const client = await prisma.client.create({
-                    data: { userId, name, phone, notes }
-                });
+                const [client] = await db.insert(clients)
+                    .values({ userId, name, phone, notes })
+                    .returning();
 
                 return {
                     success: true,
                     status: "executed",
                     message: `Client ${client.name} created successfully.`,
                     client: client,
-                    previousValues: {} // Empty previousValues indicates "delete on undo"
+                    previousValues: {}
                 };
             },
         }),
@@ -905,9 +955,8 @@ export function createUserScopedTools(
                 servicePassword?: string,
                 __safe_user_approval_ui_only: boolean
             }) => {
-                // Verify ownership
-                const client = await prisma.client.findFirst({ where: { id: clientId, userId } });
-                const sub = await prisma.subscription.findFirst({ where: { id: subscriptionId, userId } });
+                const client = await db.query.clients.findFirst({ where: and(eq(clients.id, clientId), eq(clients.userId, userId)) });
+                const sub = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)) });
                 if (!client || !sub) return { error: "Client or Subscription not found." };
 
                 if (!__safe_user_approval_ui_only) {
@@ -918,31 +967,31 @@ export function createUserScopedTools(
                     };
                 }
 
-                const cs = await prisma.clientSubscription.create({
-                    data: {
+                const [cs] = await db.insert(clientSubscriptions)
+                    .values({
                         clientId,
                         subscriptionId,
-                        customPrice,
-                        activeUntil: new Date(activeUntil),
-                        joinedAt: joinedAt ? new Date(joinedAt) : new Date(),
+                        customPrice: amountToCents(customPrice),
+                        activeUntil,
+                        joinedAt: joinedAt || new Date().toISOString().split("T")[0],
                         serviceUser,
                         servicePassword,
                         status: "active"
-                    }
-                });
+                    })
+                    .returning();
 
                 return {
                     success: true,
                     status: "executed",
                     message: `Successfully assigned **${client.name}** to **${sub.label}**.`,
                     clientSubscription: cs,
-                    previousValues: {} // Empty previousValues for pivot table creation means "delete on undo"
+                    previousValues: {}
                 };
             },
         }),
 
         // ──────────────────────────────────────────
-        // 12. logPayment — Mutation Payments
+        // 15. logPayment — Mutation Payments
         // ──────────────────────────────────────────
         defineTool("logPayment", {
             description:
@@ -956,12 +1005,17 @@ export function createUserScopedTools(
                 __safe_user_approval_ui_only: z.boolean().default(false).describe("Requires user confirmation. MUST be false on first call."),
             }),
             handler: async ({ clientSubscriptionId, amountPaid, monthsRenewed, paidOn, notes, __safe_user_approval_ui_only }: { clientSubscriptionId: string, amountPaid: number, monthsRenewed: number, paidOn?: string, notes?: string, __safe_user_approval_ui_only: boolean }) => {
-                // Verify ownership via join
-                const cs = await prisma.clientSubscription.findFirst({
-                    where: { id: clientSubscriptionId, subscription: { userId } },
-                    include: { client: true, subscription: { include: { plan: { include: { platform: true } } } } }
+                const cs = await db.query.clientSubscriptions.findFirst({
+                    where: eq(clientSubscriptions.id, clientSubscriptionId),
+                    with: {
+                        client: { columns: { name: true } },
+                        subscription: {
+                            columns: { userId: true },
+                            with: { plan: { with: { platform: true } } }
+                        }
+                    }
                 });
-                if (!cs) return { error: "Client subscription not found or access denied." };
+                if (!cs || cs.subscription.userId !== userId) return { error: "Client subscription not found or access denied." };
 
                 const platformName = cs.subscription.plan.platform.name;
 
@@ -973,35 +1027,34 @@ export function createUserScopedTools(
                     };
                 }
 
-                // Calculate period
-                const startDate = cs.activeUntil > new Date() ? cs.activeUntil : new Date();
-                const endDate = new Date(startDate);
-                endDate.setMonth(endDate.getMonth() + monthsRenewed);
+                const nowStr = new Date().toISOString().split("T")[0];
+                const startDate = cs.activeUntil > nowStr ? cs.activeUntil : nowStr;
+                const endDateObj = new Date(startDate + "T00:00:00Z");
+                endDateObj.setUTCMonth(endDateObj.getUTCMonth() + monthsRenewed);
+                const endDateStr = endDateObj.toISOString().split("T")[0];
 
-                const log = await prisma.renewalLog.create({
-                    data: {
+                const [log] = await db.insert(renewalLogs)
+                    .values({
                         clientSubscriptionId,
-                        amountPaid,
+                        amountPaid: amountToCents(amountPaid),
                         expectedAmount: cs.customPrice,
                         periodStart: startDate,
-                        periodEnd: endDate,
-                        paidOn: paidOn ? new Date(paidOn) : new Date(),
+                        periodEnd: endDateStr,
+                        paidOn: paidOn || nowStr,
                         dueOn: cs.activeUntil,
                         monthsRenewed,
                         notes
-                    }
-                });
+                    })
+                    .returning();
 
-                // Update the subscription's end date
-                await prisma.clientSubscription.update({
-                    where: { id: clientSubscriptionId },
-                    data: { activeUntil: endDate }
-                });
+                await db.update(clientSubscriptions)
+                    .set({ activeUntil: endDateStr })
+                    .where(eq(clientSubscriptions.id, clientSubscriptionId));
 
                 return {
                     success: true,
                     status: "executed",
-                    message: `Payment of ${amountPaid}€ logged successfully for ${cs.client.name}. New expiry: ${endDate.toLocaleDateString()}.`,
+                    message: `Payment of ${amountPaid}€ logged successfully for ${cs.client.name}. New expiry: ${endDateStr}.`,
                     log
                 };
             },

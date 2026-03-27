@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, asc } from "drizzle-orm";
+import { db } from "@/db";
+import { platforms, plans } from "@/db/schema";
 import { createPlatformSchema } from "@/lib/validations";
 import { success, withErrorHandling, error } from "@/lib/api-utils";
 
@@ -9,16 +11,16 @@ export async function GET() {
     const { getAuthUserId } = await import("@/lib/auth-utils");
     const userId = await getAuthUserId();
 
-    const platforms = await prisma.platform.findMany({
-      where: { userId },
-      orderBy: { name: "asc" },
-      include: {
+    const platformsList = await db.query.platforms.findMany({
+      where: eq(platforms.userId, userId),
+      orderBy: [asc(platforms.name)],
+      with: {
         plans: {
-          select: { id: true, name: true, cost: true, maxSeats: true, isActive: true },
+          columns: { id: true, name: true, cost: true, maxSeats: true, isActive: true },
         },
       },
     });
-    return success(platforms);
+    return success(platformsList);
   });
 }
 
@@ -38,9 +40,7 @@ export async function POST(request: NextRequest) {
       return error(limitCheck.message, 403);
     }
 
-    const platform = await prisma.platform.create({ 
-      data: { ...data, userId } 
-    });
+    const [platform] = await db.insert(platforms).values({ ...data, userId }).returning();
     return success(platform, 201);
   });
 }

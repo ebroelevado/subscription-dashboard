@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { differenceInDays, startOfDay, addMonths, subMonths, format } from "date-fns";
 import { toast } from "sonner";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, formatCurrency, type Currency } from "@/lib/currency";
 import { useLocale, useTranslations } from "next-intl";
 import { AssignSubscriptionDialog } from "@/components/clients/assign-subscription-dialog";
@@ -154,7 +154,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
     const waData = activeSeats.map((cs) => ({
       customPrice: Number(cs.customPrice),
       activeUntil: cs.activeUntil,
-      platformName: cs.subscription.plan.platform.name,
+      platformName: cs.subscription?.plan?.platform?.name ?? "Unknown",
     }));
     const signatureMode = (session?.user as any)?.whatsappSignatureMode ?? "name";
     let senderName = "";
@@ -191,7 +191,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
     const waData = [{
       customPrice: Number(cs.customPrice),
       activeUntil: cs.activeUntil,
-      platformName: cs.subscription.plan.platform.name,
+      platformName: cs.subscription?.plan?.platform?.name ?? "Unknown",
     }];
     const signatureMode = (session?.user as any)?.whatsappSignatureMode ?? "name";
     let senderName = "";
@@ -372,8 +372,8 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                             <span className="text-sm font-medium text-muted-foreground">
                               {t("disciplineScore")}:
                             </span>
-                            <span className={`text-sm font-bold font-mono ${getScoreColor(disciplineScore)}`}>
-                              {disciplineScore.toFixed(1)}
+                            <span className={`text-sm font-bold font-mono ${getScoreColor(Number(disciplineScore))}`}>
+                              {Number(disciplineScore).toFixed(1)}
                             </span>
                           </div>
                         </TooltipTrigger>
@@ -407,13 +407,16 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                         <div className="flex items-center justify-between">
                           <div>
                             <Link
-                              href={`/dashboard/subscriptions/${cs.subscription.id}`}
+                              href={`/dashboard/subscriptions/${cs.subscription?.id ?? ""}`}
                               className="text-sm font-medium hover:underline"
-                              onClick={() => onOpenChange(false)}
+                              onClick={(e) => {
+                                if (!cs.subscription) e.preventDefault();
+                                else onOpenChange(false);
+                              }}
                             >
-                              {cs.subscription.plan.platform.name} — {cs.subscription.plan.name}
+                              {cs.subscription?.plan?.platform?.name ?? "Deleted"} — {cs.subscription?.plan?.name ?? "Deleted"}
                             </Link>
-                            <p className="text-xs text-muted-foreground">{cs.subscription.label}</p>
+                            <p className="text-xs text-muted-foreground">{cs.subscription?.label ?? "Deleted"}</p>
                           </div>
                           <Badge variant={
                             cs.status === "active" ? "default" : "secondary"
@@ -600,9 +603,9 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
             customPrice: Number(cs.customPrice),
             activeUntil: cs.activeUntil,
             status: cs.status,
-            platformName: cs.subscription.plan.platform.name,
-            planName: cs.subscription.plan.name,
-            subscriptionLabel: cs.subscription.label,
+            platformName: cs.subscription?.plan?.platform?.name ?? "Deleted",
+            planName: cs.subscription?.plan?.name ?? "Deleted",
+            subscriptionLabel: cs.subscription?.label ?? "Deleted",
           }))}
         />
       )}

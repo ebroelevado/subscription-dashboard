@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, formatCurrency } from "@/lib/currency";
 
 function formatPeriodTick(period: string): string {

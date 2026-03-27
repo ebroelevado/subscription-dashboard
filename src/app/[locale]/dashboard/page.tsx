@@ -23,7 +23,7 @@ import { useTranslations } from "next-intl";
 import { ClientDetailSheet } from "@/components/clients/client-detail-sheet";
 import { useState } from "react";
 import { formatCurrency } from "@/lib/currency";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 
 
 function StatCard({

@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc, asc, count, inArray } from "drizzle-orm";
+import { db } from "@/db";
+import { subscriptions, plans, clients, clientSubscriptions, platformRenewals } from "@/db/schema";
 import { createSubscriptionSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
 import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
@@ -13,21 +15,21 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    const subscription = await prisma.subscription.findUnique({
-      where: { id, userId },
-      include: {
+    const subscription = await db.query.subscriptions.findFirst({
+      where: and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)),
+      with: {
         plan: {
-          include: { platform: { select: { id: true, name: true } } },
+          with: { platform: { columns: { id: true, name: true } } },
         },
         clientSubscriptions: {
-          include: {
+          orderBy: [asc(clientSubscriptions.joinedAt)],
+          with: {
             client: true,
           },
-          orderBy: { joinedAt: "asc" },
         },
         platformRenewals: {
-          orderBy: { paidOn: "desc" },
-          take: 10,
+          orderBy: [desc(platformRenewals.paidOn)],
+          limit: 10,
         },
       },
     });
@@ -36,11 +38,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return success({
       ...subscription,
-      clientSubscriptions: subscription.clientSubscriptions.map((seat) => ({
+      clientSubscriptions: await Promise.all(subscription.clientSubscriptions.map(async (seat) => ({
         ...seat,
-        serviceUser: decryptCredential(seat.serviceUser),
-        servicePassword: decryptCredential(seat.servicePassword),
-      })),
+        serviceUser: await decryptCredential(seat.serviceUser),
+        servicePassword: await decryptCredential(seat.servicePassword),
+      }))),
     });
   });
 }
@@ -59,38 +61,43 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const updateData: Record<string, unknown> = {};
     if (data.label !== undefined) updateData.label = data.label;
     if (data.status !== undefined) updateData.status = data.status;
-    if (data.startDate !== undefined) updateData.startDate = data.startDate;
+    if (data.startDate !== undefined) updateData.startDate = data.startDate instanceof Date ? data.startDate.toISOString().split("T")[0] : data.startDate;
     if (data.durationMonths !== undefined && data.startDate) {
-      updateData.activeUntil = addMonths(data.startDate, data.durationMonths);
+      const newActiveUntil = addMonths(data.startDate, data.durationMonths);
+      updateData.activeUntil = newActiveUntil instanceof Date ? newActiveUntil.toISOString().split("T")[0] : newActiveUntil;
     }
     
     // Allow clearing these fields by checking against undefined (so null sets them to null)
     if (data.masterUsername !== undefined) updateData.masterUsername = data.masterUsername;
-    if (data.masterPassword !== undefined) updateData.masterPassword = encryptCredential(data.masterPassword);
+    if (data.masterPassword !== undefined) updateData.masterPassword = await encryptCredential(data.masterPassword);
     if (data.ownerId !== undefined) {
       if (data.ownerId) {
-        const owner = await prisma.client.findUnique({
-          where: { id: data.ownerId, userId },
-          select: { id: true },
+        const owner = await db.query.clients.findFirst({
+          where: and(eq(clients.id, data.ownerId), eq(clients.userId, userId)),
+          columns: { id: true },
         });
         if (!owner) return error("Owner client not found", 404);
       }
-      updateData.owner = data.ownerId ? { connect: { id: data.ownerId } } : { disconnect: true };
+      updateData.ownerId = data.ownerId;
     }
     if (data.isAutopayable !== undefined) updateData.isAutopayable = data.isAutopayable;
 
     // If planId is changing, enforce capacity check
     if (data.planId) {
-      const newPlan = await prisma.plan.findUnique({
-        where: { id: data.planId, userId },
-        select: { maxSeats: true },
+      const newPlan = await db.query.plans.findFirst({
+        where: and(eq(plans.id, data.planId), eq(plans.userId, userId)),
+        columns: { maxSeats: true },
       });
       if (!newPlan) return error("Plan not found", 404);
 
       if (newPlan.maxSeats !== null) {
-        const occupied = await prisma.clientSubscription.count({
-          where: { subscriptionId: id, status: { in: ["active", "paused"] } },
-        });
+        const [{ occupied }] = await db
+          .select({ occupied: count() })
+          .from(clientSubscriptions)
+          .where(and(
+            eq(clientSubscriptions.subscriptionId, id),
+            inArray(clientSubscriptions.status, ["active", "paused"])
+          ));
         if (occupied > newPlan.maxSeats) {
           return error(
             `Cannot switch plan: ${occupied} seats occupied but new plan allows only ${newPlan.maxSeats}`,
@@ -98,13 +105,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           );
         }
       }
-      updateData.plan = { connect: { id: data.planId } };
+      updateData.planId = data.planId;
     }
 
-    const subscription = await prisma.subscription.update({
-      where: { id, userId },
-      data: updateData,
-    });
+    const [subscription] = await db.update(subscriptions)
+      .set(updateData)
+      .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)))
+      .returning();
     return success(subscription);
   });
 }
@@ -116,7 +123,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    await prisma.subscription.delete({ where: { id, userId } });
+    await db.delete(subscriptions).where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)));
     return success({ deleted: true });
   });
 }

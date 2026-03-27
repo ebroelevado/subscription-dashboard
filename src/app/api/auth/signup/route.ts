@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { users, accounts } from "@/db/schema";
 import { z } from "zod";
 
 const signupSchema = z.object({
@@ -14,8 +16,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { email, password, name } = signupSchema.parse(body);
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
+    const existingUser = await db.query.users.findFirst({
+      where: eq(users.email, email),
     });
 
     if (existingUser) {
@@ -27,12 +29,19 @@ export async function POST(req: NextRequest) {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name,
-      },
+    // Create the user
+    const [user] = await db.insert(users).values({
+      email,
+      password: hashedPassword,
+      name,
+    }).returning({ id: users.id, email: users.email, name: users.name });
+
+    // Create credential account for better-auth
+    await db.insert(accounts).values({
+      userId: user.id,
+      accountId: email,
+      providerId: "credential",
+      password: hashedPassword,
     });
 
     return NextResponse.json({

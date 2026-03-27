@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/logo";
 import { Link } from "@/i18n/navigation";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CurrencySelector } from "@/components/currency-selector";
@@ -83,7 +83,7 @@ const trustKeys = [
 export default function LandingPage() {
   const t = useTranslations("landing");
   const tc = useTranslations("common");
-  const { data: session, status } = useSession();
+  const { data: session, isPending } = useSession();
   const { currency } = useCurrency();
 
   return (
@@ -103,7 +103,7 @@ export default function LandingPage() {
                <LanguageSwitcher />
                <ThemeToggle />
             </div>
-            {status === "loading" ? (
+            {isPending ? (
               <Button variant="ghost" size="sm" disabled>
                 ...
               </Button>
@@ -183,7 +183,7 @@ export default function LandingPage() {
             variants={fadeUp}
             custom={3}
           >
-            {status === "loading" ? (
+            {isPending ? (
                <Button size="lg" disabled className="w-full sm:w-auto shadow-lg shadow-primary/20">
                ...
              </Button>
@@ -407,7 +407,7 @@ export default function LandingPage() {
             variants={fadeUp}
             custom={2}
           >
-            {status === "loading" ? (
+            {isPending ? (
              <Button size="lg" disabled className="shadow-lg shadow-primary/20">
                ...
              </Button>

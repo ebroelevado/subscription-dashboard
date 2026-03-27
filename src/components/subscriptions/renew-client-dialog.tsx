@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { addMonths, subMonths, startOfDay, format } from "date-fns";
 import { AlertTriangle } from "lucide-react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 

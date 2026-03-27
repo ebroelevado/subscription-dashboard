@@ -15,7 +15,7 @@ import {
 import { usePlans } from "@/hooks/use-plans";
 import { useSubscriptions } from "@/hooks/use-subscriptions";
 import { useClients } from "@/hooks/use-clients";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
 import {
   TrendingUp,

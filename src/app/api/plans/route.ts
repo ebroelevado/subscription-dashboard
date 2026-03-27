@@ -1,7 +1,10 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc } from "drizzle-orm";
+import { db } from "@/db";
+import { plans, platforms } from "@/db/schema";
 import { createPlanSchema } from "@/lib/validations";
 import { success, withErrorHandling, error } from "@/lib/api-utils";
+import { amountToCents } from "@/lib/currency";
 import { checkPlanLimit } from "@/lib/saas-limits";
 
 // GET /api/plans — List all plans for the authenticated user (optionally filtered by platformId)
@@ -13,15 +16,15 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const platformId = searchParams.get("platformId");
 
-    const plans = await prisma.plan.findMany({
-      where: {
-        userId,
-        ...(platformId && { platformId }),
-      },
-      orderBy: { createdAt: "desc" },
-      include: { platform: { select: { id: true, name: true } } },
+    const plansList = await db.query.plans.findMany({
+      where: and(
+        eq(plans.userId, userId),
+        platformId ? eq(plans.platformId, platformId) : undefined
+      ),
+      orderBy: [desc(plans.createdAt)],
+      with: { platform: { columns: { id: true, name: true } } },
     });
-    return success(plans);
+    return success(plansList);
   });
 }
 
@@ -34,9 +37,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createPlanSchema.parse(body);
 
-    const platform = await prisma.platform.findUnique({
-      where: { id: data.platformId, userId },
-      select: { id: true },
+    const platform = await db.query.platforms.findFirst({
+      where: and(eq(platforms.id, data.platformId), eq(platforms.userId, userId)),
+      columns: { id: true },
     });
 
     if (!platform) {
@@ -48,16 +51,14 @@ export async function POST(request: NextRequest) {
       return error(limitCheck.message || "Plan limit reached", 403);
     }
 
-    const plan = await prisma.plan.create({
-      data: {
-        userId,
-        platformId: data.platformId,
-        name: data.name,
-        cost: data.cost,
-        maxSeats: data.maxSeats ?? null,
-        isActive: data.isActive,
-      },
-    });
+    const [plan] = await db.insert(plans).values({
+      userId,
+      platformId: data.platformId,
+      name: data.name,
+      cost: amountToCents(data.cost),
+      maxSeats: data.maxSeats ?? null,
+      isActive: data.isActive,
+    }).returning();
     return success(plan, 201);
   });
 }

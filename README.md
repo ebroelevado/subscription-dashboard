@@ -1,6 +1,6 @@
 # Professional Dashboard
 
-A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and **AI integration**. This project provides a comprehensive solution for managing subscriptions, analytics, and client interactions with a premium user experience.
+A high-performance, modern dashboard built with **Next.js 16**, **Drizzle ORM**, and **AI integration**. This project provides a comprehensive solution for managing subscriptions, analytics, and client interactions with a premium user experience.
 
 ## ✨ Features
 
@@ -16,7 +16,7 @@ A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and 
 ## 🚀 Tech Stack
 
 - **Framework**: [Next.js 16 (App Router)](https://nextjs.org/)
-- **Database**: [Prisma ORM](https://www.prisma.io/) with PostgreSQL
+- **Database**: [Drizzle ORM](https://orm.drizzle.team/) with Cloudflare D1 (SQLite)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/) & [Shadcn UI](https://ui.shadcn.com/)
 - **AI Engine**: [Vercel AI SDK](https://sdk.vercel.ai/) (OpenAI Compatible)
 - **State Management**: [TanStack Query v5](https://tanstack.com/query/latest)
@@ -24,6 +24,7 @@ A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and 
 - **Animation**: [Framer Motion](https://www.framer.com/motion/)
 - **i18n**: [Next-Intl](https://next-intl-docs.vercel.app/)
 - **Storage**: [Cloudflare R2](https://www.cloudflare.com/developer-platform/r2/) (Conversation History)
+- **Deploy**: [Cloudflare Pages](https://pages.cloudflare.com/) with D1
 
 ## 🛠️ Getting Started
 
@@ -31,6 +32,7 @@ A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and 
 
 - Node.js >= 22.12.0
 - bun (recommended)
+- Wrangler CLI (for Cloudflare development)
 
 ### Installation
 
@@ -48,31 +50,107 @@ A high-performance, modern dashboard built with **Next.js 16**, **Prisma**, and 
    ```
 
 3. Set up environment variables:
-   Copy `.env` to `.env.local` and fill in the required values (Database URL, Auth secrets, AI API keys).
 
-4. Initialize the database:
-   ```bash
-   bun x prisma generate
-   bun x prisma migrate dev
-   ```
+   Copy `.env.example` to `.env` and fill in the required values (Auth secrets, AI API keys, Stripe keys, etc.).
 
-### Development
+   **Note:** Database is configured via Cloudflare D1 binding in `wrangler.toml`. No `DATABASE_URL` needed.
 
-Run the development server:
+### Development Options
+
+#### Option 1: Standard Next.js Development (with local SQLite)
+
+Fastest iteration time. Uses local SQLite database (`local.db`):
 
 ```bash
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The database will be created automatically at `./local.db`.
+
+To seed test data:
+```bash
+bun db:seed
+```
+
+#### Option 2: Cloudflare Pages Development (with D1)
+
+Closest to production environment. Uses D1 binding:
+
+```bash
+bun run dev:cf
+```
+
+This will:
+1. Build the app with `@cloudflare/next-on-pages`
+2. Run `wrangler pages dev` with D1 binding
+
+**First time setup** - apply migrations to local D1:
+```bash
+bun run db:migrate:local
+```
+
+### Database Management
+
+```bash
+# Generate new migrations from schema changes
+bun db:generate
+
+# Apply migrations to local D1 database
+bun db:migrate:local
+
+# Apply migrations to production D1
+bun db:migrate:prod
+
+# Open Drizzle Studio (local SQLite)
+bun db:studio
+
+# Seed local database with test data
+bun db:seed
+```
 
 ## 📜 Scripts
 
-- `bun dev`: Starts the development server.
-- `bun build`: Builds the application for production.
-- `bun start`: Starts the production server.
-- `bun lint`: Runs ESLint for code quality checks.
-- `bun postinstall`: Automatically generates Prisma client.
+- `bun dev`: Starts Next.js development server (with local SQLite fallback)
+- `bun dev:cf`: Build and run with Cloudflare Pages (with D1)
+- `bun build`: Builds for Cloudflare Pages
+- `bun preview`: Preview production build locally with Wrangler
+- `bun deploy`: Deploy to Cloudflare Pages
+- `bun db:generate`: Generate Drizzle migrations
+- `bun db:studio`: Open Drizzle Studio
+- `bun db:migrate:local`: Apply migrations to local D1
+- `bun db:migrate:prod`: Apply migrations to production D1
+- `bun db:seed`: Seed local database with test data
+- `bun lint`: Runs ESLint
+
+## 🚀 Deployment
+
+### Cloudflare Pages
+
+1. Create a Cloudflare Pages project:
+   ```bash
+   npx wrangler pages project create subscription-dashboard
+   ```
+
+2. Create D1 database:
+   ```bash
+   npx wrangler d1 create subscription-dashboard
+   ```
+
+3. Update `wrangler.toml` with the D1 `database_id`
+
+4. Configure secrets:
+   ```bash
+   npx wrangler secret put AUTH_SECRET
+   npx wrangler secret put GOOGLE_CLIENT_ID
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   npx wrangler secret put STRIPE_SECRET_KEY
+   npx wrangler secret put STRIPE_WEBHOOK_SECRET
+   ```
+
+5. Deploy:
+   ```bash
+   bun run deploy
+   ```
 
 ## 🤝 Contributing
 

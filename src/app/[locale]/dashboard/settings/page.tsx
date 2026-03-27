@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 import {
   User,
@@ -70,7 +70,7 @@ import { useSaasStatus } from "@/hooks/use-saas-status";
 
 // ── Profile Tab ──
 function ProfileTab() {
-  const { data: session, update: updateSession } = useSession();
+  const { data: session } = useSession();
   const user = session?.user;
   const updateProfile = useUpdateProfile();
   const t = useTranslations("settings");
@@ -79,7 +79,7 @@ function ProfileTab() {
   const [image, setImage] = useState(user?.image ?? "");
   const [companyName, setCompanyName] = useState((user as any)?.companyName ?? "");
   const [whatsappSignatureMode, setWhatsappSignatureMode] = useState<string>((user as any)?.whatsappSignatureMode ?? "name");
-  const hasPassword = user?.hasPassword;
+  const hasPassword = (user as any)?.hasPassword;
 
   // Sync state if session user changes (needed when first loading the page)
   useEffect(() => {
@@ -133,7 +133,9 @@ function ProfileTab() {
       
       // Update session to reflect hasPassword
       if (!hasPassword) {
-        updateSession({ user: { ...user, hasPassword: true } });
+        // We can just locally simulate the state change for Next.js, or trust the db refresh.
+        // authClient.updateUser doesn't support hasPassword, but forcing a network refresh updates the UI safely.
+        window.location.reload();
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "An error occurred");
@@ -161,15 +163,18 @@ function ProfileTab() {
               companyName: companyName || null,
               whatsappSignatureMode,
             }, {
-              onSuccess: () => {
+              onSuccess: async () => {
                 toast.success(t("profileUpdated"));
-                updateSession({ name, image, companyName, whatsappSignatureMode });
+                await authClient.updateUser({ name, image, companyName, whatsappSignatureMode });
               },
               onError: (err: any) => toast.error(err.message),
             });
           } else {
-            toast.success(t("profileUpdated"));
-            updateSession({ name, image });
+            const updateLocal = async () => {
+              toast.success(t("profileUpdated"));
+              await authClient.updateUser({ name, image });
+            };
+            updateLocal();
           }
         },
         onError: (err: any) => toast.error(err.message),
@@ -357,7 +362,7 @@ function ProfileTab() {
 // ── Appearance Tab ──
 function AppearanceTab() {
   const t = useTranslations("settings");
-  const { data: session, update: updateSession } = useSession();
+  const { data: session } = useSession();
   const updateSettings = useUpdateSettings();
   
   const initialPenalty = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5;
@@ -379,8 +384,8 @@ function AppearanceTab() {
       updateSettings.mutate(
         { disciplinePenalty: penalty },
         {
-          onSuccess: () => {
-            updateSession({ disciplinePenalty: penalty });
+          onSuccess: async () => {
+            await authClient.updateUser({ disciplinePenalty: penalty });
             toast.success(t("penaltyUpdated", { fallback: "Penalty updated successfully" }));
           },
           onError: (err: any) => toast.error(err.message),
@@ -668,100 +673,7 @@ function DeleteAccountButton() {
 
 
 // ── Assistant Tab ──
-function AssistantTab() {
-  const t = useTranslations("settings");
-  const tc = useTranslations("common");
-  const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  const handleDisconnect = async () => {
-    setIsDisconnecting(true);
-    try {
-      const res = await fetch("/api/copilot/logout", { method: "POST" });
-      if (res.ok) {
-        toast.success(t("disconnectSuccess"));
-        setOpen(false);
-        // We could use router.refresh() or window.location.reload()
-        // but since it's a settings change, a simple success toast might be enough.
-        // However, the chat interface needs to know. A reload is safest for the token state.
-        window.location.reload();
-      } else {
-        throw new Error("Failed to disconnect");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Error disconnecting");
-    } finally {
-      setIsDisconnecting(false);
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BrainCircuit className="size-5" />
-          {t("assistant")}
-        </CardTitle>
-        <CardDescription>
-          {t("assistantDescription")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="rounded-xl border bg-gradient-to-br from-primary/5 via-transparent to-primary/5 p-6 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-start gap-4">
-              <div className="size-12 rounded-xl bg-zinc-950 dark:bg-zinc-900 flex items-center justify-center border border-zinc-800 shrink-0 shadow-lg">
-                <Github className="size-6 text-white" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-base font-semibold tracking-tight">{t("copilotTitle")}</h4>
-                <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
-                  {t("copilotDescription")}
-                </p>
-              </div>
-            </div>
-            
-            <AlertDialog open={open} onOpenChange={setOpen}>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="shrink-0 font-medium group hover:border-destructive hover:text-destructive transition-all">
-                  <LogOut className="size-4 mr-2 group-hover:scale-110 transition-transform" />
-                  {t("disconnectCopilot")}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle className="text-xl">{t("confirmDisconnect")}</AlertDialogTitle>
-                  <AlertDialogDescription className="text-base">
-                    {t("disconnectDescription")}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter className="mt-6">
-                  <AlertDialogCancel className="font-medium">{tc("cancel")}</AlertDialogCancel>
-                  <AlertDialogAction 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleDisconnect();
-                    }}
-                    disabled={isDisconnecting}
-                    className="bg-destructive text-white hover:bg-destructive/90 font-medium"
-                  >
-                    {isDisconnecting && <Loader2 className="size-4 animate-spin mr-2" />}
-                    {t("disconnectCopilot")}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-muted/40 px-3 py-2 rounded-lg w-fit">
-            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Connected to GitHub Copilot
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// AssistantTab removed (Copilot integration deprecated)
 
 // ── Page ──
 export default function SettingsPage() {
@@ -798,17 +710,13 @@ export default function SettingsPage() {
         {[
           { value: "profile", label: t("profile"), icon: User },
           { value: "appearance", label: t("appearance"), icon: Palette },
-          { value: "assistant", label: t("assistant"), icon: BrainCircuit, premium: true },
           { value: "data", label: t("data"), icon: Download },
           { value: "subscription", label: t("subscription"), icon: CreditCard },
         ].map((tab) => {
-          const isLocked = tab.premium && !isPremiumUser;
-
-          const trigger = (
+          return (
             <button
               key={tab.value}
-              onClick={() => !isLocked && setActiveTab(tab.value)}
-              disabled={isLocked}
+              onClick={() => setActiveTab(tab.value)}
               className={cn(
                 "relative flex w-full items-center justify-center gap-2 rounded-lg px-2 sm:px-3 py-2.5 text-xs sm:text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
                 activeTab === tab.value
@@ -818,21 +726,8 @@ export default function SettingsPage() {
             >
               <tab.icon className="size-4 shrink-0" />
               <span className="hidden sm:inline truncate">{tab.label}</span>
-              {isLocked && <Sparkles className="size-2.5 text-gold-gradient animate-sparkle" />}
             </button>
           );
-
-          if (isLocked) {
-            return (
-              <PremiumPopup key={tab.value}>
-                <div className="w-full">
-                  {trigger}
-                </div>
-              </PremiumPopup>
-            );
-          }
-
-          return trigger;
         })}
         </div>
         <div className="h-px bg-border/50" />
@@ -842,7 +737,6 @@ export default function SettingsPage() {
       <div className="w-full">
         {activeTab === "profile" && <ProfileTab />}
         {activeTab === "appearance" && <AppearanceTab />}
-        {activeTab === "assistant" && <AssistantTab />}
         {activeTab === "data" && <DataTab />}
         {activeTab === "subscription" && <SubscriptionManager locale={locale} />}
       </div>

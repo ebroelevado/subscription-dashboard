@@ -48,15 +48,10 @@ export default function ClientsPage() {
             </h1>
             {saas && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className={cn(
-                  "h-6 gap-1 px-2 font-bold border-dashed",
-                  saas.plan === "PREMIUM" ? "border-gold-gradient/30 bg-gold-gradient/5 text-gold-gradient" : "text-muted-foreground"
-                )}>
-                  <span className={saas.plan === "FREE" && saas.usage.clients >= SAAS_LIMITS.FREE.CLIENTS ? "text-red-500" : ""}>
-                    {saas.usage.clients}
-                  </span>
+                <Badge variant="outline" className="h-6 gap-1 px-2 font-bold border-dashed border-gold-gradient/30 bg-gold-gradient/5 text-gold-gradient">
+                  <span>{saas.usage.clients}</span>
                   <span className="opacity-40">/</span>
-                  <span>{saas.plan === "PREMIUM" ? "∞" : SAAS_LIMITS.FREE.CLIENTS}</span>
+                  <span>∞</span>
                 </Badge>
                 {saas.plan === "FREE" && (
                   <PremiumPopup>

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/stripe";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function POST() {
   try {
@@ -9,9 +11,9 @@ export async function POST() {
     const userId = await getAuthUserId();
 
     // 1. Get or create Stripe Customer
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { stripeCustomerId: true, email: true, name: true },
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { stripeCustomerId: true, email: true, name: true },
     });
 
     if (!user) {
@@ -29,10 +31,7 @@ export async function POST() {
         },
       });
 
-      await prisma.user.update({
-        where: { id: userId },
-        data: { stripeCustomerId: customer.id },
-      });
+      await db.update(users).set({ stripeCustomerId: customer.id }).where(eq(users.id, userId));
 
       customerId = customer.id;
     }

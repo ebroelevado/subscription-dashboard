@@ -41,10 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Prisma generated client
-/src/generated/prisma
-prisma/generated/
-
 # temp / debug files — do NOT commit
 batch_*.json
 project_data.json
@@ -53,3 +49,22 @@ build_log.txt
 log.txt
 collect_files.py
 split_batches.py
+/dist/
+/export/
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+/.wrangler/
+/.system_generated/
+/tmp/
+*.log
+.gemini/
+/brain/
+node_modules/
+.next/
+/wrangler/
+/drizzle/
+/tests/
+/vitest.config.ts
+/vite.config.ts

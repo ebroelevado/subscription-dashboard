@@ -1,0 +1,29 @@
+name = "subscription-dashboard"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare Pages build output
+pages_build_output_dir = ".vercel/output/static"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "pearfect"
+database_id = "62cd2aa1-e011-486b-9893-d81c0f7a2756"
+migrations_dir = "./drizzle"
+
+# Environment variables (non-secrets)
+[vars]
+NEXT_PUBLIC_APP_URL = "https://subscription-dashboard.pages.dev"
+NODE_ENV = "production"
+
+# Secrets are configured via CLI (do NOT put secrets here):
+# wrangler pages secret put AUTH_SECRET
+# wrangler pages secret put GOOGLE_CLIENT_ID
+# wrangler pages secret put GOOGLE_CLIENT_SECRET
+# wrangler pages secret put STRIPE_SECRET_KEY
+# wrangler pages secret put STRIPE_WEBHOOK_SECRET
+# wrangler pages secret put SERVICE_CREDENTIALS_KEY
+# wrangler pages secret put CRON_SECRET
+# wrangler pages secret put R2_ACCESS_KEY_ID
+# wrangler pages secret put R2_SECRET_ACCESS_KEY

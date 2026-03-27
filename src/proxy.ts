@@ -1,7 +1,7 @@
 import createIntlMiddleware from "next-intl/middleware";
 import { routing } from "@/i18n/routing";
 import { type NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { getSessionCookie } from "better-auth/cookies";
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -26,18 +26,12 @@ export default async function middleware(req: NextRequest) {
     );
   });
 
-  // For protected pages, manually check the NextAuth JWT.
-  // We completely bypass the NextAuth `auth()` wrapper because it forces infinite
-  // 307 HTTPS redirects when it detects `http:` coming from the Dokploy reverse proxy.
+  // For protected pages, check the session cookie
+  // Using getSessionCookie for fast cookie existence check
   if (!isPublicPage) {
-    const token = await getToken({
-      req,
-      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
-      secureCookie: process.env.NODE_ENV === "production",
-      cookieName: process.env.NODE_ENV === "production" ? "__Secure-authjs.session-token" : "authjs.session-token",
-    });
+    const sessionCookie = getSessionCookie(req);
 
-    if (!token) {
+    if (!sessionCookie) {
       const url = req.nextUrl.clone();
       
       // Extract locale from the current path if present

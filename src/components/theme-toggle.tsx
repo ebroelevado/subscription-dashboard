@@ -1,41 +1,25 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [isDark, setIsDark] = useState(false);
 
-  // Initialize theme on mount
-  useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem("theme");
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const initialDark = stored === "dark" || (!stored && prefersDark);
-    setIsDark(initialDark);
-    document.documentElement.classList.toggle("dark", initialDark);
-  }, []);
+  useEffect(() => setMounted(true), []);
 
-  // Sync theme when isDark changes
-  useEffect(() => {
-    if (!mounted) return;
-    document.documentElement.classList.toggle("dark", isDark);
-    localStorage.setItem("theme", isDark ? "dark" : "light");
-  }, [isDark, mounted]);
+  if (!mounted) return <div className="size-8" />;
 
-  const toggle = () => setIsDark(!isDark);
-
-  if (!mounted) {
-    return <div className="size-8" />; // Placeholder to avoid layout shift
-  }
+  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   return (
     <Button
       variant="ghost"
       size="icon"
-      onClick={toggle}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
       className="size-8"
       aria-label="Toggle theme"
     >

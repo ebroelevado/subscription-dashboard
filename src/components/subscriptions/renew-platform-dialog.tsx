@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, type Currency } from "@/lib/currency";
 import { useRenewPlatform } from "@/hooks/use-renewals";
 import {

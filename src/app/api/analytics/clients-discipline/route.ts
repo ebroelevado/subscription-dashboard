@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import { success, withErrorHandling } from "@/lib/api-utils";
 import { getDisciplineAnalytics } from "@/lib/discipline-service";
 

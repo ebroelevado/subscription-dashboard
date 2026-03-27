@@ -9,7 +9,6 @@ dist
 *.tsbuildinfo
 .env*
 ! .env.example
-prisma/generated
 # Temporary/Debug files
 batch_*.json
 project_data.json

@@ -5,23 +5,47 @@
  * The frontend calls this when the user clicks "Ir Atrás" on an executed mutation.
  *
  * Body: { auditLogId: string }
- * Loads the audit log, verifies ownership, restores previousValues in a $transaction,
+ * Loads the audit log, verifies ownership, restores previousValues in a transaction,
  * and creates a new audit entry with action="undo".
  */
 
-import { auth } from "@/lib/auth";
+import { getAuthSession } from "@/lib/auth-utils";
 import {
   buildDeletedClientRestoreData,
   parseDeletedClientSnapshots,
 } from "@/lib/client-deletion-snapshot";
 import { encryptCredential } from "@/lib/credential-encryption";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { eq, and, inArray } from "drizzle-orm";
+import {
+  clients,
+  clientSubscriptions,
+  subscriptions,
+  users,
+  platforms,
+  plans,
+  renewalLogs,
+  platformRenewals,
+  mutationAuditLogs,
+} from "@/db/schema";
 import { markAuditLogUndone } from "@/lib/mutation-token";
-import { randomBytes } from "crypto";
+import { amountToCents } from "@/lib/currency";
+
+function parseJsonField(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "string") return JSON.parse(value);
+  return value as Record<string, unknown>;
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  if (!value) return [];
+  if (typeof value === "string") return JSON.parse(value);
+  return value as unknown[];
+}
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -33,8 +57,8 @@ export async function POST(req: Request) {
     }
 
     // Load the audit log entry
-    const auditLog = await prisma.mutationAuditLog.findUnique({
-      where: { id: auditLogId },
+    const auditLog = await db.query.mutationAuditLogs.findFirst({
+      where: eq(mutationAuditLogs.id, auditLogId),
     });
 
     if (!auditLog) {
@@ -50,7 +74,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "This action was never executed." }, { status: 400 });
     }
 
-    const previousValues = (auditLog.previousValues as Record<string, unknown>) ?? {};
+    const previousValues = parseJsonField(auditLog.previousValues);
     const toolName = auditLog.toolName;
     const targetId = auditLog.targetId;
 
@@ -61,18 +85,16 @@ export async function POST(req: Request) {
     await markAuditLogUndone(auditLogId);
 
     // Create a new audit log entry for the undo action
-    await prisma.mutationAuditLog.create({
-      data: {
-        userId,
-        toolName,
-        targetId,
-        action: "undo",
-        previousValues: (auditLog.newValues ?? undefined) as any, // What it was BEFORE undo (the executed state)
-        newValues: (previousValues ?? undefined) as any, // What it is AFTER undo (the original state)
-        token: randomBytes(32).toString("hex"), // Unique token for audit trail
-        expiresAt: new Date(), // Already expired — this is a record, not a pending action
-        executedAt: new Date(),
-      },
+    await db.insert(mutationAuditLogs).values({
+      userId,
+      toolName,
+      targetId,
+      action: "undo",
+      previousValues: (auditLog.newValues ?? null) as any,
+      newValues: (previousValues ?? null) as any,
+      token: (() => { const bytes = new Uint8Array(32); crypto.getRandomValues(bytes); return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(''); })(),
+      expiresAt: new Date().toISOString(),
+      executedAt: new Date().toISOString(),
     });
 
     return Response.json({ success: true, message: "Action undone successfully." });
@@ -84,7 +106,20 @@ export async function POST(req: Request) {
 }
 
 /**
- * Restores previousValues inside a $transaction based on tool type.
+ * Helper: format a value as a date string "YYYY-MM-DD" for Drizzle date columns
+ */
+function toDateStr(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().split("T")[0];
+  if (typeof value === "string") {
+    // If it's already "YYYY-MM-DD", return as-is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    return new Date(value).toISOString().split("T")[0];
+  }
+  return new Date().toISOString().split("T")[0];
+}
+
+/**
+ * Restores previousValues inside a transaction based on tool type.
  */
 async function undoMutation(
   userId: string,
@@ -96,18 +131,17 @@ async function undoMutation(
   switch (toolName) {
     case "updateClient": {
       if (!targetId) throw new Error("Missing targetId");
-      const client = await prisma.client.findFirst({ where: { id: targetId, userId } });
+      const client = await db.query.clients.findFirst({
+        where: and(eq(clients.id, targetId), eq(clients.userId, userId)),
+      });
       if (!client) throw new Error("Client not found or unauthorized.");
 
-      await prisma.$transaction(async (tx) => {
-        await tx.client.update({
-          where: { id: targetId },
-          data: {
-            name: previousValues.name as string,
-            phone: (previousValues.phone as string) ?? null,
-            notes: (previousValues.notes as string) ?? null,
-          },
-        });
+      await db.transaction(async (tx) => {
+        await tx.update(clients).set({
+          name: previousValues.name as string,
+          phone: (previousValues.phone as string) ?? null,
+          notes: (previousValues.notes as string) ?? null,
+        }).where(eq(clients.id, targetId));
       });
       break;
     }
@@ -115,21 +149,20 @@ async function undoMutation(
     case "createClient": {
       // Undoing a creation = delete
       if (!targetId) throw new Error("Missing targetId");
-      const client = await prisma.client.findFirst({ where: { id: targetId, userId } });
+      const client = await db.query.clients.findFirst({
+        where: and(eq(clients.id, targetId), eq(clients.userId, userId)),
+      });
       if (!client) throw new Error("Client not found.");
 
-      await prisma.$transaction(async (tx) => {
-        await tx.client.delete({ where: { id: targetId } });
+      await db.transaction(async (tx) => {
+        await tx.delete(clients).where(eq(clients.id, targetId));
       });
       break;
     }
 
     case "updateUserConfig": {
-      await prisma.$transaction(async (tx) => {
-        await tx.user.update({
-          where: { id: userId },
-          data: previousValues,
-        });
+      await db.transaction(async (tx) => {
+        await tx.update(users).set(previousValues as Record<string, unknown>).where(eq(users.id, userId));
       });
       break;
     }
@@ -137,13 +170,14 @@ async function undoMutation(
     case "assignClientToSubscription": {
       // Undoing an assignment = delete the pivot row
       if (!targetId) throw new Error("Missing targetId");
-      const cs = await prisma.clientSubscription.findFirst({
-        where: { id: targetId, client: { userId } },
+      const cs = await db.query.clientSubscriptions.findFirst({
+        where: eq(clientSubscriptions.id, targetId),
+        with: { client: { columns: { userId: true } } },
       });
-      if (!cs) throw new Error("Assignment not found.");
+      if (!cs || cs.client.userId !== userId) throw new Error("Assignment not found.");
 
-      await prisma.$transaction(async (tx) => {
-        await tx.clientSubscription.delete({ where: { id: targetId } });
+      await db.transaction(async (tx) => {
+        await tx.delete(clientSubscriptions).where(eq(clientSubscriptions.id, targetId));
       });
       break;
     }
@@ -151,51 +185,52 @@ async function undoMutation(
     case "logPayment": {
       // Undoing a payment = delete the log + restore activeUntil
       if (!targetId) throw new Error("Missing targetId");
-      const log = await prisma.renewalLog.findFirst({
-        where: { id: targetId, clientSubscription: { subscription: { userId } } },
-        include: { clientSubscription: true },
+      const log = await db.query.renewalLogs.findFirst({
+        where: eq(renewalLogs.id, targetId),
+        with: {
+          clientSubscription: {
+            with: {
+              subscription: { columns: { userId: true } },
+            },
+          },
+        },
       });
-      if (!log) throw new Error("Payment log not found.");
+      if (!log || log.clientSubscription?.subscription.userId !== userId) throw new Error("Payment log not found.");
 
-      await prisma.$transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         if (log.clientSubscriptionId) {
-          await tx.clientSubscription.update({
-            where: { id: log.clientSubscriptionId },
-            data: { activeUntil: log.dueOn }, // Restore the original expiry
-          });
+          await tx.update(clientSubscriptions).set({ activeUntil: log.dueOn }).where(eq(clientSubscriptions.id, log.clientSubscriptionId));
         }
-        await tx.renewalLog.delete({ where: { id: targetId! } });
+        await tx.delete(renewalLogs).where(eq(renewalLogs.id, targetId));
       });
       break;
     }
 
     case "removeClientsFromSubscription": {
-      const items = previousValues as any;
+      const items = previousValues as unknown as Array<Record<string, unknown>>;
       if (!items || !items.length) break;
-      await prisma.$transaction(async (tx) => {
-        await tx.clientSubscription.createMany({
-          data: items.map((previousValue: any) => ({
-            id: previousValue.id as string,
-            clientId: previousValue.clientId as string,
-            subscriptionId: previousValue.subscriptionId as string,
-            customPrice: previousValue.customPrice as any,
-            activeUntil: new Date(previousValue.activeUntil as string),
-            joinedAt: new Date(previousValue.joinedAt as string),
-            leftAt: previousValue.leftAt ? new Date(previousValue.leftAt as string) : null,
-            status: previousValue.status as any,
-            remainingDays: previousValue.remainingDays as number | null,
-            serviceUser: encryptCredential((previousValue.serviceUser as string | null) ?? null),
-            servicePassword: encryptCredential((previousValue.servicePassword as string | null) ?? null),
-          })),
-        });
+      await db.transaction(async (tx) => {
+        // Insert client subscriptions back
+        for (const item of items) {
+          await tx.insert(clientSubscriptions).values({
+            id: item.id as string,
+            clientId: item.clientId as string,
+            subscriptionId: item.subscriptionId as string,
+            customPrice: amountToCents(item.customPrice as number),
+            activeUntil: toDateStr(item.activeUntil),
+            joinedAt: toDateStr(item.joinedAt),
+            leftAt: item.leftAt ? toDateStr(item.leftAt) : null,
+            status: item.status as "active" | "paused",
+            remainingDays: item.remainingDays as number | null,
+            serviceUser: await encryptCredential((item.serviceUser as string | null) ?? null) ?? null,
+            servicePassword: await encryptCredential((item.servicePassword as string | null) ?? null) ?? null,
+          }).onConflictDoNothing();
+        }
         // Reconnect renewal logs whose clientSubscriptionId was set to NULL on cascade
-        for (const previousValue of items) {
-          if (previousValue.renewalLogs?.length) {
-            const logIds = (previousValue.renewalLogs as any[]).map((rl: any) => rl.id as string);
-            await tx.renewalLog.updateMany({
-              where: { id: { in: logIds } },
-              data: { clientSubscriptionId: previousValue.id as string },
-            });
+        for (const item of items) {
+          if (item.renewalLogs && Array.isArray(item.renewalLogs) && item.renewalLogs.length) {
+            const logIds = (item.renewalLogs as Array<Record<string, unknown>>).map((rl) => rl.id as string);
+            await tx.update(renewalLogs).set({ clientSubscriptionId: item.id as string }).where(inArray(renewalLogs.id, logIds));
           }
         }
       });
@@ -206,33 +241,77 @@ async function undoMutation(
       const items = parseDeletedClientSnapshots(previousValues);
       if (!items || !items.length) break;
       const restoreData = buildDeletedClientRestoreData(userId, items);
-      await prisma.$transaction(async (tx) => {
-        await tx.client.createMany({ data: restoreData.clients });
+      await db.transaction(async (tx) => {
+        // Restore clients
+        for (const c of restoreData.clients) {
+          await tx.insert(clients).values({
+            id: c.id,
+            userId: c.userId,
+            name: c.name,
+            phone: c.phone,
+            notes: c.notes,
+            createdAt: typeof c.createdAt === "string" ? c.createdAt : (c.createdAt as Date).toISOString(),
+            disciplineScore: c.disciplineScore,
+            dailyPenalty: c.dailyPenalty !== null ? amountToCents(c.dailyPenalty) : null,
+            daysOverdue: c.daysOverdue,
+            healthStatus: c.healthStatus,
+          }).onConflictDoNothing();
+        }
 
-        if (restoreData.clientSubscriptions.length > 0) {
-          await tx.clientSubscription.createMany({
-            data: restoreData.clientSubscriptions,
+        // Restore client subscriptions
+        for (const cs of restoreData.clientSubscriptions) {
+          await tx.insert(clientSubscriptions).values({
+            id: cs.id,
+            clientId: cs.clientId,
+            subscriptionId: cs.subscriptionId,
+            customPrice: amountToCents(cs.customPrice),
+            activeUntil: toDateStr(cs.activeUntil),
+            joinedAt: toDateStr(cs.joinedAt),
+            leftAt: cs.leftAt ? toDateStr(cs.leftAt) : null,
+            status: cs.status,
+            remainingDays: cs.remainingDays,
+            serviceUser: cs.serviceUser ?? null,
+            servicePassword: cs.servicePassword ?? null,
+          }).onConflictDoNothing();
+        }
+
+        // Restore renewal logs
+        for (const rl of restoreData.renewalLogs) {
+          await tx.insert(renewalLogs).values({
+            id: rl.id,
+            clientSubscriptionId: rl.clientSubscriptionId,
+            amountPaid: amountToCents(rl.amountPaid),
+            expectedAmount: amountToCents(rl.expectedAmount),
+            periodStart: toDateStr(rl.periodStart),
+            periodEnd: toDateStr(rl.periodEnd),
+            paidOn: toDateStr(rl.paidOn),
+            dueOn: toDateStr(rl.dueOn),
+            monthsRenewed: rl.monthsRenewed,
+            notes: rl.notes,
+          }).onConflictDoUpdate({
+            target: [renewalLogs.id],
+            set: {
+              clientSubscriptionId: rl.clientSubscriptionId,
+              amountPaid: amountToCents(rl.amountPaid),
+              expectedAmount: amountToCents(rl.expectedAmount),
+              periodStart: toDateStr(rl.periodStart),
+              periodEnd: toDateStr(rl.periodEnd),
+              paidOn: toDateStr(rl.paidOn),
+              dueOn: toDateStr(rl.dueOn),
+              monthsRenewed: rl.monthsRenewed,
+              notes: rl.notes,
+            },
           });
         }
 
-        for (const renewalLog of restoreData.renewalLogs) {
-          await tx.renewalLog.upsert({
-            where: { id: renewalLog.id },
-            update: renewalLog,
-            create: renewalLog,
-          });
-        }
-
+        // Restore subscription owners
         for (const ownerRestore of restoreData.subscriptionOwners) {
-          await tx.subscription.updateMany({
-            where: {
-              id: { in: ownerRestore.subscriptionIds },
-              userId,
-            },
-            data: {
-              ownerId: ownerRestore.clientId,
-            },
-          });
+          await tx.update(subscriptions).set({ ownerId: ownerRestore.clientId }).where(
+            and(
+              inArray(subscriptions.id, ownerRestore.subscriptionIds),
+              eq(subscriptions.userId, userId),
+            ),
+          );
         }
       });
       break;
@@ -240,92 +319,119 @@ async function undoMutation(
 
     case "managePlatforms": {
       if (action === "delete") {
-         await prisma.platform.createMany({ data: previousValues as any });
+        const items = previousValues as unknown as Array<Record<string, unknown>>;
+        if (items && items.length) {
+          for (const item of items) {
+            await db.insert(platforms).values({
+              id: item.id as string,
+              name: item.name as string,
+              userId,
+            }).onConflictDoNothing();
+          }
+        }
       } else if (action === "update") {
-         const items = previousValues as any;
-         if (items && items[0]) await prisma.platform.update({ where: { id: items[0].id }, data: items[0] });
+        const items = previousValues as unknown as Array<Record<string, unknown>>;
+        if (items && items[0]) {
+          await db.update(platforms).set({ name: items[0].name as string }).where(eq(platforms.id, items[0].id as string));
+        }
       }
       break;
     }
 
     case "managePlans": {
       if (action === "delete") {
-         await prisma.plan.createMany({ data: previousValues as any });
+        const items = previousValues as unknown as Array<Record<string, unknown>>;
+        if (items && items.length) {
+          for (const item of items) {
+            await db.insert(plans).values({
+              id: item.id as string,
+              platformId: item.platformId as string,
+              name: item.name as string,
+              cost: amountToCents(item.cost as number),
+              maxSeats: item.maxSeats as number | null,
+              isActive: item.isActive as boolean,
+              userId,
+            }).onConflictDoNothing();
+          }
+        }
       } else if (action === "update") {
-         const items = previousValues as any;
-         if (items && items[0]) await prisma.plan.update({ where: { id: items[0].id }, data: items[0] });
+        const items = previousValues as unknown as Array<Record<string, unknown>>;
+        if (items && items[0]) {
+          await db.update(plans).set({
+            name: items[0].name as string,
+            cost: amountToCents(items[0].cost as number),
+            maxSeats: items[0].maxSeats as number | null,
+            isActive: items[0].isActive as boolean,
+          }).where(eq(plans.id, items[0].id as string));
+        }
       }
       break;
     }
 
     case "manageSubscriptions": {
       if (action === "delete") {
-        const items = previousValues as any;
+        const items = previousValues as unknown as Array<Record<string, unknown>>;
         if (!items || !items.length) break;
-        await prisma.$transaction(async (tx) => {
+        await db.transaction(async (tx) => {
           for (const sub of items) {
-            await tx.subscription.create({
-              data: {
-                id: sub.id as string,
-                userId: sub.userId as string,
-                planId: sub.planId as string,
-                label: sub.label as string,
-                startDate: new Date(sub.startDate as string),
-                activeUntil: new Date(sub.activeUntil as string),
-                status: sub.status as any,
-                isAutopayable: sub.isAutopayable as boolean,
-                createdAt: new Date(sub.createdAt as string),
-                masterUsername: (sub.masterUsername as string | null) ?? null,
-                masterPassword: (sub.masterPassword as string | null) ?? null,
-                defaultPaymentNote: (sub.defaultPaymentNote as string | null) ?? null,
-                ownerId: (sub.ownerId as string | null) ?? null,
-              },
-            });
-            if (sub.clientSubscriptions?.length) {
-              await tx.clientSubscription.createMany({
-                data: (sub.clientSubscriptions as any[]).map((cs: any) => ({
+            await tx.insert(subscriptions).values({
+              id: sub.id as string,
+              userId: sub.userId as string,
+              planId: sub.planId as string,
+              label: sub.label as string,
+              startDate: toDateStr(sub.startDate),
+              activeUntil: toDateStr(sub.activeUntil),
+              status: sub.status as "active" | "paused",
+              isAutopayable: sub.isAutopayable as boolean,
+              masterUsername: (sub.masterUsername as string | null) ?? null,
+              masterPassword: (sub.masterPassword as string | null) ?? null,
+              defaultPaymentNote: (sub.defaultPaymentNote as string | null) ?? null,
+              ownerId: (sub.ownerId as string | null) ?? null,
+            }).onConflictDoNothing();
+
+            if (sub.clientSubscriptions && Array.isArray(sub.clientSubscriptions) && sub.clientSubscriptions.length) {
+              for (const cs of sub.clientSubscriptions as Array<Record<string, unknown>>) {
+                await tx.insert(clientSubscriptions).values({
                   id: cs.id as string,
                   clientId: cs.clientId as string,
                   subscriptionId: cs.subscriptionId as string,
-                  customPrice: cs.customPrice as any,
-                  activeUntil: new Date(cs.activeUntil as string),
-                  joinedAt: new Date(cs.joinedAt as string),
-                  leftAt: cs.leftAt ? new Date(cs.leftAt as string) : null,
-                  status: cs.status as any,
+                  customPrice: amountToCents(cs.customPrice as number),
+                  activeUntil: toDateStr(cs.activeUntil),
+                  joinedAt: toDateStr(cs.joinedAt),
+                  leftAt: cs.leftAt ? toDateStr(cs.leftAt) : null,
+                  status: cs.status as "active" | "paused",
                   remainingDays: (cs.remainingDays as number | null) ?? null,
-                  serviceUser: encryptCredential((cs.serviceUser as string | null) ?? null),
-                  servicePassword: encryptCredential((cs.servicePassword as string | null) ?? null),
-                })),
-              });
-              for (const cs of sub.clientSubscriptions as any[]) {
-                if (cs.renewalLogs?.length) {
-                  const csLogIds = (cs.renewalLogs as any[]).map((rl: any) => rl.id as string);
-                  await tx.renewalLog.updateMany({
-                    where: { id: { in: csLogIds } },
-                    data: { clientSubscriptionId: cs.id as string },
-                  });
+                  serviceUser: await encryptCredential((cs.serviceUser as string | null) ?? null) ?? null,
+                  servicePassword: await encryptCredential((cs.servicePassword as string | null) ?? null) ?? null,
+                }).onConflictDoNothing();
+
+                if (cs.renewalLogs && Array.isArray(cs.renewalLogs) && cs.renewalLogs.length) {
+                  const csLogIds = (cs.renewalLogs as Array<Record<string, unknown>>).map((rl) => rl.id as string);
+                  await tx.update(renewalLogs).set({ clientSubscriptionId: cs.id as string }).where(inArray(renewalLogs.id, csLogIds));
                 }
               }
             }
-            if (sub.platformRenewals?.length) {
-              await tx.platformRenewal.createMany({
-                data: (sub.platformRenewals as any[]).map((pr: any) => ({
+
+            if (sub.platformRenewals && Array.isArray(sub.platformRenewals) && sub.platformRenewals.length) {
+              for (const pr of sub.platformRenewals as Array<Record<string, unknown>>) {
+                await tx.insert(platformRenewals).values({
                   id: pr.id as string,
                   subscriptionId: pr.subscriptionId as string,
-                  amountPaid: pr.amountPaid as any,
-                  periodStart: new Date(pr.periodStart as string),
-                  periodEnd: new Date(pr.periodEnd as string),
-                  paidOn: new Date(pr.paidOn as string),
+                  amountPaid: amountToCents(pr.amountPaid as number),
+                  periodStart: toDateStr(pr.periodStart),
+                  periodEnd: toDateStr(pr.periodEnd),
+                  paidOn: toDateStr(pr.paidOn),
                   notes: (pr.notes as string | null) ?? null,
-                  createdAt: new Date(pr.createdAt as string),
-                })),
-              });
+                }).onConflictDoNothing();
+              }
             }
           }
         });
       } else if (action === "update") {
-         const items = previousValues as any;
-         if (items && items[0]) await prisma.subscription.update({ where: { id: items[0].id }, data: items[0] });
+        const items = previousValues as unknown as Array<Record<string, unknown>>;
+        if (items && items[0]) {
+          await db.update(subscriptions).set(items[0] as Record<string, unknown>).where(eq(subscriptions.id, items[0].id as string));
+        }
       }
       break;
     }
@@ -346,59 +452,59 @@ async function undoMutation(
 
       if (action === "delete") {
         // The payment was deleted — we need to recreate it from previousValues
-        const exists = await prisma.renewalLog.findUnique({ where: { id: prev.id } });
+        const exists = await db.query.renewalLogs.findFirst({ where: eq(renewalLogs.id, prev.id) });
         if (!exists) {
           // Need clientSubscription context to find the right dueOn
           const csId = prev.clientSubscriptionId;
           const cs = csId
-            ? await prisma.clientSubscription.findFirst({
-                where: { id: csId, subscription: { userId } },
+            ? await db.query.clientSubscriptions.findFirst({
+                where: eq(clientSubscriptions.id, csId),
+                with: { subscription: { columns: { userId: true } } },
               })
             : null;
 
-          await prisma.$transaction(async (tx) => {
-            await tx.renewalLog.create({
-              data: {
-                id: prev.id,
-                clientSubscriptionId: prev.clientSubscriptionId,
-                amountPaid: prev.amountPaid,
-                expectedAmount: prev.expectedAmount,
-                paidOn: new Date(prev.paidOn),
-                periodStart: new Date(prev.periodStart),
-                periodEnd: new Date(prev.periodEnd),
-                dueOn: cs?.activeUntil ?? new Date(prev.paidOn),
-                monthsRenewed: 1,
-                notes: prev.notes ?? undefined,
-              },
+          if (cs && cs.subscription.userId !== userId) throw new Error("Access denied.");
+
+          await db.transaction(async (tx) => {
+            await tx.insert(renewalLogs).values({
+              id: prev.id,
+              clientSubscriptionId: prev.clientSubscriptionId,
+              amountPaid: amountToCents(prev.amountPaid),
+              expectedAmount: amountToCents(prev.expectedAmount),
+              paidOn: toDateStr(prev.paidOn),
+              periodStart: toDateStr(prev.periodStart),
+              periodEnd: toDateStr(prev.periodEnd),
+              dueOn: cs?.activeUntil ?? toDateStr(prev.paidOn),
+              monthsRenewed: 1,
+              notes: prev.notes ?? null,
             });
 
             // Restore activeUntil on the seat to periodEnd (this payment covered up to periodEnd)
             if (csId) {
-              await tx.clientSubscription.update({
-                where: { id: csId },
-                data: { activeUntil: new Date(prev.periodEnd) },
-              });
+              await tx.update(clientSubscriptions).set({ activeUntil: toDateStr(prev.periodEnd) }).where(eq(clientSubscriptions.id, csId));
             }
           });
         }
       } else {
         // The payment was updated — restore original field values
-        const log = await prisma.renewalLog.findFirst({
-          where: { id: prev.id, clientSubscription: { subscription: { userId } } },
-        });
-        if (!log) throw new Error("Payment log not found for undo.");
-
-        await prisma.$transaction(async (tx) => {
-          await tx.renewalLog.update({
-            where: { id: prev.id },
-            data: {
-              amountPaid: prev.amountPaid,
-              paidOn: new Date(prev.paidOn),
-              periodStart: new Date(prev.periodStart),
-              periodEnd: new Date(prev.periodEnd),
-              notes: prev.notes ?? null,
+        const log = await db.query.renewalLogs.findFirst({
+          where: eq(renewalLogs.id, prev.id),
+          with: {
+            clientSubscription: {
+              with: { subscription: { columns: { userId: true } } },
             },
-          });
+          },
+        });
+        if (!log || log.clientSubscription?.subscription.userId !== userId) throw new Error("Payment log not found for undo.");
+
+        await db.transaction(async (tx) => {
+          await tx.update(renewalLogs).set({
+            amountPaid: amountToCents(prev.amountPaid),
+            paidOn: toDateStr(prev.paidOn),
+            periodStart: toDateStr(prev.periodStart),
+            periodEnd: toDateStr(prev.periodEnd),
+            notes: prev.notes ?? null,
+          }).where(eq(renewalLogs.id, prev.id));
         });
       }
       break;
@@ -412,7 +518,7 @@ async function undoMutation(
       }>;
       if (!items || !items.length) break;
 
-      await prisma.$transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         // Restore each seat to its original status, grouped by status for efficiency
         const byStatus: Record<string, string[]> = {};
         for (const item of items) {
@@ -422,16 +528,14 @@ async function undoMutation(
 
         for (const [status, ids] of Object.entries(byStatus)) {
           // Verify ownership before updating
-          const owned = await tx.clientSubscription.findMany({
-            where: { id: { in: ids }, client: { userId } },
-            select: { id: true },
+          const owned = await tx.query.clientSubscriptions.findMany({
+            where: inArray(clientSubscriptions.id, ids),
+            with: { client: { columns: { userId: true } } },
+            columns: { id: true },
           });
-          const validIds = owned.map((s) => s.id);
+          const validIds = owned.filter((s) => s.client.userId === userId).map((s) => s.id);
           if (validIds.length) {
-            await tx.clientSubscription.updateMany({
-              where: { id: { in: validIds } },
-              data: { status: status as "active" | "paused" },
-            });
+            await tx.update(clientSubscriptions).set({ status: status as "active" | "paused" }).where(inArray(clientSubscriptions.id, validIds));
           }
         }
       });

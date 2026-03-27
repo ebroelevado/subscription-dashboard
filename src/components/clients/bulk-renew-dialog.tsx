@@ -18,7 +18,7 @@ import {
 import { addMonths, startOfDay, format, differenceInDays } from "date-fns";
 import { useRenewBulkClients } from "@/hooks/use-renewals";
 import { useTranslations } from "next-intl";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
 
 export interface BulkRenewSeat {

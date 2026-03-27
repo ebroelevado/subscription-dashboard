@@ -2,8 +2,10 @@
 
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { eq } from "drizzle-orm";
+import { getAuthSession } from "@/lib/auth-utils";
+import { db } from "@/db";
+import { users, accounts } from "@/db/schema";
 
 const updatePasswordSchema = z
   .object({
@@ -24,7 +26,7 @@ export async function updatePasswordAction(
   formData: FormData
 ) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return { error: "Not authenticated", success: false };
     }
@@ -37,9 +39,14 @@ export async function updatePasswordAction(
       return { error: parsed.error.issues[0].message, success: false };
     }
 
-    const dbUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { password: true, accounts: { select: { provider: true } } },
+    const dbUser = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { password: true },
+      with: {
+        accounts: {
+          columns: { providerId: true },
+        },
+      },
     });
 
     if (!dbUser) {
@@ -47,7 +54,7 @@ export async function updatePasswordAction(
     }
 
     const hasPassword = !!dbUser.password;
-    const isOAuth = dbUser.accounts.some((acc) => acc.provider !== "credentials");
+    const isOAuth = dbUser.accounts.some((acc) => acc.providerId !== "credentials");
 
     if (hasPassword) {
       // State A: User has a password, verify current password
@@ -68,10 +75,7 @@ export async function updatePasswordAction(
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { password: hashedPassword },
-    });
+    await db.update(users).set({ password: hashedPassword }).where(eq(users.id, session.user.id));
 
     return { success: true };
   } catch (error) {

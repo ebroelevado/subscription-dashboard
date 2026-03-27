@@ -1,9 +1,9 @@
-import { auth } from "@/lib/auth";
+import { getAuthSession } from "@/lib/auth-utils";
 import { getConversation, deleteConversation } from "@/lib/r2";
 
 // GET /api/history/[id] — Load a specific conversation
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session?.user?.id) {
     return new Response("Unauthorized", { status: 401 });
   }
@@ -24,7 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 // DELETE /api/history/[id] — Delete a conversation
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session?.user?.id) {
     return new Response("Unauthorized", { status: 401 });
   }

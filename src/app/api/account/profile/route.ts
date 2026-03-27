@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { updateProfileSchema } from "@/lib/validations/account";
 import { success, withErrorHandling } from "@/lib/api-utils";
 
@@ -12,13 +14,14 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const data = updateProfileSchema.parse(body);
 
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.image !== undefined && { image: data.image }),
-      },
-      select: { id: true, name: true, email: true, image: true },
+    const [user] = await db.update(users).set({
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.image !== undefined && { image: data.image }),
+    }).where(eq(users.id, userId)).returning({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      image: users.image,
     });
 
     return success(user);

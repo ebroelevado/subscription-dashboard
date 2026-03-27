@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreatePlan, useUpdatePlan, type Plan } from "@/hooks/use-plans";
 import { usePlatforms } from "@/hooks/use-platforms";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, type Currency } from "@/lib/currency";
 import {
   Dialog,

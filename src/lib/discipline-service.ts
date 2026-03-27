@@ -1,4 +1,7 @@
-import { prisma } from "@/lib/prisma";
+import { eq, and, inArray, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { users, clients, clientSubscriptions, subscriptions } from "@/db/schema";
+import { amountToCents } from "@/lib/currency";
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -14,9 +17,9 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
   // 1. User-configured daily score deduction for late payments
   let dailyPenalty = 0.5;
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { disciplinePenalty: true }
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { disciplinePenalty: true }
     });
     if (user?.disciplinePenalty !== undefined) {
       dailyPenalty = user.disciplinePenalty;
@@ -26,25 +29,42 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
   }
 
   // 2. Fetch clients with dynamic filters
-  const clients = await prisma.client.findMany({
-    where: { 
-        userId,
-        ...(filters?.clientId ? { id: filters.clientId } : {})
-    },
-    include: {
+  const csConditions = [];
+  if (filters?.subscriptionId) {
+    csConditions.push(eq(clientSubscriptions.subscriptionId, filters.subscriptionId));
+  }
+  if (filters?.planId) {
+    const subs = await db.select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(eq(subscriptions.planId, filters.planId));
+    if (subs.length > 0) {
+      csConditions.push(inArray(clientSubscriptions.subscriptionId, subs.map(s => s.id)));
+    } else {
+      csConditions.push(sql`false`); // No matches
+    }
+  }
+
+  const clientsData = await db.query.clients.findMany({
+    where: and(
+      eq(clients.userId, userId),
+      filters?.clientId ? eq(clients.id, filters.clientId) : undefined
+    ),
+    with: {
       clientSubscriptions: {
-        where: {
-            ...(filters?.subscriptionId ? { subscriptionId: filters.subscriptionId } : {}),
-            ...(filters?.planId ? { subscription: { planId: filters.planId } } : {}),
-        },
-        select: {
+        columns: {
           id: true,
           joinedAt: true,
           activeUntil: true,
           status: true,
           customPrice: true,
+        },
+        where: csConditions.length > 0 ? and(...csConditions) : undefined,
+        with: {
           renewalLogs: {
-            select: { paidOn: true, dueOn: true }
+            columns: {
+              paidOn: true,
+              dueOn: true,
+            }
           }
         }
       }
@@ -63,7 +83,7 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
 
   const now = new Date();
 
-  for (const client of clients) {
+  for (const client of clientsData) {
       const effectivePenaltyPerDay = dailyPenalty;
 
       if (client.clientSubscriptions.length === 0) continue;
@@ -142,8 +162,8 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
       }
 
       const dataToPersist = {
-          disciplineScore: finalScore !== null ? Math.round(finalScore * 10) / 10 : null,
-          dailyPenalty: effectivePenaltyPerDay,
+          disciplineScore: finalScore !== null ? (Math.round(finalScore * 10) / 10).toString() : null,
+          dailyPenalty: amountToCents(effectivePenaltyPerDay),
           daysOverdue: maxDaysOverdue,
           healthStatus: healthStatus
       };
@@ -162,10 +182,7 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
       };
 
       try {
-          await (prisma.client as any).update({
-              where: { id: client.id },
-              data: dataToPersist
-          });
+          await db.update(clients).set(dataToPersist).where(eq(clients.id, client.id));
       } catch (err) {
           console.error(`[DisciplineService] Failed to persist stats for client ${client.id}:`, err);
       }

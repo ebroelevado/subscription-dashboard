@@ -103,117 +103,45 @@ export function SubscriptionManager({ locale }: { locale: string }) {
   ];
 
   return (
-    <Card className={cn(
-      "overflow-hidden border-2 transition-all duration-300",
-      isPremium ? "border-gold-gradient/30 bg-gold-gradient/5" : "hover:border-primary/20"
-    )}>
+    <Card className="overflow-hidden border-2 border-gold-gradient/30 bg-gold-gradient/5">
       <CardHeader className="relative">
-        {isPremium && (
-          <div className="absolute top-4 right-4 bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-            <Sparkles className="h-3 w-3" />
-            PREMIUM
-          </div>
-        )}
+        <div className="absolute top-4 right-4 bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+          <Sparkles className="h-3 w-3" />
+          {t("premiumActive")}
+        </div>
         <CardTitle>{t("subscriptionTitle")}</CardTitle>
         <CardDescription>
-          {isPremium ? t("premiumActive") : t("freePlan")}
+          {t("premiumActiveDescription", { fallback: "Your account has permanent unlimited access to all features." })}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.plan")}</p>
-            <p className="text-sm font-semibold mt-1">{status?.plan || "FREE"}</p>
+            <p className="text-sm font-semibold mt-1">LIFETIME PREMIUM</p>
           </div>
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.platforms")}</p>
-            <p className="text-sm font-semibold mt-1">
-              {status?.usage.platforms ?? 0} / {isPremium ? "∞" : SAAS_LIMITS.FREE.PLATFORMS}
-            </p>
+            <p className="text-sm font-semibold mt-1">∞ / ∞</p>
           </div>
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.plans")}</p>
-            <p className="text-sm font-semibold mt-1">
-              {status?.usage.plans ?? 0} / {isPremium ? "∞" : SAAS_LIMITS.FREE.PLANS}
-            </p>
+            <p className="text-sm font-semibold mt-1">∞ / ∞</p>
           </div>
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.subscriptions")}</p>
-            <p className="text-sm font-semibold mt-1">
-              {status?.usage.subscriptions ?? 0} / {isPremium ? "∞" : SAAS_LIMITS.FREE.SUBSCRIPTIONS}
-            </p>
+            <p className="text-sm font-semibold mt-1">∞ / ∞</p>
           </div>
         </div>
 
-        {isPremium && nextBillingDate && (
-          <div className="rounded-xl border border-gold-gradient/20 bg-background/80 p-3 text-sm space-y-2">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <CreditCard className="h-4 w-4" />
-              <span>
-                {t("nextBilling")}: <span className="font-medium text-foreground">
-                  {format(nextBillingDate, "PPP", { locale: locales[locale] || enUS })}
-                </span>
-              </span>
-            </div>
-            {daysToBilling !== null && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CalendarClock className="h-4 w-4" />
-                <span className="font-medium">{tc("daysLeft", { count: daysToBilling })}</span>
-              </div>
-            )}
+        <div className="rounded-xl border border-gold-gradient/20 bg-background/80 p-4 flex items-center gap-3">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <ShieldCheck className="h-5 w-5 text-primary" />
           </div>
-        )}
-
-        {!isPremium && (
-          <div className="rounded-2xl border border-gold-gradient/30 bg-gold-gradient/5 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold">{t("popupTitle")}</p>
-              <Badge variant="outline" className="border-gold-gradient/40 text-gold-gradient">PREMIUM</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">{t("popupDescription")}</p>
-            <div className="space-y-2">
-              {virtues.map((virtue) => (
-                <div key={virtue.title} className="rounded-lg border bg-background/80 p-2.5">
-                  <p className="text-xs font-semibold flex items-center gap-2">
-                    <virtue.icon className="h-3.5 w-3.5 text-gold-gradient" />
-                    {virtue.title}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground mt-1">{virtue.description}</p>
-                </div>
-              ))}
-            </div>
+          <div>
+            <p className="text-sm font-medium">{t("unlimitedAccess", { fallback: "Unlimited Access" })}</p>
+            <p className="text-xs text-muted-foreground">{t("foreverPearfect", { fallback: "Your subscription is managed directly by Pearfect S.L." })}</p>
           </div>
-        )}
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          {isPremium ? (
-            <Button
-              onClick={handleManage}
-              disabled={isActionLoading}
-              variant="outline"
-              className="w-full sm:w-auto"
-            >
-              {isActionLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Settings className="h-4 w-4 mr-2" />
-              )}
-              {t("manageBilling")}
-            </Button>
-          ) : (
-            <Button
-              onClick={handleUpgrade}
-              disabled={isActionLoading}
-              className="w-full sm:w-auto bg-gold-gradient hover:opacity-90 text-black shadow-lg font-bold"
-            >
-              {isActionLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
-              )}
-              {t("subscribeNow")}
-            </Button>
-          )}
         </div>
       </CardContent>
     </Card>

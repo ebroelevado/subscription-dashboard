@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/stripe";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function POST() {
   try {
@@ -8,9 +10,9 @@ export async function POST() {
     const { getAuthUserId } = await import("@/lib/auth-utils");
     const userId = await getAuthUserId();
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { stripeCustomerId: true },
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { stripeCustomerId: true },
     });
 
     if (!user || !user.stripeCustomerId) {

@@ -1,7 +1,10 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, count } from "drizzle-orm";
+import { db } from "@/db";
+import { plans, platforms, subscriptions, clientSubscriptions } from "@/db/schema";
 import { createPlanSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
+import { amountToCents } from "@/lib/currency";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -12,24 +15,35 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    const plan = await prisma.plan.findUnique({
-      where: { id, userId },
-      include: {
-        platform: { select: { id: true, name: true } },
+    const plan = await db.query.plans.findFirst({
+      where: and(eq(plans.id, id), eq(plans.userId, userId)),
+      with: {
+        platform: { columns: { id: true, name: true } },
         subscriptions: {
-          select: {
+          columns: {
             id: true,
             label: true,
             status: true,
             activeUntil: true,
-            _count: { select: { clientSubscriptions: true } },
           },
         },
       },
     });
 
     if (!plan) return error("Plan not found", 404);
-    return success(plan);
+
+    // Add clientSubscriptions count to each subscription
+    const subscriptionsWithCount = await Promise.all(
+      plan.subscriptions.map(async (sub) => {
+        const [{ count: csCount }] = await db
+          .select({ count: count() })
+          .from(clientSubscriptions)
+          .where(eq(clientSubscriptions.subscriptionId, sub.id));
+        return { ...sub, clientSubscriptionCount: csCount };
+      })
+    );
+
+    return success({ ...plan, subscriptions: subscriptionsWithCount });
   });
 }
 
@@ -42,10 +56,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const data = createPlanSchema.partial().parse(body);
 
-    const plan = await prisma.plan.update({
-      where: { id, userId },
-      data,
-    });
+    const updateData: Record<string, unknown> = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.cost !== undefined) updateData.cost = amountToCents(data.cost);
+    if (data.maxSeats !== undefined) updateData.maxSeats = data.maxSeats;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.platformId !== undefined) updateData.platformId = data.platformId;
+
+    const [plan] = await db.update(plans)
+      .set(updateData)
+      .where(and(eq(plans.id, id), eq(plans.userId, userId)))
+      .returning();
     return success(plan);
   });
 }
@@ -57,7 +78,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    await prisma.plan.delete({ where: { id, userId } });
+    await db.delete(plans).where(and(eq(plans.id, id), eq(plans.userId, userId)));
     return success({ deleted: true });
   });
 }

@@ -1,12 +1,19 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "next-themes";
+import { NextIntlClientProvider } from "next-intl";
 import { Toaster } from "sonner";
 import { useState, type ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-export function Providers({ children }: { children: ReactNode }) {
+interface ProvidersProps {
+  children: ReactNode;
+  locale?: string;
+  messages?: Record<string, any>;
+}
+
+export function Providers({ children, locale, messages }: ProvidersProps) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -20,8 +27,9 @@ export function Providers({ children }: { children: ReactNode }) {
       })
   );
 
-  return (
-    <SessionProvider>
+  // better-auth doesn't need a SessionProvider - session is managed via useSession hook
+  const content = (
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={400}>
           {children}
@@ -35,6 +43,29 @@ export function Providers({ children }: { children: ReactNode }) {
           />
         </TooltipProvider>
       </QueryClientProvider>
-    </SessionProvider>
+    </ThemeProvider>
   );
+
+  // If locale and messages are provided, wrap with NextIntlClientProvider
+  if (locale && messages) {
+    return (
+      <NextIntlClientProvider
+        locale={locale}
+        messages={messages}
+        timeZone="Europe/Madrid"
+        formats={{
+          dateTime: {
+            short: { day: "numeric", month: "short", year: "numeric" },
+          },
+          number: {
+            currency: { style: "currency", currency: "EUR" },
+          },
+        }}
+      >
+        {content}
+      </NextIntlClientProvider>
+    );
+  }
+
+  return content;
 }

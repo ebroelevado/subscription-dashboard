@@ -1,131 +1,61 @@
-import NextAuth from "next-auth";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import CredentialsProvider from "next-auth/providers/credentials";
-import Google from "next-auth/providers/google";
+// Apply monkey-patch to fix boolean conversion in Drizzle better-sqlite3 driver
+import "./patches/drizzle-boolean-fix";
+
+// @ts-ignore: better-auth export is not correctly typed under bundler moduleResolution
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { getDirectDb } from "@/db";
+import * as schema from "@/db/schema";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
-import { authConfig } from "./auth.config";
 
-const nextAuth = NextAuth({
-  ...authConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  adapter: PrismaAdapter(prisma as any),
-  providers: [
-    ...authConfig.providers.filter((p) => p.id !== "credentials"),
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      allowDangerousEmailAccountLinking: true,
-      profile(profile) {
-        return {
-          id: profile.sub,
-          name: profile.name,
-          email: profile.email,
-          image: profile.picture,
-        };
-      },
-    }),
-    CredentialsProvider({
-      name: "credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-        });
-
-        if (!user || !user.password) return null;
-
-        const passwordMatch = await bcrypt.compare(
-          credentials.password as string,
-          user.password
-        );
-
-        if (!passwordMatch) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
-        };
-      },
-    }),
-  ],
-  callbacks: {
-    ...authConfig.callbacks,
-    async jwt({ token, user, trigger, account, session }) {
-      if (user) {
-        token.id = user.id;
-        token.image = user.image;
-        token.plan = (user as any).plan;
-        if (account?.provider === "google") {
-          token.isOAuth = true;
-        }
-      }
-      
-      // Handle frontend session updates (e.g. update({ disciplinePenalty: 1.2 }))
-      if (trigger === "update" && session) {
-        if (session.name !== undefined) token.name = session.name;
-        if (session.image !== undefined) token.image = session.image;
-        if (session.currency !== undefined) token.currency = session.currency;
-        if (session.disciplinePenalty !== undefined) token.disciplinePenalty = session.disciplinePenalty;
-        if (session.companyName !== undefined) token.companyName = session.companyName;
-      }
-      
-      // Refresh critical settings periodically instead of on every token validation.
-      // This keeps tokens in sync while avoiding a DB query on every request.
-      const shouldRefreshFromDb =
-        !!token.id &&
-        (
-          !!user ||
-          trigger === "update" ||
-          !token.lastSyncAt ||
-          Date.now() - Number(token.lastSyncAt) > 5 * 60 * 1000
-        );
-
-      if (shouldRefreshFromDb && token.id) {
-        try {
-          const dbUserRaw = await prisma.user.findUnique({
-            where: { id: token.id as string },
-            select: {
-              name: true,
-              image: true,
-              password: true,
-              accounts: { select: { provider: true } },
-              currency: true,
-              disciplinePenalty: true,
-              companyName: true,
-              plan: true,
-            } as any,
-          });
-          
-          const dbUser = dbUserRaw as any;
-          if (dbUser) {
-            token.name = dbUser.name;
-            token.image = dbUser.image;
-            token.hasPassword = !!dbUser.password;
-            token.isOAuth = dbUser.accounts?.some((acc: { provider: string }) => acc.provider !== "credentials") || false;
-            token.currency = dbUser.currency || "EUR";
-            token.disciplinePenalty = dbUser.disciplinePenalty ?? 0.5;
-            token.companyName = dbUser.companyName ?? null;
-            token.plan = dbUser.plan || "FREE";
-            token.lastSyncAt = Date.now();
-          }
-        } catch (e) {
-          console.error("[Auth] Error reading user from DB:", e);
-        }
-      }
-      return token;
+export const auth = betterAuth({
+  baseURL: process.env.AUTH_URL || "http://localhost:3000",
+  secret: process.env.AUTH_SECRET,
+  database: drizzleAdapter(getDirectDb(), {
+    provider: "sqlite",
+    schema: {
+      user: schema.users,
+      session: schema.sessions,
+      account: schema.accounts,
+      verification: schema.verificationTokens,
+    },
+  }),
+  user: {
+    additionalFields: {
+      currency: { type: "string", defaultValue: "EUR" },
+      disciplinePenalty: { type: "number", defaultValue: 0.5 },
+      usageCredits: { type: "number", defaultValue: 0 },
+      companyName: { type: "string", required: false },
+      whatsappSignatureMode: { type: "string", defaultValue: "name" },
+      plan: { type: "string", defaultValue: "FREE" },
+      stripeCustomerId: { type: "string", required: false },
+      stripeSubscriptionId: { type: "string", required: false },
+      stripePriceId: { type: "string", required: false },
+      stripeCurrentPeriodEnd: { type: "string", required: false },
     },
   },
+  emailAndPassword: {
+    enabled: true,
+    password: {
+      hash: async (password: string) => {
+        return await bcrypt.hash(password, 10);
+      },
+      verify: async ({ hash, password }: { hash: string; password: string }) => {
+        return await bcrypt.compare(password, hash);
+      },
+    },
+  },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+    },
+  },
+  session: {
+    expiresIn: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 5 * 60, // Refresh session every 5 minutes
+  },
+  // Note: nextCookies() removed — it relies on Next.js internals that are
+  // shimmed under vinext and may silently drop session cookies after login.
+  plugins: [],
 });
-
-export const handlers = nextAuth.handlers;
-export const auth = nextAuth.auth;
-export const signIn = nextAuth.signIn;
-export const signOut = nextAuth.signOut;

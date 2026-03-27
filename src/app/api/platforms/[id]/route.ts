@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and } from "drizzle-orm";
+import { db } from "@/db";
+import { platforms, plans, subscriptions } from "@/db/schema";
 import { createPlatformSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
 
@@ -12,13 +14,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
     
-    const platform = await prisma.platform.findUnique({
-      where: { id, userId },
-      include: {
+    const platform = await db.query.platforms.findFirst({
+      where: and(eq(platforms.id, id), eq(platforms.userId, userId)),
+      with: {
         plans: {
-          include: {
+          with: {
             subscriptions: {
-              select: {
+              columns: {
                 id: true,
                 label: true,
                 status: true,
@@ -44,10 +46,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const data = createPlatformSchema.partial().parse(body);
 
-    const platform = await prisma.platform.update({ 
-      where: { id, userId }, 
-      data 
-    });
+    const [platform] = await db.update(platforms)
+      .set(data)
+      .where(and(eq(platforms.id, id), eq(platforms.userId, userId)))
+      .returning();
     return success(platform);
   });
 }
@@ -59,7 +61,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
     
-    await prisma.platform.delete({ where: { id, userId } });
+    await db.delete(platforms).where(and(eq(platforms.id, id), eq(platforms.userId, userId)));
     return success({ deleted: true });
   });
 }

@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { eq, and, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { renewalLogs, clientSubscriptions, subscriptions, platformRenewals } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
 
 // GET /api/analytics/summary — Core KPIs scoped to the current user
@@ -7,49 +9,54 @@ export async function GET() {
     const { getAuthUserId } = await import("@/lib/auth-utils");
     const userId = await getAuthUserId();
 
-    const userScope = { clientSubscription: { subscription: { userId } } };
-    const costScope = { subscription: { userId } };
-
     const [revenueAgg, costAgg, uniqueClients, totalPayments, onTimeCount] =
       await Promise.all([
-        // Total revenue — aggregate instead of findMany + reduce
-        prisma.renewalLog.aggregate({
-          _sum: { amountPaid: true },
-          where: userScope,
-        }),
-        // Total cost — aggregate instead of findMany + reduce
-        prisma.platformRenewal.aggregate({
-          _sum: { amountPaid: true },
-          where: costScope,
-        }),
-        // Unique paying clients
-        prisma.clientSubscription.findMany({
-          where: { subscription: { userId }, renewalLogs: { some: {} } },
-          select: { clientId: true },
-          distinct: ["clientId"],
-        }),
-        // Total payment count — count instead of findMany.length
-        prisma.renewalLog.count({ where: userScope }),
-        // On-time payment count — count with WHERE instead of filter
-        prisma.$queryRaw<[{ count: bigint }]>`
-          SELECT COUNT(*)::bigint AS count
-          FROM renewal_logs rl
-          JOIN client_subscriptions cs ON cs.id = rl.client_subscription_id
-          JOIN subscriptions s ON s.id = cs.subscription_id
-          WHERE s.user_id = ${userId}
-            AND rl.paid_on <= rl.due_on
-        `,
+        db
+          .select({ total: sql<string>`COALESCE(SUM(${renewalLogs.amountPaid}), 0)` })
+          .from(renewalLogs)
+          .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .where(eq(subscriptions.userId, userId)),
+        db
+          .select({ total: sql<string>`COALESCE(SUM(${platformRenewals.amountPaid}), 0)` })
+          .from(platformRenewals)
+          .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
+          .where(eq(subscriptions.userId, userId)),
+        db
+          .selectDistinct({ clientId: clientSubscriptions.clientId })
+          .from(clientSubscriptions)
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .innerJoin(renewalLogs, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .where(eq(subscriptions.userId, userId)),
+        db
+          .select({ total: sql<number>`COUNT(*)` })
+          .from(renewalLogs)
+          .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .where(eq(subscriptions.userId, userId)),
+        db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(renewalLogs)
+          .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              sql`${renewalLogs.paidOn} <= ${renewalLogs.dueOn}`
+            )
+          ),
       ]);
 
-    const totalRevenue = Number(revenueAgg._sum.amountPaid ?? 0);
-    const totalCost = Number(costAgg._sum.amountPaid ?? 0);
+    const totalRevenue = Number(revenueAgg[0]?.total ?? 0);
+    const totalCost = Number(costAgg[0]?.total ?? 0);
     const netMargin = totalRevenue - totalCost;
     const uniqueClientCount = uniqueClients.length;
     const arpu = uniqueClientCount > 0 ? totalRevenue / uniqueClientCount : 0;
+    const totalPaymentsNum = Number(totalPayments[0]?.total ?? 0);
 
     const onTimeCountNum = Number(onTimeCount[0]?.count ?? 0);
     const onTimeRate =
-      totalPayments > 0 ? (onTimeCountNum / totalPayments) * 100 : 100;
+      totalPaymentsNum > 0 ? (onTimeCountNum / totalPaymentsNum) * 100 : 100;
 
     return success({
       totalRevenue,
@@ -57,9 +64,9 @@ export async function GET() {
       netMargin,
       arpu,
       onTimeRate,
-      totalPayments,
+      totalPayments: totalPaymentsNum,
       onTimeCount: onTimeCountNum,
-      lateCount: totalPayments - onTimeCountNum,
+      lateCount: totalPaymentsNum - onTimeCountNum,
       uniqueClientCount,
     });
   });

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 
 import { useTranslations } from "next-intl";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, type Currency } from "@/lib/currency";
 
 interface EditSeatDialogProps {

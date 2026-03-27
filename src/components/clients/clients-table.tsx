@@ -199,12 +199,12 @@ export function ClientsTable({ clients, isLoading }: ClientsTableProps) {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className={cn("font-mono font-bold text-sm", getScoreColor(score))}>
-                              {score.toFixed(1)}
+                            <span className={cn("font-mono font-bold text-sm", getScoreColor(Number(score)))}>
+                              {Number(score).toFixed(1)}
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="text-xs">
-                            <p>{getScoreLabel(score, t)}</p>
+                            <p>{getScoreLabel(Number(score), t)}</p>
                              <div className="text-muted-foreground mt-1 space-y-0.5">
                                <p>{t("healthLabel")}: <span className="font-semibold text-foreground">{t(`healthStatus${healthStatus}`)}</span></p>
                                {daysOverdue > 0 && (

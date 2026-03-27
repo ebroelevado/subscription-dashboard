@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc, asc } from "drizzle-orm";
+import { db } from "@/db";
+import { clients, clientSubscriptions, subscriptions, plans, platforms, renewalLogs } from "@/db/schema";
 import { createClientSchema } from "@/lib/validations";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
 
@@ -12,26 +14,33 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    const client = await prisma.client.findUnique({
-      where: { id, userId },
-      include: {
+    const client = await db.query.clients.findFirst({
+      where: and(eq(clients.id, id), eq(clients.userId, userId)),
+      with: {
         clientSubscriptions: {
-          include: {
+          orderBy: [asc(clientSubscriptions.joinedAt)],
+          with: {
             subscription: {
-              include: {
+              with: {
                 plan: {
-                  include: {
-                    platform: { select: { id: true, name: true } },
+                  with: {
+                    platform: { columns: { id: true, name: true } },
                   },
                 },
               },
             },
             renewalLogs: {
-              orderBy: { paidOn: "desc" },
-              take: 10,
+              columns: {
+                id: true,
+                amountPaid: true,
+                periodStart: true,
+                periodEnd: true,
+                paidOn: true,
+              },
+              orderBy: [desc(renewalLogs.paidOn)],
+              limit: 10,
             },
           },
-          orderBy: { joinedAt: "asc" },
         },
       },
     });
@@ -98,10 +107,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const data = createClientSchema.partial().parse(body);
 
-    const updatedClient = await prisma.client.update({
-      where: { id, userId },
-      data,
-    });
+    const [updatedClient] = await db.update(clients)
+      .set(data)
+      .where(and(eq(clients.id, id), eq(clients.userId, userId)))
+      .returning();
 
     const c = updatedClient as any;
     const remapped = {
@@ -126,7 +135,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    await prisma.client.delete({ where: { id, userId } });
+    await db.delete(clients).where(and(eq(clients.id, id), eq(clients.userId, userId)));
     return success({ deleted: true });
   });
 }

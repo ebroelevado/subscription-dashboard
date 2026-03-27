@@ -1,6 +1,9 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and, desc } from "drizzle-orm";
+import { db } from "@/db";
+import { clientSubscriptions, subscriptions, renewalLogs, plans, platforms } from "@/db/schema";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
+import { amountToCents } from "@/lib/currency";
 import { differenceInDays, addDays, startOfDay } from "date-fns";
 import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
 
@@ -13,28 +16,30 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    const seat = await prisma.clientSubscription.findFirst({
-      where: { id, subscription: { userId } },
-      include: {
-        client: { select: { id: true, name: true, phone: true } },
+    // First verify ownership through subscription
+    const seat = await db.query.clientSubscriptions.findFirst({
+      where: eq(clientSubscriptions.id, id),
+      with: {
+        client: { columns: { id: true, name: true, phone: true } },
         subscription: {
-          include: {
+          columns: { userId: true },
+          with: {
             plan: {
-              include: { platform: { select: { id: true, name: true } } },
+              with: { platform: { columns: { id: true, name: true } } },
             },
           },
         },
         renewalLogs: {
-          orderBy: { paidOn: "desc" },
+          orderBy: [desc(renewalLogs.paidOn)],
         },
       },
     });
 
-    if (!seat) return error("Seat not found", 404);
+    if (!seat || seat.subscription.userId !== userId) return error("Seat not found", 404);
     return success({
       ...seat,
-      serviceUser: decryptCredential(seat.serviceUser),
-      servicePassword: decryptCredential(seat.servicePassword),
+      serviceUser: await decryptCredential(seat.serviceUser),
+      servicePassword: await decryptCredential(seat.servicePassword),
     });
   });
 }
@@ -47,10 +52,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Verify ownership through the subscription chain
-    const existing = await prisma.clientSubscription.findFirst({
-      where: { id, subscription: { userId } },
+    const existing = await db.query.clientSubscriptions.findFirst({
+      where: eq(clientSubscriptions.id, id),
+      with: { subscription: { columns: { userId: true } } },
     });
-    if (!existing) return error("Seat not found", 404);
+    if (!existing || existing.subscription.userId !== userId) return error("Seat not found", 404);
 
     const body = await request.json();
     const { updateSeatSchema } = await import("@/lib/validations");
@@ -58,13 +64,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const updateData: Record<string, unknown> = {};
 
-    if (data.customPrice !== undefined) updateData.customPrice = data.customPrice;
-    if (data.startDate !== undefined) updateData.joinedAt = data.startDate;
-    if (data.activeUntil !== undefined) updateData.activeUntil = data.activeUntil;
+    if (data.customPrice !== undefined) updateData.customPrice = amountToCents(data.customPrice);
+    if (data.startDate !== undefined) updateData.joinedAt = data.startDate instanceof Date ? data.startDate.toISOString().split("T")[0] : data.startDate;
+    if (data.activeUntil !== undefined) updateData.activeUntil = data.activeUntil instanceof Date ? data.activeUntil.toISOString().split("T")[0] : data.activeUntil;
 
     // Handle credentials (stored on ClientSubscription, not Client)
-    if (data.serviceUser !== undefined) updateData.serviceUser = encryptCredential(data.serviceUser);
-    if (data.servicePassword !== undefined) updateData.servicePassword = encryptCredential(data.servicePassword);
+    if (data.serviceUser !== undefined) updateData.serviceUser = await encryptCredential(data.serviceUser);
+    if (data.servicePassword !== undefined) updateData.servicePassword = await encryptCredential(data.servicePassword);
 
     if (data.status !== undefined && data.status !== existing.status) {
       updateData.status = data.status;
@@ -75,7 +81,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           // Calculate remaining paid days and freeze them
           const expiry = startOfDay(new Date(existing.activeUntil));
           const remaining = Math.max(0, differenceInDays(expiry, today));
-          updateData.leftAt = today;
+          updateData.leftAt = today.toISOString().split("T")[0];
           updateData.remainingDays = remaining;
           break;
         }
@@ -84,21 +90,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           // Resume: restore remaining paid days from today
           const days = existing.remainingDays ?? 0;
           updateData.leftAt = null;
-          updateData.activeUntil = days > 0 ? addDays(today, days) : today;
+          updateData.activeUntil = days > 0 ? addDays(today, days).toISOString().split("T")[0] : today.toISOString().split("T")[0];
           updateData.remainingDays = null; // clear after use
           break;
         }
       }
     }
 
-    const seat = await prisma.clientSubscription.update({
-      where: { id },
-      data: updateData,
-    });
+    const [seat] = await db.update(clientSubscriptions)
+      .set(updateData)
+      .where(eq(clientSubscriptions.id, id))
+      .returning();
     return success({
       ...seat,
-      serviceUser: decryptCredential(seat.serviceUser),
-      servicePassword: decryptCredential(seat.servicePassword),
+      serviceUser: await decryptCredential(seat.serviceUser),
+      servicePassword: await decryptCredential(seat.servicePassword),
     });
   });
 }
@@ -110,14 +116,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const userId = await getAuthUserId();
     const { id } = await params;
 
-    const existing = await prisma.clientSubscription.findFirst({
-      where: { id, subscription: { userId } },
+    // Verify ownership through the subscription chain
+    const existing = await db.query.clientSubscriptions.findFirst({
+      where: eq(clientSubscriptions.id, id),
+      with: { subscription: { columns: { userId: true } } },
     });
-    if (!existing) return error("Seat not found", 404);
+    if (!existing || existing.subscription.userId !== userId) return error("Seat not found", 404);
 
-    await prisma.clientSubscription.delete({
-      where: { id },
-    });
+    await db.delete(clientSubscriptions).where(eq(clientSubscriptions.id, id));
 
     return success({ success: true });
   });

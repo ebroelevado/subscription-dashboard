@@ -19,9 +19,19 @@ export function useSaasStatus() {
   return useQuery<SaasStatus>({
     queryKey: ["saas-status"],
     queryFn: async () => {
-      const res = await fetch("/api/copilot/status");
-      if (!res.ok) throw new Error("Failed to fetch SaaS status");
-      return res.json();
+      // Free for all - no more network requests to extinct Copilot status
+      return {
+        hasToken: true,
+        plan: "PREMIUM",
+        stripeCurrentPeriodEnd: null,
+        usage: {
+          platforms: 0,
+          clients: 0,
+          activeSeats: 0,
+          plans: 0,
+          subscriptions: 0,
+        }
+      };
     }
   });
 }

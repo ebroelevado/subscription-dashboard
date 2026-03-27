@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { eq, sql, desc, and, gte, lte, sum } from "drizzle-orm";
+import { platforms, plans, clients, subscriptions, clientSubscriptions, renewalLogs, platformRenewals } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
 import { startOfDay, addDays, startOfMonth, endOfMonth } from "date-fns";
 
@@ -10,8 +12,8 @@ export async function GET() {
 
     const today = startOfDay(new Date());
     const soonThreshold = addDays(today, 3);
-    const monthStart = startOfMonth(today);
-    const monthEnd = endOfMonth(today);
+    const monthStart = startOfMonth(today).toISOString().split("T")[0];
+    const monthEnd = endOfMonth(today).toISOString().split("T")[0];
 
     // Run all counts in parallel — use aggregates where possible
     const [
@@ -24,68 +26,75 @@ export async function GET() {
       thisMonthRevenueAgg,
       thisMonthCostAgg,
     ] = await Promise.all([
-      prisma.platform.count({ where: { userId } }),
-      prisma.plan.count({ where: { userId, isActive: true } }),
-      prisma.client.count({ where: { userId } }),
+      db.$count(platforms, eq(platforms.userId, userId)),
+      db.$count(plans, eq(plans.userId, userId)),
+      db.$count(clients, eq(clients.userId, userId)),
       // Count only — no need to load full rows
-      prisma.subscription.count({
-        where: { userId, status: "active" },
-      }),
+      db.$count(subscriptions, eq(subscriptions.userId, userId)),
       // SUM plan.cost for active subscriptions (replaces findMany + reduce)
-      prisma.$queryRaw<[{ total: number }]>`
-        SELECT COALESCE(SUM(p.cost), 0)::float AS total
-        FROM subscriptions s
-        JOIN plans p ON p.id = s.plan_id
-        WHERE s.user_id = ${userId} AND s.status = 'active'
-      `,
+      db.select({
+        total: sql<string>`COALESCE(SUM(${plans.cost}), 0)`,
+      })
+        .from(subscriptions)
+        .innerJoin(plans, eq(subscriptions.planId, plans.id))
+        .where(and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, "active")
+        )),
       // Active seats — still need full rows for overdue/expiring display
-      prisma.clientSubscription.findMany({
-        where: {
-          status: "active",
-          subscription: { userId },
-        },
-        include: {
+      db.query.clientSubscriptions.findMany({
+        where: eq(clientSubscriptions.status, "active"),
+        with: {
           client: {
-            select: { id: true, name: true, phone: true },
+            columns: { id: true, name: true, phone: true },
           },
           subscription: {
-            include: {
+            columns: { id: true, label: true, userId: true },
+            with: {
               plan: {
-                include: {
-                  platform: { select: { id: true, name: true } },
+                columns: { id: true, name: true },
+                with: {
+                  platform: { columns: { id: true, name: true } },
                 },
               },
             },
           },
         },
-        orderBy: { activeUntil: "asc" },
+        orderBy: [desc(clientSubscriptions.activeUntil)],
       }),
       // This month revenue — aggregate instead of findMany + reduce
-      prisma.renewalLog.aggregate({
-        _sum: { amountPaid: true },
-        where: {
-          paidOn: { gte: monthStart, lte: monthEnd },
-          clientSubscription: { subscription: { userId } },
-        },
-      }),
+      db.select({
+        total: sql<string>`COALESCE(SUM(${renewalLogs.amountPaid}), 0)`,
+      })
+        .from(renewalLogs)
+        .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+        .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+        .where(and(
+          eq(subscriptions.userId, userId),
+          gte(renewalLogs.paidOn, monthStart),
+          lte(renewalLogs.paidOn, monthEnd)
+        )),
       // This month cost — aggregate instead of findMany + reduce
-      prisma.platformRenewal.aggregate({
-        _sum: { amountPaid: true },
-        where: {
-          paidOn: { gte: monthStart, lte: monthEnd },
-          subscription: { userId },
-        },
-      }),
+      db.select({
+        total: sql<string>`COALESCE(SUM(${platformRenewals.amountPaid}), 0)`,
+      })
+        .from(platformRenewals)
+        .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
+        .where(and(
+          eq(subscriptions.userId, userId),
+          gte(platformRenewals.paidOn, monthStart),
+          lte(platformRenewals.paidOn, monthEnd)
+        )),
     ]);
 
     // Financials from aggregates (no more in-memory reduce)
-    const monthlyCost = monthlyCostAgg[0]?.total ?? 0;
+    const monthlyCost = Number(monthlyCostAgg[0]?.total ?? 0);
     const monthlyRevenue = allActiveSeats.reduce(
       (sum, s) => sum + Number(s.customPrice),
       0,
     );
-    const thisMonthRevenue = Number(thisMonthRevenueAgg._sum.amountPaid ?? 0);
-    const thisMonthCost = Number(thisMonthCostAgg._sum.amountPaid ?? 0);
+    const thisMonthRevenue = Number(thisMonthRevenueAgg[0]?.total ?? 0);
+    const thisMonthCost = Number(thisMonthCostAgg[0]?.total ?? 0);
 
     // Build overdue + expiring-soon lists
     const overdueSeats = allActiveSeats

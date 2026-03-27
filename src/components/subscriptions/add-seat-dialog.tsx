@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Search, UserPlus, Eye, EyeOff } from "lucide-react";
 import { addMonths, format } from "date-fns";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { CURRENCIES } from "@/lib/currency";
 
 interface AddSeatDialogProps {

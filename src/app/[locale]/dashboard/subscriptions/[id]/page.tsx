@@ -31,7 +31,7 @@ import {
   Banknote,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";

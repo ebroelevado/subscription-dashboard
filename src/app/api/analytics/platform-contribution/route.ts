@@ -1,17 +1,8 @@
-import { prisma } from "@/lib/prisma";
+import { eq, and, gte, asc, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { platforms, plans, subscriptions, clientSubscriptions, renewalLogs, platformRenewals } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
 import { startOfMonth, subMonths } from "date-fns";
-
-interface RevenueRow {
-  platformId: string;
-  platform: string;
-  revenue: number;
-}
-
-interface CostRow {
-  platformId: string;
-  cost: number;
-}
 
 // GET /api/analytics/platform-contribution — Platform contribution over the last 12 months (monthly window)
 export async function GET() {
@@ -20,47 +11,63 @@ export async function GET() {
     const userId = await getAuthUserId();
 
     const fromDate = startOfMonth(subMonths(new Date(), 11));
+    const fromDateStr = fromDate.toISOString().split("T")[0];
 
-    const [platforms, revenueRows, costRows] = await Promise.all([
-      prisma.platform.findMany({
-        where: { userId },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
+    const [platformsList, revenueResult, costResult] = await Promise.all([
+      db.query.platforms.findMany({
+        where: eq(platforms.userId, userId),
+        columns: { id: true, name: true },
+        orderBy: [asc(platforms.name)],
       }),
-      prisma.$queryRaw<RevenueRow[]>`
-        SELECT
-          p.id AS "platformId",
-          p.name AS "platform",
-          COALESCE(SUM(rl.amount_paid), 0)::float AS revenue
-        FROM platforms p
-        LEFT JOIN plans pl ON pl.platform_id = p.id
-        LEFT JOIN subscriptions s ON s.plan_id = pl.id
-        LEFT JOIN client_subscriptions cs ON cs.subscription_id = s.id
-        LEFT JOIN renewal_logs rl
-          ON rl.client_subscription_id = cs.id
-         AND rl.paid_on >= ${fromDate}
-        WHERE p.user_id = ${userId}
-        GROUP BY p.id, p.name
-      `,
-      prisma.$queryRaw<CostRow[]>`
-        SELECT
-          p.id AS "platformId",
-          COALESCE(SUM(pr.amount_paid), 0)::float AS cost
-        FROM platforms p
-        LEFT JOIN plans pl ON pl.platform_id = p.id
-        LEFT JOIN subscriptions s ON s.plan_id = pl.id
-        LEFT JOIN platform_renewals pr
-          ON pr.subscription_id = s.id
-         AND pr.paid_on >= ${fromDate}
-        WHERE p.user_id = ${userId}
-        GROUP BY p.id
-      `,
+      db
+        .select({
+          platformId: platforms.id,
+          platform: platforms.name,
+          revenue: sql<number>`COALESCE(SUM(${renewalLogs.amountPaid}), 0)`,
+        })
+        .from(platforms)
+        .leftJoin(plans, eq(plans.platformId, platforms.id))
+        .leftJoin(subscriptions, eq(subscriptions.planId, plans.id))
+        .leftJoin(clientSubscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+        .leftJoin(
+          renewalLogs,
+          and(
+            eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id),
+            gte(renewalLogs.paidOn, fromDateStr)
+          )
+        )
+        .where(eq(platforms.userId, userId))
+        .groupBy(platforms.id, platforms.name),
+      db
+        .select({
+          platformId: platforms.id,
+          cost: sql<number>`COALESCE(SUM(${platformRenewals.amountPaid}), 0)`,
+        })
+        .from(platforms)
+        .leftJoin(plans, eq(plans.platformId, platforms.id))
+        .leftJoin(subscriptions, eq(subscriptions.planId, plans.id))
+        .leftJoin(
+          platformRenewals,
+          and(
+            eq(platformRenewals.subscriptionId, subscriptions.id),
+            gte(platformRenewals.paidOn, fromDateStr)
+          )
+        )
+        .where(eq(platforms.userId, userId))
+        .groupBy(platforms.id),
     ]);
 
-    const revenueMap = new Map(revenueRows.map((r) => [r.platformId, Number(r.revenue || 0)]));
-    const costMap = new Map(costRows.map((c) => [c.platformId, Number(c.cost || 0)]));
+    const revenueRows = revenueResult || [];
+    const costRows = costResult || [];
 
-    const rows = platforms.map((platform) => {
+    const revenueMap = new Map<string, number>(
+      revenueRows.map((r: any) => [r.platformId, Number(r.revenue || 0)])
+    );
+    const costMap = new Map<string, number>(
+      costRows.map((c: any) => [c.platformId, Number(c.cost || 0)])
+    );
+
+    const rows = platformsList.map((platform: any) => {
       const revenue = revenueMap.get(platform.id) ?? 0;
       const cost = costMap.get(platform.id) ?? 0;
       const net = revenue - cost;
@@ -74,7 +81,7 @@ export async function GET() {
       };
     });
 
-    rows.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+    rows.sort((a: any, b: any) => Math.abs(b.net) - Math.abs(a.net));
 
     return success({
       from: fromDate,

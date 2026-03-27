@@ -1,9 +1,9 @@
 export const SAAS_LIMITS = {
   FREE: {
-    PLATFORMS: 2,
-    PLANS: 2,
-    ACTIVE_SEATS: 6,
-    CLIENTS: 10,
-    SUBSCRIPTIONS: 2,
+    PLATFORMS: 999999,
+    PLANS: 999999,
+    ACTIVE_SEATS: 999999,
+    CLIENTS: 999999,
+    SUBSCRIPTIONS: 999999,
   },
 } as const;

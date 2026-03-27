@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, asc } from "drizzle-orm";
+import { db } from "@/db";
+import { clients, clientSubscriptions, subscriptions, plans, platforms } from "@/db/schema";
 import { createClientSchema } from "@/lib/validations";
 import { success, withErrorHandling } from "@/lib/api-utils";
 
@@ -9,31 +11,30 @@ export async function GET() {
     const authUtils = await import("@/lib/auth-utils");
     const userId = await authUtils.getAuthUserId();
 
-    const clients = await prisma.client.findMany({
-      where: { userId },
-      orderBy: { name: "asc" },
-      select: {
-          id: true,
-          name: true,
-          phone: true,
-          notes: true,
-          createdAt: true,
+    const clientsList = await db.query.clients.findMany({
+      where: eq(clients.userId, userId),
+      orderBy: [asc(clients.name)],
+      with: {
           clientSubscriptions: {
-              select: {
+              columns: {
                   id: true,
                   status: true,
                   customPrice: true,
                   activeUntil: true,
+              },
+              with: {
                   subscription: {
-                      select: {
+                      columns: {
                           id: true,
                           label: true,
                           status: true,
                           activeUntil: true,
+                      },
+                      with: {
                           plan: {
-                              select: {
-                                  name: true,
-                                  platform: { select: { name: true } },
+                              columns: { name: true },
+                              with: {
+                                  platform: { columns: { name: true } },
                               },
                           },
                       },
@@ -44,7 +45,7 @@ export async function GET() {
     });
 
     // Standardize everything to be JSON-serializable numbers/strings
-    const remapped = clients.map(client => {
+    const remapped = clientsList.map(client => {
       return {
         id: client.id,
         name: client.name,
@@ -91,14 +92,12 @@ export async function POST(request: NextRequest) {
       throw new Error(limitCheck.message);
     }
 
-    const newClient = await prisma.client.create({
-      data: {
-        userId,
-        name: data.name,
-        phone: data.phone ?? null,
-        notes: data.notes ?? null,
-      },
-    });
+    const [newClient] = await db.insert(clients).values({
+      userId,
+      name: data.name,
+      phone: data.phone ?? null,
+      notes: data.notes ?? null,
+    }).returning();
 
     const c = newClient as any;
     const remapped = {

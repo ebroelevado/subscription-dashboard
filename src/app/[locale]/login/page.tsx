@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { signIn } from "next-auth/react";
+import { signIn } from "@/lib/auth-client";
 import { Link } from "@/i18n/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -44,13 +44,13 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginInput) => {
     setIsLoading(true);
     try {
-      const res = await signIn("credentials", {
+      const { error } = await signIn.email({
         email: data.email,
         password: data.password,
-        redirect: false,
+        callbackURL: "/dashboard",
       });
 
-      if (res?.error) {
+      if (error) {
         toast.error("Invalid email or password");
         return;
       }

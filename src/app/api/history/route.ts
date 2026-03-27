@@ -1,9 +1,9 @@
-import { auth } from "@/lib/auth";
+import { getAuthSession } from "@/lib/auth-utils";
 import { getIndex, putConversation, type ConversationData } from "@/lib/r2";
 
 // GET /api/history — List all conversation metadata for the user
 export async function GET() {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session?.user?.id) {
     return new Response("Unauthorized", { status: 401 });
   }
@@ -19,7 +19,7 @@ export async function GET() {
 
 // POST /api/history — Save/update a conversation
 export async function POST(req: Request) {
-  const session = await auth();
+  const session = await getAuthSession();
   if (!session?.user?.id) {
     return new Response("Unauthorized", { status: 401 });
   }

@@ -6,9 +6,16 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
-  const defaultCollapsed =
-    cookieStore.get("sidebar-collapsed")?.value === "1";
+  // Wrap cookies() in try/catch for Vinext compatibility
+  // next/headers cookies() requires Next.js request context
+  // which Vinext may not fully polyfill
+  let defaultCollapsed = false;
+  try {
+    const cookieStore = await cookies();
+    defaultCollapsed = cookieStore.get("sidebar-collapsed")?.value === "1";
+  } catch (e) {
+    console.warn("cookies() failed in Vinext, using default sidebar state");
+  }
 
   return (
     <DashboardShell defaultCollapsed={defaultCollapsed}>

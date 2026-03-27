@@ -6,20 +6,44 @@
  *
  * Body: { token: string }
  * The token is validated, the stored payload is extracted, and the mutation
- * is applied inside a Prisma $transaction.
+ * is applied inside a Drizzle transaction.
  */
 
-import { auth } from "@/lib/auth";
+import { getAuthSession } from "@/lib/auth-utils";
 import { encryptCredential } from "@/lib/credential-encryption";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/db";
+import { eq, and, desc, inArray, ne, gte, sql } from "drizzle-orm";
+import {
+  clients,
+  clientSubscriptions,
+  subscriptions,
+  users,
+  platforms,
+  plans,
+  renewalLogs,
+  mutationAuditLogs,
+} from "@/db/schema";
 import {
   validateAndConsumeMutationToken,
   setAuditLogNewValues,
 } from "@/lib/mutation-token";
+import { amountToCents } from "@/lib/currency";
+
+function parseJsonField(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "string") return JSON.parse(value);
+  return value as Record<string, unknown>;
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  if (!value) return [];
+  if (typeof value === "string") return JSON.parse(value);
+  return value as unknown[];
+}
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session?.user?.id) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -34,7 +58,7 @@ export async function POST(req: Request) {
     const auditLog = await validateAndConsumeMutationToken(token, userId);
 
     // Reconstruct the stored payload
-    const previousValues = (auditLog.previousValues as Record<string, unknown>) ?? {};
+    const previousValues = parseJsonField(auditLog.previousValues);
     const toolName = auditLog.toolName;
     const targetId = auditLog.targetId;
     const action = auditLog.action as "create" | "update" | "delete";
@@ -55,7 +79,7 @@ export async function POST(req: Request) {
 }
 
 /**
- * Executes the actual database mutation inside a $transaction.
+ * Executes the actual database mutation inside a transaction.
  * Each tool type has its own execution logic.
  */
 async function executeMutation(
@@ -67,44 +91,28 @@ async function executeMutation(
   auditLogId: string,
 ) {
   // Fetch the pending audit log to get the full payload stored in newValues
-  // (We store the "changes to apply" temporarily in newValues during proposal,
-  //  but newValues are replaced with actual post-execution values after.)
-  // 
-  // Actually — the changes are stored in the audit log's previousValues field
-  // for "what was before" and we need the payload from the proposal.
-  // We'll read from a separate store: the tool output stored the pendingChanges
-  // in the audit log row. Let's use a pattern where:
-  //   - previousValues = snapshot of old data
-  //   - We re-read the auditLog to see what to apply.
-  //
-  // For maximum safety, we store the full execution payload as newValues=null
-  // during proposal, and use a dedicated JSON field. But since we already have
-  // the schema, let's store the pending changes in `newValues` during proposal,
-  // and overwrite with actual result after execution.
-
-  const auditLog = await prisma.mutationAuditLog.findUnique({
-    where: { id: auditLogId },
+  const auditLog = await db.query.mutationAuditLogs.findFirst({
+    where: eq(mutationAuditLogs.id, auditLogId),
   });
   if (!auditLog) throw new Error("Audit log not found");
 
   // The pending changes were stored in newValues during token creation
-  const pendingChanges = (auditLog.newValues as Record<string, unknown>) ?? {};
+  const pendingChanges = parseJsonField(auditLog.newValues);
 
   switch (toolName) {
     case "updateClient": {
       if (!targetId) throw new Error("Missing targetId for updateClient");
-      const client = await prisma.client.findFirst({ where: { id: targetId, userId } });
+      const client = await db.query.clients.findFirst({
+        where: and(eq(clients.id, targetId), eq(clients.userId, userId)),
+      });
       if (!client) throw new Error("Client not found or access denied.");
 
-      const updated = await prisma.$transaction(async (tx) => {
-        return tx.client.update({
-          where: { id: targetId },
-          data: {
-            ...(pendingChanges.name ? { name: pendingChanges.name as string } : {}),
-            ...(pendingChanges.phone ? { phone: pendingChanges.phone as string } : {}),
-            ...(pendingChanges.notes !== undefined ? { notes: pendingChanges.notes as string } : {}),
-          },
-        });
+      const [updated] = await db.transaction(async (tx) => {
+        return tx.update(clients).set({
+          ...(pendingChanges.name ? { name: pendingChanges.name as string } : {}),
+          ...(pendingChanges.phone ? { phone: pendingChanges.phone as string } : {}),
+          ...(pendingChanges.notes !== undefined ? { notes: pendingChanges.notes as string } : {}),
+        }).where(eq(clients.id, targetId)).returning();
       });
 
       await setAuditLogNewValues(auditLogId, {
@@ -117,43 +125,45 @@ async function executeMutation(
     }
 
     case "createClient": {
-      const created = await prisma.$transaction(async (tx) => {
-        return tx.client.create({
-          data: {
-            userId,
-            name: (pendingChanges.name as string) || "Unnamed",
-            phone: (pendingChanges.phone as string) || undefined,
-            notes: (pendingChanges.notes as string) || undefined,
-          },
-        });
+      const [created] = await db.transaction(async (tx) => {
+        return tx.insert(clients).values({
+          userId,
+          name: (pendingChanges.name as string) || "Unnamed",
+          phone: (pendingChanges.phone as string) || null,
+          notes: (pendingChanges.notes as string) || null,
+        }).returning();
       });
 
       // Update the audit log with the real targetId (we now know the created ID)
-      await prisma.mutationAuditLog.update({
-        where: { id: auditLogId },
-        data: { targetId: created.id },
-      });
+      await db.update(mutationAuditLogs).set({ targetId: created.id }).where(eq(mutationAuditLogs.id, auditLogId));
       await setAuditLogNewValues(auditLogId, { id: created.id, name: created.name });
 
       return { message: `Client ${created.name} created.`, client: created };
     }
 
     case "updateUserConfig": {
-      const user = await prisma.user.findUnique({ where: { id: userId } });
+      const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
       if (!user) throw new Error("User not found.");
 
-      const updated = await prisma.$transaction(async (tx) => {
-        return tx.user.update({
-          where: { id: userId },
-          data: {
-            ...(pendingChanges.disciplinePenalty !== undefined
-              ? { disciplinePenalty: pendingChanges.disciplinePenalty as number }
-              : {}),
-            ...(pendingChanges.currency
-              ? { currency: pendingChanges.currency as string }
-              : {}),
-          },
-          select: { disciplinePenalty: true, currency: true },
+      const [updated] = await db.transaction(async (tx) => {
+        return tx.update(users).set({
+          ...(pendingChanges.disciplinePenalty !== undefined
+            ? { disciplinePenalty: pendingChanges.disciplinePenalty as number }
+            : {}),
+          ...(pendingChanges.currency
+            ? { currency: pendingChanges.currency as string }
+            : {}),
+          ...(pendingChanges.companyName !== undefined
+            ? { companyName: pendingChanges.companyName as string }
+            : {}),
+          ...(pendingChanges.whatsappSignatureMode !== undefined
+            ? { whatsappSignatureMode: pendingChanges.whatsappSignatureMode as string }
+            : {}),
+        }).where(eq(users.id, userId)).returning({
+          disciplinePenalty: users.disciplinePenalty,
+          currency: users.currency,
+          companyName: users.companyName,
+          whatsappSignatureMode: users.whatsappSignatureMode,
         });
       });
 
@@ -167,31 +177,37 @@ async function executeMutation(
       const subscriptionId = pendingChanges.subscriptionId as string;
       if (!clientId || !subscriptionId) throw new Error("Missing clientId or subscriptionId");
 
-      const client = await prisma.client.findFirst({ where: { id: clientId, userId } });
-      const sub = await prisma.subscription.findFirst({ where: { id: subscriptionId, userId } });
+      const client = await db.query.clients.findFirst({
+        where: and(eq(clients.id, clientId), eq(clients.userId, userId)),
+      });
+      const sub = await db.query.subscriptions.findFirst({
+        where: and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)),
+      });
       if (!client || !sub) throw new Error("Client or Subscription not found.");
 
-      const cs = await prisma.$transaction(async (tx) => {
-        return tx.clientSubscription.create({
-          data: {
-            clientId,
-            subscriptionId,
-            customPrice: pendingChanges.customPrice as number,
-            activeUntil: new Date(pendingChanges.activeUntil as string),
-            joinedAt: pendingChanges.joinedAt
-              ? new Date(pendingChanges.joinedAt as string)
-              : new Date(),
-            serviceUser: encryptCredential((pendingChanges.serviceUser as string) || null) || undefined,
-            servicePassword: encryptCredential((pendingChanges.servicePassword as string) || null) || undefined,
-            status: "active",
-          },
-        });
+      const activeUntilStr = typeof pendingChanges.activeUntil === "string"
+        ? pendingChanges.activeUntil
+        : new Date(pendingChanges.activeUntil as string).toISOString().split("T")[0];
+      const joinedAtStr = pendingChanges.joinedAt
+        ? (typeof pendingChanges.joinedAt === "string"
+            ? pendingChanges.joinedAt
+            : new Date(pendingChanges.joinedAt as string).toISOString().split("T")[0])
+        : new Date().toISOString().split("T")[0];
+
+      const [cs] = await db.transaction(async (tx) => {
+        return tx.insert(clientSubscriptions).values({
+          clientId,
+          subscriptionId,
+          customPrice: amountToCents(pendingChanges.customPrice as number),
+          activeUntil: activeUntilStr,
+          joinedAt: joinedAtStr,
+          serviceUser: await encryptCredential((pendingChanges.serviceUser as string) || null) || null,
+          servicePassword: await encryptCredential((pendingChanges.servicePassword as string) || null) || null,
+          status: "active",
+        }).returning();
       });
 
-      await prisma.mutationAuditLog.update({
-        where: { id: auditLogId },
-        data: { targetId: cs.id },
-      });
+      await db.update(mutationAuditLogs).set({ targetId: cs.id }).where(eq(mutationAuditLogs.id, auditLogId));
       await setAuditLogNewValues(auditLogId, { id: cs.id, clientId, subscriptionId });
 
       return { message: `Assigned ${client.name} to ${sub.label}.`, clientSubscription: cs };
@@ -201,46 +217,53 @@ async function executeMutation(
       const csId = pendingChanges.clientSubscriptionId as string;
       if (!csId) throw new Error("Missing clientSubscriptionId");
 
-      const cs = await prisma.clientSubscription.findFirst({
-        where: { id: csId, subscription: { userId } },
-        include: { client: true },
+      const cs = await db.query.clientSubscriptions.findFirst({
+        where: eq(clientSubscriptions.id, csId),
+        with: {
+          client: true,
+          subscription: { with: { plan: true } },
+        },
       });
       if (!cs) throw new Error("Client subscription not found.");
+      // Verify ownership through subscription
+      const sub = await db.query.subscriptions.findFirst({
+        where: and(eq(subscriptions.id, cs.subscriptionId), eq(subscriptions.userId, userId)),
+      });
+      if (!sub) throw new Error("Access denied.");
 
       const monthsRenewed = (pendingChanges.monthsRenewed as number) || 1;
-      const startDate = cs.activeUntil > new Date() ? cs.activeUntil : new Date();
+      const csActiveUntil = new Date(cs.activeUntil);
+      const now = new Date();
+      const startDate = csActiveUntil > now ? csActiveUntil : now;
       const endDate = new Date(startDate);
       endDate.setMonth(endDate.getMonth() + monthsRenewed);
 
-      const log = await prisma.$transaction(async (tx) => {
-        const renewalLog = await tx.renewalLog.create({
-          data: {
-            clientSubscriptionId: csId,
-            amountPaid: pendingChanges.amountPaid as number,
-            expectedAmount: cs.customPrice,
-            periodStart: startDate,
-            periodEnd: endDate,
-            paidOn: pendingChanges.paidOn
-              ? new Date(pendingChanges.paidOn as string)
-              : new Date(),
-            dueOn: cs.activeUntil,
-            monthsRenewed,
-            notes: (pendingChanges.notes as string) || undefined,
-          },
-        });
+      const startDateStr = startDate.toISOString().split("T")[0];
+      const endDateStr = endDate.toISOString().split("T")[0];
+      const paidOnStr = pendingChanges.paidOn
+        ? (typeof pendingChanges.paidOn === "string" ? pendingChanges.paidOn : new Date(pendingChanges.paidOn as string).toISOString().split("T")[0])
+        : new Date().toISOString().split("T")[0];
+      const dueOnStr = cs.activeUntil;
 
-        await tx.clientSubscription.update({
-          where: { id: csId },
-          data: { activeUntil: endDate },
-        });
+      const [log] = await db.transaction(async (tx) => {
+        const [renewalLog] = await tx.insert(renewalLogs).values({
+          clientSubscriptionId: csId,
+          amountPaid: amountToCents(pendingChanges.amountPaid as number),
+          expectedAmount: amountToCents(cs.customPrice),
+          periodStart: startDateStr,
+          periodEnd: endDateStr,
+          paidOn: paidOnStr,
+          dueOn: dueOnStr,
+          monthsRenewed,
+          notes: (pendingChanges.notes as string) || null,
+        }).returning();
 
-        return renewalLog;
+        await tx.update(clientSubscriptions).set({ activeUntil: endDateStr }).where(eq(clientSubscriptions.id, csId));
+
+        return [renewalLog];
       });
 
-      await prisma.mutationAuditLog.update({
-        where: { id: auditLogId },
-        data: { targetId: log.id },
-      });
+      await db.update(mutationAuditLogs).set({ targetId: log.id }).where(eq(mutationAuditLogs.id, auditLogId));
       await setAuditLogNewValues(auditLogId, {
         id: log.id,
         activeUntil: endDate.toISOString(),
@@ -256,24 +279,20 @@ async function executeMutation(
       const ids = pendingChanges.clientSubscriptionIds as string[];
       if (!ids || !ids.length) throw new Error("Missing clientSubscriptionIds");
 
-      await prisma.$transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         // Must ensure they belong to this user
-        // Due to prisma's limited nested deleteMany, we do it safely:
-        const toDelete = await tx.clientSubscription.findMany({
-          where: { id: { in: ids }, client: { userId } },
-          select: { id: true },
+        const toDelete = await tx.query.clientSubscriptions.findMany({
+          where: inArray(clientSubscriptions.id, ids),
+          with: { client: { columns: { userId: true } } },
+          columns: { id: true },
         });
-        const validIds = toDelete.map((c) => c.id);
+        const validIds = toDelete.filter((c) => c.client.userId === userId).map((c) => c.id);
         if (validIds.length > 0) {
-          await tx.clientSubscription.deleteMany({ where: { id: { in: validIds } } });
+          await tx.delete(clientSubscriptions).where(inArray(clientSubscriptions.id, validIds));
         }
       });
 
-      await prisma.mutationAuditLog.update({
-        where: { id: auditLogId },
-        data: { targetId: "bulk" },
-      });
-
+      await db.update(mutationAuditLogs).set({ targetId: "bulk" }).where(eq(mutationAuditLogs.id, auditLogId));
       await setAuditLogNewValues(auditLogId, { ids });
 
       return { message: `Removed ${ids.length} seat assignment(s).` };
@@ -283,31 +302,29 @@ async function executeMutation(
       const clientIds = pendingChanges.clientIds as string[];
       if (!clientIds || !clientIds.length) throw new Error("Missing clientIds");
 
-      await prisma.$transaction(async (tx) => {
-        await tx.client.deleteMany({ where: { id: { in: clientIds }, userId } });
+      await db.transaction(async (tx) => {
+        await tx.delete(clients).where(and(inArray(clients.id, clientIds), eq(clients.userId, userId)));
       });
 
-      await prisma.mutationAuditLog.update({
-        where: { id: auditLogId },
-        data: { targetId: "bulk" },
-      });
-
+      await db.update(mutationAuditLogs).set({ targetId: "bulk" }).where(eq(mutationAuditLogs.id, auditLogId));
       await setAuditLogNewValues(auditLogId, { clientIds });
       return { message: `${clientIds.length} client(s) deleted successfully.` };
     }
 
     case "managePlatforms": {
-      const { operation, platformIds, name, icon } = pendingChanges;
-      const result = await prisma.$transaction(async (tx) => {
-         if (operation === "delete") {
-            const result = await tx.platform.deleteMany({ where: { id: { in: platformIds as string[] }, userId } });
-            return { deletedCount: result.count };
-         } else if (operation === "update") {
-            return tx.platform.update({ where: { id: (platformIds as string[])[0], userId }, data: { name: name as string }});
-         } else if (operation === "create") {
-            return tx.platform.create({ data: { userId, name: name as string }});
-         }
-         return null;
+      const { operation, platformIds, name } = pendingChanges;
+      let result: unknown = null;
+      await db.transaction(async (tx) => {
+        if (operation === "delete") {
+          await tx.delete(platforms).where(and(inArray(platforms.id, platformIds as string[]), eq(platforms.userId, userId)));
+          result = { deletedCount: (platformIds as string[]).length };
+        } else if (operation === "update") {
+          const [updated] = await tx.update(platforms).set({ name: name as string }).where(and(eq(platforms.id, (platformIds as string[])[0]), eq(platforms.userId, userId))).returning();
+          result = updated;
+        } else if (operation === "create") {
+          const [created] = await tx.insert(platforms).values({ userId, name: name as string }).returning();
+          result = created;
+        }
       });
       await setAuditLogNewValues(auditLogId, { result });
       return { message: `Platform(s) ${operation}d.`, result };
@@ -315,18 +332,30 @@ async function executeMutation(
 
     case "managePlans": {
       const { operation, planIds, platformId, name, cost, maxSeats, isActive } = pendingChanges;
-      const result = await prisma.$transaction(async (tx) => {
-         if (operation === "delete") {
-            return tx.plan.deleteMany({ where: { id: { in: planIds as string[] }, platform: { userId } } });
-         } else if (operation === "update") {
-            return tx.plan.update({ 
-               where: { id: (planIds as string[])[0], platform: { userId } }, 
-               data: { name: name as string, cost: cost as number, maxSeats: maxSeats as number, isActive: isActive as boolean }
-            });
-         } else if (operation === "create") {
-            return tx.plan.create({ data: { userId, platformId: platformId as string, name: name as string, cost: cost as number, maxSeats: maxSeats as number, isActive: isActive as boolean ?? true }});
-         }
-         return null;
+      let result: unknown = null;
+      await db.transaction(async (tx) => {
+        if (operation === "delete") {
+          await tx.delete(plans).where(and(inArray(plans.id, planIds as string[]), eq(plans.userId, userId)));
+          result = { deletedCount: (planIds as string[]).length };
+          } else if (operation === "update") {
+          const [updated] = await tx.update(plans).set({
+            name: name as string,
+            cost: amountToCents(cost as number),
+            maxSeats: maxSeats as number,
+            isActive: isActive as boolean,
+          }).where(and(eq(plans.id, (planIds as string[])[0]), eq(plans.userId, userId))).returning();
+          result = updated;
+        } else if (operation === "create") {
+          const [created] = await tx.insert(plans).values({
+            userId,
+            platformId: platformId as string,
+            name: name as string,
+            cost: amountToCents(cost as number),
+            maxSeats: maxSeats as number,
+            isActive: (isActive as boolean) ?? true,
+          }).returning();
+          result = created;
+        }
       });
       await setAuditLogNewValues(auditLogId, { result });
       return { message: `Plan(s) ${operation}d.`, result };
@@ -334,22 +363,42 @@ async function executeMutation(
 
     case "manageSubscriptions": {
       const { operation, subscriptionIds, planId, label, status, startDate, activeUntil, masterUsername, masterPassword } = pendingChanges;
-      const result = await prisma.$transaction(async (tx) => {
-         if (operation === "delete") {
-            return tx.subscription.deleteMany({ where: { id: { in: subscriptionIds as string[] }, userId } });
-         } else if (operation === "update") {
-            return tx.subscription.update({ 
-               where: { id: (subscriptionIds as string[])[0], userId }, 
-               data: { 
-                label: label as string, status: (status as "active" | "paused") ?? undefined, masterUsername: masterUsername as string, masterPassword: encryptCredential((masterPassword as string) || null),
-                 ...(startDate ? { startDate: new Date(startDate as string) } : {}),
-                 ...(activeUntil ? { activeUntil: new Date(activeUntil as string) } : {})
-               }
-            });
-         } else if (operation === "create") {
-            return tx.subscription.create({ data: { userId, planId: planId as string, label: label as string, status: (status as any) ?? "active", startDate: new Date(startDate as string), activeUntil: new Date(activeUntil as string), masterUsername: masterUsername as string, masterPassword: encryptCredential((masterPassword as string) || null) }});
-         }
-         return null;
+      let result: unknown = null;
+      await db.transaction(async (tx) => {
+        if (operation === "delete") {
+          await tx.delete(subscriptions).where(and(inArray(subscriptions.id, subscriptionIds as string[]), eq(subscriptions.userId, userId)));
+          result = { deletedCount: (subscriptionIds as string[]).length };
+        } else if (operation === "update") {
+          const startDateStr = startDate
+            ? (typeof startDate === "string" ? startDate : new Date(startDate as string).toISOString().split("T")[0])
+            : undefined;
+          const activeUntilStr = activeUntil
+            ? (typeof activeUntil === "string" ? activeUntil : new Date(activeUntil as string).toISOString().split("T")[0])
+            : undefined;
+          const [updated] = await tx.update(subscriptions).set({
+            label: label as string,
+            status: (status as "active" | "paused") ?? undefined,
+            masterUsername: masterUsername as string ?? undefined,
+            masterPassword: await encryptCredential((masterPassword as string) || null) ?? undefined,
+            ...(startDateStr ? { startDate: startDateStr } : {}),
+            ...(activeUntilStr ? { activeUntil: activeUntilStr } : {}),
+          }).where(and(eq(subscriptions.id, (subscriptionIds as string[])[0]), eq(subscriptions.userId, userId))).returning();
+          result = updated;
+        } else if (operation === "create") {
+          const startDateStr = typeof startDate === "string" ? startDate : new Date(startDate as string).toISOString().split("T")[0];
+          const activeUntilStr = typeof activeUntil === "string" ? activeUntil : new Date(activeUntil as string).toISOString().split("T")[0];
+          const [created] = await tx.insert(subscriptions).values({
+            userId,
+            planId: planId as string,
+            label: label as string,
+            status: (status as "active" | "paused") ?? "active",
+            startDate: startDateStr,
+            activeUntil: activeUntilStr,
+            masterUsername: masterUsername as string ?? null,
+            masterPassword: await encryptCredential((masterPassword as string) || null) ?? null,
+          }).returning();
+          result = created;
+        }
       });
       await setAuditLogNewValues(auditLogId, { result });
       return { message: `Subscription(s) ${operation}d.`, result };
@@ -359,34 +408,37 @@ async function executeMutation(
       const { operation, paymentId, amountPaid, paidOn, notes, periodStart, periodEnd } = pendingChanges;
       if (!paymentId) throw new Error("Missing paymentId");
 
-      const payment = await prisma.renewalLog.findFirst({
-        where: { id: paymentId as string, clientSubscription: { subscription: { userId } } },
-        include: { clientSubscription: true },
+      const payment = await db.query.renewalLogs.findFirst({
+        where: eq(renewalLogs.id, paymentId as string),
+        with: {
+          clientSubscription: {
+            with: {
+              subscription: { columns: { userId: true } },
+            },
+          },
+        },
       });
-      if (!payment) throw new Error("Payment record not found or access denied.");
+      if (!payment || payment.clientSubscription?.subscription.userId !== userId) throw new Error("Payment record not found or access denied.");
 
       if (operation === "delete") {
-        await prisma.$transaction(async (tx) => {
-          await tx.renewalLog.delete({ where: { id: paymentId as string } });
+        await db.transaction(async (tx) => {
+          await tx.delete(renewalLogs).where(eq(renewalLogs.id, paymentId as string));
 
           // If this was the latest payment for this seat, revert activeUntil to periodStart
           if (payment.clientSubscriptionId) {
-            const laterLogs = await tx.renewalLog.findMany({
-              where: {
-                clientSubscriptionId: payment.clientSubscriptionId,
-                paidOn: { gte: payment.paidOn },
-                id: { not: payment.id },
-              },
-              orderBy: { paidOn: "desc" },
-              take: 1,
+            const laterLogs = await tx.query.renewalLogs.findMany({
+              where: and(
+                eq(renewalLogs.clientSubscriptionId, payment.clientSubscriptionId),
+                gte(renewalLogs.paidOn, payment.paidOn),
+                ne(renewalLogs.id, payment.id),
+              ),
+              orderBy: [desc(renewalLogs.paidOn)],
+              limit: 1,
             });
 
             if (!laterLogs.length) {
               // No later payments — revert activeUntil back to what it was before this payment
-              await tx.clientSubscription.update({
-                where: { id: payment.clientSubscriptionId },
-                data: { activeUntil: payment.periodStart },
-              });
+              await tx.update(clientSubscriptions).set({ activeUntil: payment.periodStart }).where(eq(clientSubscriptions.id, payment.clientSubscriptionId));
             }
           }
         });
@@ -396,25 +448,31 @@ async function executeMutation(
       }
 
       // Update operation
-      const updated = await prisma.$transaction(async (tx) => {
-        return tx.renewalLog.update({
-          where: { id: paymentId as string },
-          data: {
-            ...(amountPaid !== undefined ? { amountPaid: amountPaid as number } : {}),
-            ...(paidOn ? { paidOn: new Date(paidOn as string) } : {}),
-            ...(notes !== undefined ? { notes: notes as string } : {}),
-            ...(periodStart ? { periodStart: new Date(periodStart as string) } : {}),
-            ...(periodEnd ? { periodEnd: new Date(periodEnd as string) } : {}),
-          },
-        });
+      const [updated] = await db.transaction(async (tx) => {
+        const paidOnStr = paidOn
+          ? (typeof paidOn === "string" ? paidOn : new Date(paidOn as string).toISOString().split("T")[0])
+          : undefined;
+        const periodStartStr = periodStart
+          ? (typeof periodStart === "string" ? periodStart : new Date(periodStart as string).toISOString().split("T")[0])
+          : undefined;
+        const periodEndStr = periodEnd
+          ? (typeof periodEnd === "string" ? periodEnd : new Date(periodEnd as string).toISOString().split("T")[0])
+          : undefined;
+        return tx.update(renewalLogs).set({
+          ...(amountPaid !== undefined ? { amountPaid: amountToCents(amountPaid as number) } : {}),
+          ...(paidOnStr ? { paidOn: paidOnStr } : {}),
+          ...(notes !== undefined ? { notes: notes as string } : {}),
+          ...(periodStartStr ? { periodStart: periodStartStr } : {}),
+          ...(periodEndStr ? { periodEnd: periodEndStr } : {}),
+        }).where(eq(renewalLogs.id, paymentId as string)).returning();
       });
 
       await setAuditLogNewValues(auditLogId, {
         amountPaid: Number(updated.amountPaid),
-        paidOn: updated.paidOn.toISOString(),
+        paidOn: updated.paidOn,
         notes: updated.notes,
-        periodStart: updated.periodStart.toISOString(),
-        periodEnd: updated.periodEnd.toISOString(),
+        periodStart: updated.periodStart,
+        periodEnd: updated.periodEnd,
       });
 
       return { message: `Payment updated successfully. New amount: €${Number(updated.amountPaid).toFixed(2)}.`, payment: updated };
@@ -428,18 +486,16 @@ async function executeMutation(
 
       const targetStatus = operation === "pause" ? "paused" : "active";
 
-      await prisma.$transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         // Validate ownership
-        const toUpdate = await tx.clientSubscription.findMany({
-          where: { id: { in: clientSubscriptionIds as string[] }, client: { userId } },
-          select: { id: true },
+        const toUpdate = await tx.query.clientSubscriptions.findMany({
+          where: inArray(clientSubscriptions.id, clientSubscriptionIds as string[]),
+          with: { client: { columns: { userId: true } } },
+          columns: { id: true },
         });
-        const validIds = toUpdate.map((s) => s.id);
+        const validIds = toUpdate.filter((s) => s.client.userId === userId).map((s) => s.id);
         if (validIds.length > 0) {
-          await tx.clientSubscription.updateMany({
-            where: { id: { in: validIds } },
-            data: { status: targetStatus },
-          });
+          await tx.update(clientSubscriptions).set({ status: targetStatus }).where(inArray(clientSubscriptions.id, validIds));
         }
       });
 

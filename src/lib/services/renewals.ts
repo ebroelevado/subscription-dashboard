@@ -1,7 +1,8 @@
-import { prisma } from "@/lib/prisma";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { clientSubscriptions, renewalLogs, subscriptions, platformRenewals } from "@/db/schema";
 import { addMonths, subMonths, addDays, startOfDay } from "date-fns";
-
-type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+import { amountToCents } from "@/lib/currency";
 
 // ──────────────────────────────────────────
 // renewClientSubscription
@@ -31,11 +32,13 @@ export async function renewClientSubscription({
   paidOn,
   notes = null,
 }: RenewClientParams & { paidOn?: string }) {
-  return prisma.$transaction(async (tx: TxClient) => {
+  return db.transaction(async (tx) => {
     // 1. Fetch the seat with its current state
-    const seat = await tx.clientSubscription.findUniqueOrThrow({
-      where: { id: clientSubscriptionId },
+    const seat = await tx.query.clientSubscriptions.findFirst({
+      where: eq(clientSubscriptions.id, clientSubscriptionId),
     });
+
+    if (!seat) throw new Error(`ClientSubscription ${clientSubscriptionId} not found`);
 
     // Seats are now only active or paused (cancelled was removed from schema)
 
@@ -67,25 +70,23 @@ export async function renewClientSubscription({
         : notes;
 
     // 6. INSERT append-only renewal_log (NEVER update or delete these)
-    const log = await tx.renewalLog.create({
-      data: {
-        clientSubscriptionId,
-        amountPaid: paid,
-        expectedAmount: customPrice,
-        periodStart,
-        periodEnd,
-        paidOn: today,
-        dueOn: currentExpiry,
-        monthsRenewed: months,
-        notes: finalNotes,
-      },
-    });
+    const [log] = await tx.insert(renewalLogs).values({
+      clientSubscriptionId,
+      amountPaid: amountToCents(paid),
+      expectedAmount: amountToCents(customPrice),
+      periodStart: periodStart.toISOString().split("T")[0],
+      periodEnd: periodEnd.toISOString().split("T")[0],
+      paidOn: today.toISOString().split("T")[0],
+      dueOn: currentExpiry.toISOString().split("T")[0],
+      monthsRenewed: months,
+      notes: finalNotes,
+    }).returning();
 
     // 7. UPDATE the seat's active_until
-    const updatedSeat = await tx.clientSubscription.update({
-      where: { id: clientSubscriptionId },
-      data: { activeUntil: newExpiry },
-    });
+    const [updatedSeat] = await tx.update(clientSubscriptions)
+      .set({ activeUntil: newExpiry.toISOString().split("T")[0] })
+      .where(eq(clientSubscriptions.id, clientSubscriptionId))
+      .returning();
 
     return { seat: updatedSeat, log };
   });
@@ -117,15 +118,17 @@ export async function renewBulkClientSubscriptions({
   months,
   paidOn,
 }: BulkRenewParams & { paidOn?: string }) {
-  return prisma.$transaction(async (tx: TxClient) => {
+  return db.transaction(async (tx) => {
     const defaultToday = startOfDay(paidOn ? new Date(paidOn) : new Date());
-    const results: { seat: Awaited<ReturnType<typeof tx.clientSubscription.update>>; log: Awaited<ReturnType<typeof tx.renewalLog.create>> }[] = [];
+    const results: Array<{ seat: any; log: any }> = [];
 
     for (const item of items) {
       // 1. Fetch the seat
-      const seat = await tx.clientSubscription.findUniqueOrThrow({
-        where: { id: item.clientSubscriptionId },
+      const seat = await tx.query.clientSubscriptions.findFirst({
+        where: eq(clientSubscriptions.id, item.clientSubscriptionId),
       });
+
+      if (!seat) throw new Error(`ClientSubscription ${item.clientSubscriptionId} not found`);
 
       const seatMonths = item.months ?? months; // per-item override or global
       const itemToday = item.paidOn ? startOfDay(new Date(item.paidOn)) : defaultToday;
@@ -146,25 +149,23 @@ export async function renewBulkClientSubscriptions({
       const finalNotes = item.notes ?? `[BULK] Renewed ${seatMonths} month(s)`;
 
       // 6. INSERT append-only renewal_log (one per seat)
-      const log = await tx.renewalLog.create({
-        data: {
-          clientSubscriptionId: item.clientSubscriptionId,
-          amountPaid: paid,
-          expectedAmount: customPrice * seatMonths,
-          periodStart,
-          periodEnd,
-          paidOn: itemToday,
-          dueOn: currentExpiry,
-          monthsRenewed: seatMonths,
-          notes: finalNotes,
-        },
-      });
+      const [log] = await tx.insert(renewalLogs).values({
+        clientSubscriptionId: item.clientSubscriptionId,
+        amountPaid: amountToCents(paid),
+        expectedAmount: amountToCents(customPrice * seatMonths),
+        periodStart: periodStart.toISOString().split("T")[0],
+        periodEnd: periodEnd.toISOString().split("T")[0],
+        paidOn: itemToday.toISOString().split("T")[0],
+        dueOn: currentExpiry.toISOString().split("T")[0],
+        monthsRenewed: seatMonths,
+        notes: finalNotes,
+      }).returning();
 
       // 6. UPDATE the seat
-      const updatedSeat = await tx.clientSubscription.update({
-        where: { id: item.clientSubscriptionId },
-        data: { activeUntil: newExpiry, status: "active" },
-      });
+      const [updatedSeat] = await tx.update(clientSubscriptions)
+        .set({ activeUntil: newExpiry.toISOString().split("T")[0], status: "active" })
+        .where(eq(clientSubscriptions.id, item.clientSubscriptionId))
+        .returning();
 
       results.push({ seat: updatedSeat, log });
     }
@@ -195,12 +196,14 @@ export async function renewPlatformSubscription({
   paidOn,
   notes,
 }: RenewPlatformParams & { paidOn?: string }) {
-  return prisma.$transaction(async (tx: TxClient) => {
+  return db.transaction(async (tx) => {
     // 1. Fetch subscription with its plan cost
-    const subscription = await tx.subscription.findUniqueOrThrow({
-      where: { id: subscriptionId },
-      include: { plan: true },
+    const subscription = await tx.query.subscriptions.findFirst({
+      where: eq(subscriptions.id, subscriptionId),
+      with: { plan: true },
     });
+
+    if (!subscription) throw new Error(`Subscription ${subscriptionId} not found`);
 
     // Subscriptions are now only active or paused (cancelled was removed from schema)
 
@@ -218,30 +221,21 @@ export async function renewPlatformSubscription({
     const paid = amountPaid ?? planCost;
 
     // 4. INSERT platform_renewal log
-    const log = await tx.platformRenewal.create({
-      data: {
-        subscriptionId,
-        amountPaid: paid,
-        periodStart,
-        periodEnd,
-        paidOn: today,
-      },
-    });
+    const [log] = await tx.insert(platformRenewals).values({
+      subscriptionId,
+      amountPaid: amountToCents(paid),
+      periodStart: periodStart.toISOString().split("T")[0],
+      periodEnd: periodEnd.toISOString().split("T")[0],
+      paidOn: today.toISOString().split("T")[0],
+      notes,
+    }).returning();
 
     // 5. UPDATE subscription active_until
-    const updated = await tx.subscription.update({
-      where: { id: subscriptionId },
-      data: { activeUntil: newExpiry },
-    });
+    const [updated] = await tx.update(subscriptions)
+      .set({ activeUntil: newExpiry.toISOString().split("T")[0] })
+      .where(eq(subscriptions.id, subscriptionId))
+      .returning();
 
     return { subscription: updated, log };
   });
-}
-
-// ──────────────────────────────────────────
-// Helper: format Decimal for JSON responses
-// ──────────────────────────────────────────
-
-export function decimalToNumber(val: unknown): number {
-  return Number(val);
 }

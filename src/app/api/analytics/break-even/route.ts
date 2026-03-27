@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { subscriptions } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
 
 // GET /api/analytics/break-even — Subscription-group profitability
@@ -7,23 +9,24 @@ export async function GET() {
     const { getAuthUserId } = await import("@/lib/auth-utils");
     const userId = await getAuthUserId();
 
-    const subscriptions = await prisma.subscription.findMany({
-      where: { userId },
-      include: {
+    const subs = await db.query.subscriptions.findMany({
+      where: eq(subscriptions.userId, userId),
+      with: {
         plan: {
-          include: { platform: { select: { name: true } } },
+          with: { platform: { columns: { name: true } } },
         },
         clientSubscriptions: {
-          include: {
-            renewalLogs: { select: { amountPaid: true } },
+          columns: { id: true, status: true },
+          with: {
+            renewalLogs: { columns: { amountPaid: true } },
           },
         },
-        platformRenewals: { select: { amountPaid: true } },
+        platformRenewals: { columns: { amountPaid: true } },
       },
     });
 
-    type Sub = (typeof subscriptions)[number];
-    const result = subscriptions.map((sub: Sub) => {
+    type Sub = (typeof subs)[number];
+    const result = subs.map((sub: Sub) => {
       const revenue = sub.clientSubscriptions.reduce(
         (sum, cs) =>
           sum +

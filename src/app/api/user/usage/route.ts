@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getAuthSession } from "@/lib/auth-utils";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
+    const session = await getAuthSession();
     if (!session || !session.user || !session.user.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -14,16 +16,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid increment value" }, { status: 400 });
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: session.user.id },
-      data: {
-        usageCredits: {
-          increment: increment,
-        },
-      },
-      select: {
-        usageCredits: true,
-      },
+    const [updatedUser] = await db.update(users).set({
+      usageCredits: sql`${users.usageCredits} + ${increment}`,
+    }).where(eq(users.id, session.user.id)).returning({
+      usageCredits: users.usageCredits,
     });
 
     return NextResponse.json({ usageCredits: updatedUser.usageCredits });

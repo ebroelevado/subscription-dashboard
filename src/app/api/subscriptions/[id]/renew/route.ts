@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { eq, and } from "drizzle-orm";
+import { db } from "@/db";
+import { subscriptions } from "@/db/schema";
 import { renewPlatformSubscriptionSchema } from "@/lib/validations";
 import { renewPlatformSubscription } from "@/lib/services/renewals";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
@@ -14,8 +16,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Verify subscription belongs to this user
-    const subscription = await prisma.subscription.findUnique({
-      where: { id, userId },
+    const subscription = await db.query.subscriptions.findFirst({
+      where: and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)),
     });
     if (!subscription) return error("Subscription not found", 404);
 

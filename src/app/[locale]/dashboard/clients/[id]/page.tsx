@@ -13,7 +13,7 @@ import { ArrowLeft, UserCircle, Plus, Trash2 } from "lucide-react";
 import { AssignSubscriptionDialog } from "@/components/clients/assign-subscription-dialog";
 import { useCancelSeat } from "@/hooks/use-seats";
 import { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
