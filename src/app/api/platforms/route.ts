@@ -36,8 +36,8 @@ export async function POST(request: NextRequest) {
 
     const { checkUserLimits } = await import("@/lib/saas-limits");
     const limitCheck = await checkUserLimits(userId);
-    if (!limitCheck.canCreate && limitCheck.type === "PLATFORMS") {
-      return error(limitCheck.message, 403);
+    if (!limitCheck.canCreate) {
+      return error("Platform limit reached", 403);
     }
 
     const [platform] = await db.insert(platforms).values({ ...data, userId }).returning();

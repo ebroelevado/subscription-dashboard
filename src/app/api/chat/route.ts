@@ -1,18 +1,42 @@
 import { getAuthSession } from "@/lib/auth-utils";
-import { createUserScopedTools } from "@/lib/copilot-tools";
+import { createUserScopedTools } from "@/lib/assistant-tools";
 import { db } from "@/db";
 import { eq } from "drizzle-orm";
 import { users } from "@/db/schema";
-import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
+import { streamText, tool, stepCountIs, convertToModelMessages, wrapLanguageModel } from "ai";
 import { createAiGateway } from "ai-gateway-provider";
 import { createUnified } from "ai-gateway-provider/providers/unified";
 
 export const maxDuration = 60;
 
+// Middleware to strip proprietary reasoning formats that crash strict Groq OpenAI endpoints
+const sanitizeGroqMiddleware = {
+  specificationVersion: 'v3' as const,
+  transformParams: async ({ params }: any) => {
+    if (params.prompt) {
+      params.prompt = params.prompt.map((msg: any) => {
+        const newMsg = { ...msg };
+        if (newMsg.role === 'assistant') {
+          // Remove from modern multi-part arrays
+          if (Array.isArray(newMsg.content)) {
+            newMsg.content = newMsg.content.filter((c: any) => c.type !== 'reasoning');
+          }
+          // Remove from legacy or experimental flat injections
+          if (newMsg.reasoning_content !== undefined) {
+            delete newMsg.reasoning_content;
+          }
+        }
+        return newMsg;
+      });
+    }
+    return params;
+  }
+};
+
 const SYSTEM_PROMPT = (allowDestructive: boolean) => [
   "You are an AI assistant helping a SaaS subscription reseller analyze their business data.",
   "You have full read-only access to the user's database via tools.",
-  "ALWAYS use tools to answer questions about clients, platforms, subscriptions, revenue, and payments.",
+  "Use tools to fetch business data. ONCE YOU HAVE GATHERED THE DATA, STOP CALLING TOOLS AND PROVIDE A FINAL CONVERSATIONAL ANSWER. Do NOT call the same tool repeatedly.",
   "Available capabilities:",
   "- Search/list clients by name or phone",
   "- Get full client profiles with subscriptions and payment history",
@@ -53,6 +77,13 @@ const SYSTEM_PROMPT = (allowDestructive: boolean) => [
   "",
   "LANGUAGE RULE: Always answer in the SAME language the user writes in.",
   "",
+  "MONETARY UNITS — CRITICAL:",
+  "ALL prices, amounts, costs, and monetary values returned by tools are stored as INTEGER CENTS (e.g. 800 = 8.00€, 1500 = 15.00€, 999 = 9.99€).",
+  "ALWAYS divide any monetary integer by 100 before displaying it to the user.",
+  "NEVER show raw cent values to the user (e.g. never write '800 euros', always write '8,00 €').",
+  "The user's configured currency is available via getAccountDetails. Format amounts in that currency.",
+  "Examples: 500 → 5,00€ | 1200 → 12,00€ | 9900 → 99,00€ | 150 → 1,50€",
+  "",
   "SEARCH & AUTONOMY RULES:",
   "1. BE AUTONOMOUS: If a search for a specific name (e.g. 'Angel') yields no results, DO NOT give up immediately. Try broader searches (e.g. use just 'Ang') before reporting failure.",
   "2. FUZZY MATCHING: Favor partial or similar matches.",
@@ -88,10 +119,13 @@ function getModel(mode?: string) {
 
   if (mode === "fast") {
     const unified = createUnified({ apiKey: process.env.GROQ_API_KEY });
-    return aigateway(unified("groq/openai/gpt-oss-120b"));
+    return wrapLanguageModel({
+      model: aigateway(unified("groq/openai/gpt-oss-120b")),
+      middleware: sanitizeGroqMiddleware
+    });
   }
 
-  // Default: Cloudflare Workers AI
+  // Default: Cloudflare Workers AI (Nemotron supports native tool-calling maps, while our new prompt fixes the loop)
   const unified = createUnified();
   return aigateway(unified("workers-ai/@cf/nvidia/nemotron-3-120b-a12b"));
 }
@@ -114,7 +148,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Build tools for this user
-    // createUserScopedTools uses a Copilot-style defineTool(name, {description, parameters, handler})
+    // createUserScopedTools uses a defined structure: defineTool(name, {description, parameters, handler})
     // We adapt it to AI SDK v6's tool() which uses inputSchema instead of parameters.
     const builtTools: Record<string, ReturnType<typeof tool>> = {};
 
@@ -133,13 +167,33 @@ export async function POST(req: Request) {
     createUserScopedTools(adaptedDefineTool as any, session.user.id, allowDestructive);
     const tools = builtTools;
 
+    // Evaluate UI messages -> Core messages
+    const coreMessages = await convertToModelMessages(messages);
+
+    // Filter unsupported AI SDK v5+ properties from history (Groq/OpenAI compatible ends)
+    const sanitizedMessages = coreMessages.map((msg) => {
+      const newMsg = { ...msg } as any;
+      
+      // 1. Remove the exact top-level property causing the 400 Bad Request on Groq
+      if (newMsg.reasoning_content !== undefined) {
+        delete newMsg.reasoning_content;
+      }
+      
+      // 2. Remove 'reasoning' from the newer 'parts' array format if it sneaks in
+      if (newMsg.role === 'assistant' && Array.isArray(newMsg.content)) {
+        newMsg.content = newMsg.content.filter((c: any) => c.type !== 'reasoning');
+      }
+
+      return newMsg;
+    });
+
     // 5. Stream response with AI SDK
     const result = streamText({
       model: getModel(model),
       system: SYSTEM_PROMPT(!!allowDestructive),
-      messages: await convertToModelMessages(messages),
+      messages: sanitizedMessages,
       tools,
-      stopWhen: stepCountIs(10), // AI SDK v6: replaces maxSteps
+      stopWhen: stepCountIs(10), // AI SDK v6: equivalent to maxSteps
       onError: (error: unknown) => {
         console.error("[Chat Stream Error]:", error);
       },

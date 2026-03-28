@@ -28,7 +28,6 @@ export const users = sqliteTable("users", {
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
-  copilotToken: text("copilot_token"),
   currency: text("currency").default("EUR").notNull(),
   disciplinePenalty: real("discipline_penalty").default(0.5).notNull(),
   usageCredits: real("usage_credits").default(0).notNull(),

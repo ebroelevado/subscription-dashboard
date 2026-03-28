@@ -106,7 +106,7 @@ function NavLinks({
             className={cn(
               "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
               collapsed && "size-12 p-0 justify-center gap-0 shrink-0",
-              isActive
+              mounted && isActive
                 ? "bg-primary/10 text-primary dark:bg-primary/15"
                 : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
             )}
@@ -120,7 +120,7 @@ function NavLinks({
             <item.icon
               className={cn(
                 "size-4 shrink-0 transition-colors",
-                isActive && "text-primary"
+                mounted && isActive && "text-primary"
               )}
             />
             <span
@@ -169,7 +169,7 @@ function MobileNavLinks({ onNavigate, mounted }: { onNavigate?: () => void; moun
             onClick={onNavigate}
             className={cn(
               "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-              isActive
+              mounted && isActive
                 ? "bg-primary/10 text-primary dark:bg-primary/15"
                 : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
             )}
@@ -180,7 +180,7 @@ function MobileNavLinks({ onNavigate, mounted }: { onNavigate?: () => void; moun
             <item.icon
               className={cn(
                 "size-4 shrink-0 transition-colors",
-                isActive && "text-primary"
+                mounted && isActive && "text-primary"
               )}
             />
             {t(item.key)}

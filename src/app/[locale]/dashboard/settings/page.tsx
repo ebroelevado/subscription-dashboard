@@ -673,7 +673,7 @@ function DeleteAccountButton() {
 
 
 // ── Assistant Tab ──
-// AssistantTab removed (Copilot integration deprecated)
+// AssistantTab removed (integration deprecated)
 
 // ── Page ──
 export default function SettingsPage() {

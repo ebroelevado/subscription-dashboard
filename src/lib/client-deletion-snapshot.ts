@@ -3,7 +3,7 @@ type DeletionSnapshotSource = {
   name: string;
   phone: string | null;
   notes: string | null;
-  createdAt: Date;
+  createdAt: string | Date; // SQLite returns string; Postgres returned Date
   disciplineScore: string | null;
   dailyPenalty: number | null;
   daysOverdue: number;
@@ -30,7 +30,7 @@ type DeletionSnapshotSource = {
       dueOn: string;
       monthsRenewed: number;
       notes: string | null;
-      createdAt: Date;
+      createdAt: string | Date;
     }>;
   }>;
   ownedSubscriptions: Array<{
@@ -84,7 +84,7 @@ export function serializeDeletedClients(
     name: client.name,
     phone: client.phone,
     notes: client.notes,
-    createdAt: client.createdAt.toISOString(),
+    createdAt: typeof client.createdAt === "string" ? client.createdAt : (client.createdAt as Date).toISOString(),
     disciplineScore: client.disciplineScore,
     dailyPenalty: client.dailyPenalty,
     daysOverdue: client.daysOverdue,
@@ -111,7 +111,7 @@ export function serializeDeletedClients(
         dueOn: renewalLog.dueOn,
         monthsRenewed: renewalLog.monthsRenewed,
         notes: renewalLog.notes,
-        createdAt: renewalLog.createdAt.toISOString(),
+        createdAt: typeof renewalLog.createdAt === "string" ? renewalLog.createdAt : (renewalLog.createdAt as Date).toISOString(),
       })),
     })),
     ownedSubscriptionIds: client.ownedSubscriptions.map((subscription) => subscription.id),

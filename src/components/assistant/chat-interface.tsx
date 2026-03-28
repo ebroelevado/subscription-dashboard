@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useTranslations } from "next-intl";
 import type { UIMessage } from "ai";
-import { SendHorizontal, Bot, Loader2, Github, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert, Clock, Download } from "lucide-react";
+import { SendHorizontal, Bot, Loader2, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert, Clock, Download, RefreshCcw } from "lucide-react";
 import HistoryPanel from "@/components/assistant/history-panel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -55,7 +55,6 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   
   const handleCopy = () => {
-    // Strip <think> tags, <tool> tags and HTML comments (system metadata)
     const cleanText = text
       .replace(/<think>[\s\S]*?<\/think>/g, "")
       .replace(/<tool>[\s\S]*?<\/tool>/g, "")
@@ -398,10 +397,10 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
            // Recursively find { status: "requires_confirmation" } at any depth.
            // Skip csvData arrays to avoid O(n) traversal on large exports.
            const findStatus = (obj: any, depth = 0): any => {
-             if (!obj || typeof obj !== 'object' || depth > 5) return null;
+             if (!obj || typeof obj !== 'object' || depth > 2) return null;
              if (obj.status === "requires_confirmation") return obj;
              for (const [key, val] of Object.entries(obj)) {
-               if (key === 'csvData') continue; // never recurse into CSV rows
+               if (key === 'csvData' || Array.isArray(val)) continue; // never recurse into arrays
                const found = findStatus(val, depth + 1);
                if (found) return found;
              }
@@ -414,10 +413,10 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
            // Recursively find { status: "download_available" } at any depth.
            // When found, return immediately — do NOT recurse into csvData.
            const findDownloadData = (obj: any, depth = 0): any => {
-             if (!obj || typeof obj !== 'object' || depth > 5) return null;
+             if (!obj || typeof obj !== 'object' || depth > 2) return null;
              if (obj.status === "download_available" && obj.csvData) return obj;
              for (const [key, val] of Object.entries(obj)) {
-               if (key === 'csvData') continue; // skip large arrays
+               if (key === 'csvData' || Array.isArray(val)) continue; // skip arrays
                const found = findDownloadData(val, depth + 1);
                if (found) return found;
              }
@@ -771,7 +770,11 @@ export function ChatInterface() {
   };
 
   // Vercel AI SDK — useChat
-  const { messages, sendMessage, status, setMessages, stop, error: chatError } = useChat({});
+  const { messages, sendMessage, status, setMessages, stop, error: chatError } = useChat({
+    onError: (err) => {
+      console.error("AI SDK Chat Error:", err);
+    },
+  });
 
   const isPremiumRequired = chatError?.message?.includes("PREMIUM_REQUIRED") || (chatError as any)?.data?.code === "PREMIUM_REQUIRED";
 
@@ -854,23 +857,19 @@ export function ChatInterface() {
 
   const findConfirmation = useCallback((rawObj: unknown, depth = 0): Record<string, unknown> | null => {
     const obj = depth === 0 ? deepParseJson(rawObj) : rawObj;
-    if (!obj || typeof obj !== "object" || depth > 5) return null;
-    // Bail out on large arrays (e.g. csvData rows) — they'll never contain a confirmation
-    if (Array.isArray(obj)) {
-      if ((obj as unknown[]).length > 20) return null;
-      for (const item of obj as unknown[]) {
-        const found = findConfirmation(item, depth + 1);
-        if (found) return found;
-      }
-      return null;
-    }
+    if (!obj || typeof obj !== "object" || depth > 2) return null;
+    
+    // Bail out on any array — confirmations are never inside arrays
+    if (Array.isArray(obj)) return null;
+
     const record = obj as Record<string, unknown>;
     // Early short-circuit: download_available results are never confirmations
     if (record.status === "download_available") return null;
     if (record.status === "requires_confirmation") return record;
-    // Search all values but skip csvData — it's a plain array of row objects
+    
+    // Search top-level objects but skip arrays
     for (const [key, val] of Object.entries(record)) {
-      if (key === "csvData") continue;
+      if (key === "csvData" || Array.isArray(val)) continue;
       const found = findConfirmation(val, depth + 1);
       if (found) return found;
     }
@@ -1082,7 +1081,7 @@ export function ChatInterface() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const isLoading = status === "submitted" || status === "streaming";
+  const isLoading = (status === "submitted" || status === "streaming") && !chatError;
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -1389,6 +1388,30 @@ export function ChatInterface() {
             </div>
           )}
 
+
+        {/* AI Error Alert Display */}
+        {chatError && !isPremiumRequired && (
+          <div className="flex animate-in fade-in slide-in-from-bottom-2 duration-300 my-4 px-4 sm:px-6">
+            <div className="w-full flex items-start gap-3 bg-red-500/10 rounded-2xl px-4 py-3 border border-red-500/20 text-red-500">
+              <AlertCircle className="size-5 shrink-0 mt-0.5" />
+              <div className="flex flex-col">
+                <span className="font-bold text-sm tracking-tight">{t("chat.errorTitle") || "Error de conexión"}</span>
+                <span className="text-sm opacity-90 leading-snug">
+                  {chatError.message.includes("quota") || chatError.message.includes("429") || chatError.message.includes("Too Many Requests")
+                    ? "El proveedor de Inteligencia Artificial seleccionado ha alcazando el límite de peticiones permitidas por minuto (429 Rate Limit). Por favor, cambia a un modelo distinto o inténtalo de nuevo en unos momentos."
+                    : chatError.message || "La Inteligencia Artificial ha encontrado un problema al procesar tu solicitud."}
+                </span>
+                <button 
+                  onClick={() => stop()} 
+                  className="text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg w-fit mt-2 transition-colors border border-red-500/20 flex items-center gap-2"
+                >
+                  <RefreshCcw className="size-3" />
+                  {t("chat.retry") || "Detener ejecución e intentar de nuevo"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div ref={bottomRef} className="h-4" />
         </div>

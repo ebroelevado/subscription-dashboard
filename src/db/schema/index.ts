@@ -1,7 +1,7 @@
 // Enums
 export * from "./enums";
 
-// Auth tables (NextAuth)
+// Auth tables (Better Auth)
 export * from "./users";
 export * from "./accounts";
 export * from "./sessions";

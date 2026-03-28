@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
 
     const { checkUserLimits } = await import("@/lib/saas-limits");
     const limitCheck = await checkUserLimits(userId);
-    if (!limitCheck.canCreate && limitCheck.type === "CLIENTS") {
-      throw new Error(limitCheck.message);
+    if (!limitCheck.canCreate) {
+      throw new Error("Client limit reached");
     }
 
     const [newClient] = await db.insert(clients).values({

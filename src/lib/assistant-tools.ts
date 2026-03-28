@@ -6,7 +6,7 @@
  * No raw SQL, no mutations, no cross-tenant data access.
  */
 import { z } from "zod";
-import { eq, and, desc, asc, count, sql, sum, gte, lte, inArray, or, ilike, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, count, sql, sum, gte, lte, inArray, or, like, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { users, clients, clientSubscriptions, subscriptions, plans, platforms, renewalLogs, platformRenewals, mutationAuditLogs } from "@/db/schema";
 import { getDisciplineAnalytics } from "@/lib/discipline-service";
@@ -33,30 +33,36 @@ export function createUserScopedTools(
     // ──────────────────────────────────────────
     defineTool("listClients", {
       description:
-        "List or search the user's clients. Returns name, phone, notes, payment discipline info, and number of active subscriptions. Use this to find clients or get an overview.",
+        "List or search the user's clients. Returns name, phone, notes, payment discipline info, and number of active subscriptions. Use this FIRST to find clients or get an overview. If a specific search fails, try a broader partial search (e.g. 'Ang' instead of 'Angel').",
       parameters: z.object({
         search: z
           .string()
-          .describe("Optional search term to filter by name or phone")
+          .describe("Optional search term to filter by name, phone or notes")
           .optional(),
         limit: z
           .number()
-          .describe("Max results to return (default 20)")
+          .describe("Max results to return (default 20, max 100)")
+          .optional(),
+        onlyWithoutActiveSubscriptions: z
+          .boolean()
+          .describe("If true, return only clients that have NO active seats (useful to find abandoned or new clients)")
           .optional(),
       }),
       handler: async ({
         search,
         limit = 20,
+        onlyWithoutActiveSubscriptions,
       }: {
         search?: string;
         limit?: number;
+        onlyWithoutActiveSubscriptions?: boolean;
       }) => {
         const whereConditions = [eq(clients.userId, userId)];
         if (search) {
           whereConditions.push(or(
-            ilike(clients.name, `%${search}%`),
-            ilike(clients.phone, `%${search}%`),
-            ilike(clients.notes, `%${search}%`)
+            like(sql`lower(${clients.name})`, `%${search.toLowerCase()}%`),
+            like(sql`lower(${clients.phone})`, `%${search.toLowerCase()}%`),
+            like(sql`lower(${clients.notes})`, `%${search.toLowerCase()}%`)
           )!);
         }
 
@@ -75,16 +81,23 @@ export function createUserScopedTools(
           },
           with: {
             clientSubscriptions: {
-              columns: { id: true },
+              columns: { id: true, status: true },
             },
           },
           orderBy: [asc(clients.name)],
-          limit: Math.min(limit, 50),
+          limit: Math.min(limit, 100),
         });
 
+        // Post-filter: only clients with no active seats
+        const filtered = onlyWithoutActiveSubscriptions
+          ? clientsList.filter((c) => !c.clientSubscriptions.some((cs) => cs.status === "active"))
+          : clientsList;
+
         return {
-          totalFound: clientsList.length,
-          clients: clientsList.map((c) => ({
+          totalFound: filtered.length,
+          limitApplied: Math.min(limit, 100),
+          note: filtered.length === Math.min(limit, 100) ? "Result may be truncated. Increase `limit` or use `search` to narrow results." : undefined,
+          clients: filtered.map((c) => ({
             id: c.id,
             name: c.name,
             phone: c.phone,
@@ -93,7 +106,8 @@ export function createUserScopedTools(
             dailyPenalty: c.dailyPenalty ? Number(c.dailyPenalty) : 0.5,
             daysOverdue: c.daysOverdue,
             healthStatus: c.healthStatus || "New",
-            activeSubscriptions: c.clientSubscriptions.length,
+            activeSubscriptions: c.clientSubscriptions.filter((cs) => cs.status === "active").length,
+            pausedSubscriptions: c.clientSubscriptions.filter((cs) => cs.status === "paused").length,
             createdAt: c.createdAt,
           })),
         };
@@ -105,12 +119,16 @@ export function createUserScopedTools(
     // ──────────────────────────────────────────
     defineTool("getClientDetails", {
       description:
-        "Get full details for specific clients including all their active subscriptions (seats), payment discipline info, which platforms they're on, what they pay, and their recent payment history. Pass an array of clientIds to fetch multiple clients at once efficiently.",
+        "Get full details for specific clients including all their active subscriptions (seats), payment discipline info, platforms, pricing, and payment history. Pass an array of clientIds to fetch multiple clients at once efficiently. REQUIRED before proposing any modifications to specific clients.",
       parameters: z.object({
         clientIds: z.union([z.string(), z.array(z.string())]).describe("A single client ID or an array of client IDs to fetch in bulk"),
       }),
       handler: async ({ clientIds }: { clientIds: string | string[] }) => {
         const ids = Array.isArray(clientIds) ? clientIds : [clientIds];
+        if (ids.length > 10) {
+          return { error: `Token limit protection: You requested ${ids.length} clients at once. Please request a maximum of 10 clients per tool call to avoid exceeding the model's context window.` };
+        }
+        
         const clientsList = await db.query.clients.findMany({
           where: and(inArray(clients.id, ids), eq(clients.userId, userId)),
           columns: {
@@ -246,30 +264,33 @@ export function createUserScopedTools(
         "List all subscriptions with their platform, plan, seat usage, revenue from clients, and expiry dates. Use this for an overview of active groups/accounts.",
       parameters: z.object({
         status: z
-          .enum(["active", "paused"])
-          .describe("Filter by status")
+          .enum(["active", "paused", "all"])
+          .describe("Filter by status. Use 'all' to include all statuses.")
           .optional(),
         platformName: z
           .string()
-          .describe("Filter by platform name")
+          .describe("Filter by platform name (partial, case-insensitive)")
           .optional(),
       }),
       handler: async ({
         status,
         platformName,
       }: {
-        status?: "active" | "paused";
+        status?: "active" | "paused" | "all";
         platformName?: string;
       }) => {
         const whereConditions = [eq(subscriptions.userId, userId)];
-        if (status) whereConditions.push(eq(subscriptions.status, status));
+        if (status && status !== "all") whereConditions.push(eq(subscriptions.status, status));
 
         // For platformName filter, we need to get platform IDs first
         let platformIds: string[] | undefined;
         if (platformName) {
           const matchedPlatforms = await db.select({ id: platforms.id })
             .from(platforms)
-            .where(ilike(platforms.name, `%${platformName}%`));
+            .where(and(
+              eq(platforms.userId, userId),
+              like(sql`lower(${platforms.name})`, `%${platformName.toLowerCase()}%`)
+            ));
           platformIds = matchedPlatforms.map(p => p.id);
           if (platformIds.length === 0) return [];
         }
@@ -395,7 +416,7 @@ export function createUserScopedTools(
     // ──────────────────────────────────────────
     defineTool("getRevenueStats", {
       description:
-        "Get comprehensive revenue statistics: monthly recurring revenue (MRR), total platform costs, net profit, per-platform breakdown, and key metrics like total clients and seats.",
+        "Get comprehensive revenue statistics: monthly recurring revenue (MRR), total platform costs, net profit, and per-platform breakdown. Use this as the data source for revenue-related questions or before generating revenue CSV exports.",
       parameters: z.object({}),
       handler: async () => {
         // Optimize: Use DB aggregations instead of downloading all rows
@@ -513,11 +534,13 @@ export function createUserScopedTools(
       }),
       handler: async ({
         clientName,
+        platformName,
         fromDate,
         toDate,
         limit = 20,
       }: {
         clientName?: string;
+        platformName?: string;
         fromDate?: string;
         toDate?: string;
         limit?: number;
@@ -525,19 +548,25 @@ export function createUserScopedTools(
         // Build conditions
         const conditions = [];
 
-        // Filter by userId through subscription
+        // Filter by userId: renewalLogs → clientSubscriptions → subscriptions → userId
         const userSubs = await db.select({ id: subscriptions.id })
           .from(subscriptions)
           .where(eq(subscriptions.userId, userId));
         const userSubIds = userSubs.map(s => s.id);
         if (userSubIds.length === 0) return { totalFound: 0, payments: [] };
-        conditions.push(inArray(renewalLogs.clientSubscriptionId, userSubIds));
+        // Get clientSubscription IDs that belong to this user's subscriptions
+        const userCS = await db.select({ id: clientSubscriptions.id })
+          .from(clientSubscriptions)
+          .where(inArray(clientSubscriptions.subscriptionId, userSubIds));
+        const userCSIds = userCS.map(cs => cs.id);
+        if (userCSIds.length === 0) return { totalFound: 0, payments: [] };
+        conditions.push(inArray(renewalLogs.clientSubscriptionId, userCSIds));
 
         // Filter by client name
         if (clientName) {
           const matchedClients = await db.select({ id: clients.id })
             .from(clients)
-            .where(ilike(clients.name, `%${clientName}%`));
+            .where(like(sql`lower(${clients.name})`, `%${clientName.toLowerCase()}%`));
           const clientIds = matchedClients.map(c => c.id);
           if (clientIds.length === 0) return { totalFound: 0, payments: [] };
           // We need to filter through clientSubscriptions
@@ -548,6 +577,25 @@ export function createUserScopedTools(
           conditions.push(inArray(renewalLogs.clientSubscriptionId, csIds));
         }
 
+        // Filter by platform name
+        if (platformName) {
+          const matchedPlatforms = await db.select({ id: platforms.id })
+            .from(platforms)
+            .where(and(
+              eq(platforms.userId, userId),
+              like(sql`lower(${platforms.name})`, `%${platformName.toLowerCase()}%`)
+            ));
+          if (matchedPlatforms.length === 0) return { totalFound: 0, payments: [] };
+          const platSubIds = await db.select({ id: subscriptions.id })
+            .from(subscriptions)
+            .innerJoin(plans, eq(subscriptions.planId, plans.id))
+            .where(inArray(plans.platformId, matchedPlatforms.map(p => p.id)));
+          const platCSIds = await db.select({ id: clientSubscriptions.id })
+            .from(clientSubscriptions)
+            .where(inArray(clientSubscriptions.subscriptionId, platSubIds.map(s => s.id)));
+          conditions.push(inArray(renewalLogs.clientSubscriptionId, platCSIds.map(cs => cs.id)));
+        }
+
         // Date filters
         if (fromDate) conditions.push(gte(renewalLogs.paidOn, fromDate));
         if (toDate) conditions.push(lte(renewalLogs.paidOn, toDate));
@@ -555,7 +603,7 @@ export function createUserScopedTools(
         const logs = await db.query.renewalLogs.findMany({
           where: and(...conditions),
           orderBy: [desc(renewalLogs.paidOn)],
-          limit: Math.min(limit, 50),
+          limit: Math.min(limit, 100),
           with: {
             clientSubscription: {
               columns: { id: true },
@@ -642,7 +690,7 @@ export function createUserScopedTools(
         if (platformName) {
           const matchedPlatforms = await db.select({ id: platforms.id })
             .from(platforms)
-            .where(ilike(platforms.name, `%${platformName}%`));
+            .where(like(sql`lower(${platforms.name})`, `%${platformName.toLowerCase()}%`));
           const platIds = matchedPlatforms.map(p => p.id);
           if (platIds.length === 0) return { totalFound: 0, renewals: [] };
           const matchedSubs = await db.select({ id: subscriptions.id })
@@ -660,7 +708,7 @@ export function createUserScopedTools(
         const renewals = await db.query.platformRenewals.findMany({
           where: and(...conditions),
           orderBy: [desc(platformRenewals.paidOn)],
-          limit: Math.min(limit, 50),
+          limit: Math.min(limit, 100),
           with: {
             subscription: {
               columns: { label: true },
@@ -770,12 +818,20 @@ export function createUserScopedTools(
         }
 
         const [clientPayments, platformPayments, activeSeats] = await Promise.all([
-          db.query.renewalLogs.findMany({
-            where: and(
-              gte(renewalLogs.paidOn, fromDate),
-              lte(renewalLogs.paidOn, toDate),
-              inArray(renewalLogs.clientSubscriptionId, userSubIds)
-            ),
+          // Must use clientSubscription IDs, not subscription IDs
+          (async () => {
+            const csForReport = await db.select({ id: clientSubscriptions.id })
+              .from(clientSubscriptions)
+              .where(inArray(clientSubscriptions.subscriptionId, userSubIds));
+            const csIdsForReport = csForReport.map(cs => cs.id);
+            return db.query.renewalLogs.findMany({
+              where: and(
+                gte(renewalLogs.paidOn, fromDate),
+                lte(renewalLogs.paidOn, toDate),
+                csIdsForReport.length > 0
+                  ? inArray(renewalLogs.clientSubscriptionId, csIdsForReport)
+                  : sql`1=0`
+              ),
             orderBy: [asc(renewalLogs.paidOn)],
             with: {
               clientSubscription: {
@@ -792,7 +848,8 @@ export function createUserScopedTools(
                 },
               },
             },
-          }),
+            });
+          })(),
           db.query.platformRenewals.findMany({
             where: and(
               gte(platformRenewals.paidOn, fromDate),
@@ -1099,7 +1156,7 @@ export function createUserScopedTools(
     // 13. generateCsvExport — Generic JSON → CSV download (client-side conversion)
     // ──────────────────────────────────────────
     defineTool("generateCsvExport", {
-      description: "Convert any JSON data into a downloadable CSV file directly in the browser. Use this whenever the user asks for a CSV, Excel, or data export of ANY kind — platforms, subscriptions, clients, payments, custom views, etc. You MUST first fetch the data using the appropriate read tools (listClients, listSubscriptions, listPlatforms, etc.), then pass the relevant fields as a JSON array to this tool. You control the exact columns: only include what the user asked for. DO NOT use bash, python, or any other method — this is the ONLY way to generate CSVs.",
+      description: "Convert any JSON data into a downloadable CSV file. MANDATORY WORKFLOW: (1) Fetch the data using the appropriate read tool (e.g. getRevenueStats or listClients), (2) Select only the columns asked for by the user, (3) Pass that array to this tool. This is the ONLY way to export data — never format CSV text manually.",
       parameters: z.object({
         data: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))).describe("Array of objects to export. Each object's keys become column headers, values become cells. All values must be primitive (string, number, boolean, or null)."),
         filename: z.string().optional().describe("Base filename without extension (e.g. 'clientes_marzo'). Date will be appended automatically."),
@@ -1222,8 +1279,38 @@ export function createUserScopedTools(
       }),
       handler: async ({ clientId, subscriptionId, customPrice, activeUntil, joinedAt, serviceUser, servicePassword }: any) => {
         const client = await db.query.clients.findFirst({ where: and(eq(clients.id, clientId), eq(clients.userId, userId)) });
-        const sub = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)) });
-        if (!client || !sub) return { error: "Client or Subscription not found." };
+        const sub = await db.query.subscriptions.findFirst({
+          where: and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)),
+          with: { plan: { columns: { maxSeats: true } } }
+        });
+        if (!client) return { error: `Client not found or access denied.` };
+        if (!sub) return { error: `Subscription not found or access denied.` };
+
+        // Check for duplicate: client already in this subscription?
+        const existingSeat = await db.query.clientSubscriptions.findFirst({
+          where: and(
+            eq(clientSubscriptions.clientId, clientId),
+            eq(clientSubscriptions.subscriptionId, subscriptionId)
+          )
+        });
+        if (existingSeat) {
+          return { error: `${client.name} is already assigned to "${sub.label}" (seat status: ${existingSeat.status}). To change the price or status, use bulkManageSeats or managePayments instead.` };
+        }
+
+        // Check seat capacity
+        if (sub.plan.maxSeats !== null && sub.plan.maxSeats !== undefined) {
+          const [{ count: activeCount }] = await db
+            .select({ count: count() })
+            .from(clientSubscriptions)
+            .where(and(
+              eq(clientSubscriptions.subscriptionId, subscriptionId),
+              eq(clientSubscriptions.status, "active")
+            ));
+          if (activeCount >= sub.plan.maxSeats) {
+            return { error: `"${sub.label}" is full: ${activeCount}/${sub.plan.maxSeats} active seats occupied. To add more clients, first remove an existing seat or upgrade the plan's maxSeats.` };
+          }
+        }
+
         const pendingChanges = { clientId, subscriptionId, customPrice, activeUntil, joinedAt, serviceUser, servicePassword };
         const { token, expiresAt } = await createMutationToken(userId, { toolName: "assignClientToSubscription", action: "create", changes: pendingChanges, previousValues: null });
         await db.update(mutationAuditLogs).set({ newValues: pendingChanges as any }).where(eq(mutationAuditLogs.token, token));
@@ -1296,47 +1383,56 @@ export function createUserScopedTools(
         clientSubscriptionIds: z.array(z.string()).describe("An array of ClientSubscription pivot record IDs to delete."),
       }),
       handler: async ({ clientSubscriptionIds }: any) => {
-        // Get user's client IDs first
-        const userClients = await db.select({ id: clients.id }).from(clients).where(eq(clients.userId, userId));
-        const userClientIds = userClients.map(c => c.id);
-        if (userClientIds.length === 0) return { error: "Client subscriptions not found or access denied." };
+        // Verify ownership via subscription → userId (more efficient than fetching all client IDs)
+        const userSubIds = await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.userId, userId))
+          .then(rows => rows.map(r => r.id));
+        if (userSubIds.length === 0) return { error: "Client subscriptions not found or access denied." };
 
         const css = await db.query.clientSubscriptions.findMany({
           where: and(
             inArray(clientSubscriptions.id, clientSubscriptionIds),
-            inArray(clientSubscriptions.clientId, userClientIds)
+            inArray(clientSubscriptions.subscriptionId, userSubIds)
           ),
           with: {
             client: { columns: { name: true } },
             subscription: { columns: { label: true } },
-            renewalLogs: true,
+            renewalLogs: { columns: { id: true } },
           }
         });
         if (!css.length) return { error: "Client subscriptions not found or access denied." };
-        
-        const previousValues = css.map(c => ({
+
+        // Build snapshot for undo
+        const fullCss = await db.query.clientSubscriptions.findMany({
+          where: inArray(clientSubscriptions.id, css.map(c => c.id)),
+          with: { renewalLogs: true },
+        });
+        const previousValues = fullCss.map(c => ({
             id: c.id, clientId: c.clientId, subscriptionId: c.subscriptionId, customPrice: c.customPrice,
             activeUntil: c.activeUntil, joinedAt: c.joinedAt, leftAt: c.leftAt ?? null,
             status: c.status, remainingDays: c.remainingDays ?? null, serviceUser: c.serviceUser ?? null, servicePassword: c.servicePassword ?? null,
             renewalLogs: c.renewalLogs.map(rl => ({
-                id: rl.id,
-                clientSubscriptionId: rl.clientSubscriptionId,
-                amountPaid: rl.amountPaid,
-                expectedAmount: rl.expectedAmount,
-                periodStart: rl.periodStart,
-                periodEnd: rl.periodEnd,
-                paidOn: rl.paidOn,
-                dueOn: rl.dueOn,
-                monthsRenewed: rl.monthsRenewed,
-                notes: rl.notes ?? null,
-                createdAt: rl.createdAt,
+                id: rl.id, clientSubscriptionId: rl.clientSubscriptionId, amountPaid: rl.amountPaid, expectedAmount: rl.expectedAmount,
+                periodStart: rl.periodStart, periodEnd: rl.periodEnd, paidOn: rl.paidOn, dueOn: rl.dueOn,
+                monthsRenewed: rl.monthsRenewed, notes: rl.notes ?? null, createdAt: rl.createdAt,
             })),
         }));
+
+        const totalPaymentRecords = fullCss.reduce((sum, c) => sum + c.renewalLogs.length, 0);
+        const seatSummary = css.map(c => `${c.client.name} (${c.subscription.label})`).join(", ");
 
         const pendingChanges = { clientSubscriptionIds };
         const { token, expiresAt } = await createMutationToken(userId, { toolName: "removeClientsFromSubscription", targetId: "bulk", action: "delete", changes: pendingChanges, previousValues: previousValues as any });
         await db.update(mutationAuditLogs).set({ newValues: pendingChanges as any }).where(eq(mutationAuditLogs.token, token));
-        return { status: "requires_confirmation", __token: token, expiresAt, message: `I am ready to remove ${css.length} seat assignment(s).`, pendingChanges };
+        return {
+          status: "requires_confirmation",
+          __token: token,
+          expiresAt,
+          message: `I am ready to remove ${css.length} seat assignment(s): ${seatSummary}. This will also delete ${totalPaymentRecords} associated payment record(s).`,
+          pendingChanges,
+        };
       },
     }),
 
@@ -1348,6 +1444,19 @@ export function createUserScopedTools(
         name: z.string().optional().describe("For 'create' or 'update'."),
       }),
       handler: async ({ operation, platformIds, name }: any) => {
+        // Guard: prevent creating a duplicate platform name
+        if (operation === "create" && name) {
+          const existing = await db.query.platforms.findFirst({
+            where: and(
+              eq(platforms.userId, userId),
+              like(sql`lower(${platforms.name})`, name.toLowerCase())
+            )
+          });
+          if (existing) {
+            return { error: `A platform named "${existing.name}" already exists (ID: ${existing.id}). Use operation "update" to modify it, or choose a different name.` };
+          }
+        }
+
         const pendingChanges = { operation, platformIds, name };
         // Get previous state if updating/deleting
         let previousValues: any = null;
@@ -1355,12 +1464,14 @@ export function createUserScopedTools(
             const platformsList = await db.query.platforms.findMany({
               where: and(inArray(platforms.id, platformIds), eq(platforms.userId, userId))
             });
+            if (!platformsList.length) return { error: "Platform(s) not found or access denied." };
             previousValues = platformsList.map(p => ({ id: p.id, name: p.name }));
         } else if (operation === "update" && platformIds && platformIds[0]) {
             const p = await db.query.platforms.findFirst({
               where: and(eq(platforms.id, platformIds[0]), eq(platforms.userId, userId))
             });
-            previousValues = p ? [{ id: p.id, name: p.name }] : [];
+            if (!p) return { error: "Platform not found or access denied." };
+            previousValues = [{ id: p.id, name: p.name }];
         }
 
         const { token, expiresAt } = await createMutationToken(userId, { toolName: "managePlatforms", action: operation as any, changes: pendingChanges, previousValues });
@@ -1381,23 +1492,34 @@ export function createUserScopedTools(
         isActive: z.boolean().optional(),
       }),
       handler: async ({ operation, planIds, platformId, name, cost, maxSeats, isActive }: any) => {
+        // Guard: prevent duplicate plan name within same platform
+        if (operation === "create" && platformId && name) {
+          const existingPlan = await db.query.plans.findFirst({
+            where: and(
+              eq(plans.platformId, platformId),
+              eq(plans.userId, userId),
+              like(sql`lower(${plans.name})`, name.toLowerCase())
+            )
+          });
+          if (existingPlan) {
+            return { error: `A plan named "${existingPlan.name}" already exists in this platform (ID: ${existingPlan.id}). Use operation "update" to modify it, or choose a different name.` };
+          }
+        }
+
         const pendingChanges = { operation, planIds, platformId, name, cost, maxSeats, isActive };
         let previousValues: any = null;
         if (operation === "delete" && planIds) {
-            // Get plans through platform's userId
-            const userPlatforms = await db.select({ id: platforms.id }).from(platforms).where(eq(platforms.userId, userId));
-            const userPlatformIds = userPlatforms.map(p => p.id);
             const plansList = await db.query.plans.findMany({
-              where: and(inArray(plans.id, planIds), inArray(plans.platformId, userPlatformIds))
+              where: and(inArray(plans.id, planIds), eq(plans.userId, userId))
             });
+            if (!plansList.length) return { error: "Plan(s) not found or access denied." };
             previousValues = plansList;
         } else if (operation === "update" && planIds && planIds[0]) {
-            const userPlatforms = await db.select({ id: platforms.id }).from(platforms).where(eq(platforms.userId, userId));
-            const userPlatformIds = userPlatforms.map(p => p.id);
             const p = await db.query.plans.findFirst({
-              where: and(eq(plans.id, planIds[0]), inArray(plans.platformId, userPlatformIds))
+              where: and(eq(plans.id, planIds[0]), eq(plans.userId, userId))
             });
-            previousValues = p ? [p] : [];
+            if (!p) return { error: "Plan not found or access denied." };
+            previousValues = [p];
         }
         const { token, expiresAt } = await createMutationToken(userId, { toolName: "managePlans", action: operation as any, changes: pendingChanges, previousValues });
         await db.update(mutationAuditLogs).set({ newValues: pendingChanges as any }).where(eq(mutationAuditLogs.token, token));

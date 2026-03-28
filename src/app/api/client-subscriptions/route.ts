@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
 
     const { checkUserLimits } = await import("@/lib/saas-limits");
     const limitCheck = await checkUserLimits(userId);
-    if (!limitCheck.canCreate && limitCheck.type === "SEATS") {
-      throw new Error(limitCheck.message);
+    if (!limitCheck.canCreate) {
+      throw new Error("Seat limit reached");
     }
 
     // Verify subscription belongs to this user

@@ -1,10 +1,11 @@
 import { sqliteTable, text, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-// Schema matches better-auth expectations.
-// NOTE: The `token` column exists in the DB from the old Prisma migration
-// (token TEXT NOT NULL UNIQUE). BetterAuth's drizzle adapter writes to it
-// during OAuth state generation — exposing it here prevents the NOT NULL crash.
+// Schema matches Better Auth expectations.
+// The `token` column is required by Better Auth's Drizzle adapter 
+// to manage session states and verification flows correctly.
+// It is made nullable to avoid crashes during specific OAuth flows 
+// where the token is not immediately available.
 export const verificationTokens = sqliteTable(
   "verification_tokens",
   {

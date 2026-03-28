@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     const limitCheck = await checkPlanLimit(userId, data.platformId);
     if (!limitCheck.canCreate) {
-      return error(limitCheck.message || "Plan limit reached", 403);
+      return error("Plan limit reached", 403);
     }
 
     const [plan] = await db.insert(plans).values({

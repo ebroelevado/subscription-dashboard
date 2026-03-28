@@ -19,7 +19,7 @@ export async function POST() {
       return new NextResponse("Stripe customer not found", { status: 404 });
     }
 
-    const origin = process.env.NEXTAUTH_URL || "http://localhost:3000";
+    const origin = process.env.AUTH_URL || "http://localhost:3000";
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: user.stripeCustomerId,

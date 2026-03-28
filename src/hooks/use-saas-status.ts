@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 
 export type SaasStatus = {
-  hasToken: boolean;
   plan: "FREE" | "PREMIUM";
   stripeCurrentPeriodEnd?: string | null;
   usage: {
@@ -19,9 +18,8 @@ export function useSaasStatus() {
   return useQuery<SaasStatus>({
     queryKey: ["saas-status"],
     queryFn: async () => {
-      // Free for all - no more network requests to extinct Copilot status
+      // Mock response
       return {
-        hasToken: true,
         plan: "PREMIUM",
         stripeCurrentPeriodEnd: null,
         usage: {
