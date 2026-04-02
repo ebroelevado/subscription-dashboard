@@ -1,37 +1,25 @@
-import { getAuthSession } from "@/lib/auth-utils";
-import { createUserScopedTools } from "@/lib/assistant-tools";
-import { db } from "@/db";
-import { eq } from "drizzle-orm";
-import { users } from "@/db/schema";
+import { DurableObject } from "cloudflare:workers";
 import { streamText, tool, stepCountIs, convertToModelMessages, wrapLanguageModel } from "ai";
 import { createAiGateway } from "ai-gateway-provider";
 import { createUnified } from "ai-gateway-provider/providers/unified";
+import { createUserScopedTools } from "@/lib/assistant-tools";
+import { initDb, getDb, getDirectDb } from "@/db";
+import { rollbackConsumedMutationToken, validateAndConsumeMutationToken } from "@/lib/mutation-token";
+import { executeMutation } from "@/lib/mutation-executor";
 
-export const maxDuration = 60;
-const CHAT_PROXY_TIMEOUT_MS = 120_000;
-
-class ChatProxyTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ChatProxyTimeoutError";
-  }
+export interface Env {
+  DB: any;
+  AGENT_SESSION_DO: DurableObjectNamespace;
+  MUTATION_EXEC_QUEUE?: Queue;
+  CF_ACCOUNT_ID?: string;
+  CF_AI_GATEWAY_NAME?: string;
+  CF_AIG_TOKEN?: string;
+  CEREBRAS_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  DB_PROXY_SECRET?: string;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new ChatProxyTimeoutError(timeoutMessage)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
-// Middleware to strip proprietary reasoning formats that crash strict Groq OpenAI endpoints
+// Middleware to strip proprietary reasoning formats that crash strict endpoints
 const sanitizeGroqMiddleware = {
   specificationVersion: 'v3' as const,
   transformParams: async ({ params }: any) => {
@@ -39,11 +27,9 @@ const sanitizeGroqMiddleware = {
       params.prompt = params.prompt.map((msg: any) => {
         const newMsg = { ...msg };
         if (newMsg.role === 'assistant') {
-          // Remove from modern multi-part arrays
           if (Array.isArray(newMsg.content)) {
             newMsg.content = newMsg.content.filter((c: any) => c.type !== 'reasoning');
           }
-          // Remove from legacy or experimental flat injections
           if (newMsg.reasoning_content !== undefined) {
             delete newMsg.reasoning_content;
           }
@@ -123,157 +109,157 @@ const SYSTEM_PROMPT = (allowDestructive: boolean) => [
   "9. **BULK ACTIONS**: Use the bulk tools (deleteClients, managePlatforms, etc.) when handling multiple existing records at once to keep it in a single proposal.",
 ].join("\n");
 
-/**
- * Get the AI model to use based on the requested mode.
- * Routes through Cloudflare AI Gateway for analytics, caching, and rate limiting.
- */
-function getModel(mode?: string) {
-  const aigateway = createAiGateway({
-    accountId: process.env.CF_ACCOUNT_ID!,
-    gateway: process.env.CF_AI_GATEWAY_NAME!,
-    apiKey: process.env.CF_AIG_TOKEN!,
-  });
 
-  if (mode === "ultra-fast") {
-    const unified = createUnified({ apiKey: process.env.CEREBRAS_API_KEY });
-    return aigateway(unified("cerebras/qwen-3-235b-a22b-instruct-2507"));
+export class AgentSessionDO extends DurableObject {
+  env: Env;
+
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env);
+    this.env = env;
+    
+    // Initialize DB binding if available
+    if (this.env.DB) {
+      initDb(this.env.DB);
+    }
+    
+    // Inject Process.env to mimic node behavior for AI routers
+    if (typeof process === 'undefined') {
+      (globalThis as any).process = { env: {} };
+    }
+    Object.assign((globalThis as any).process.env, this.env);
   }
 
-  if (mode === "fast") {
-    const unified = createUnified({ apiKey: process.env.GROQ_API_KEY });
-    return wrapLanguageModel({
-      model: aigateway(unified("groq/openai/gpt-oss-120b")),
-      middleware: sanitizeGroqMiddleware
+  getModel(mode?: string) {
+    const aigateway = createAiGateway({
+      accountId: this.env.CF_ACCOUNT_ID!,
+      gateway: this.env.CF_AI_GATEWAY_NAME || 'pearfect',
+      apiKey: this.env.CF_AIG_TOKEN!,
     });
-  }
 
-  // Default: Cloudflare Workers AI (Nemotron supports native tool-calling maps, while our new prompt fixes the loop)
-  const unified = createUnified();
-  return aigateway(unified("workers-ai/@cf/nvidia/nemotron-3-120b-a12b"));
-}
-
-async function executeLocalChat({ messages, model, allowDestructive }: any, userId: string): Promise<Response> {
-    if (!messages?.length) {
-      return new Response(JSON.stringify({ error: "No messages found" }), { status: 400 });
+    if (mode === "ultra-fast") {
+      const unified = createUnified({ apiKey: this.env.CEREBRAS_API_KEY });
+      return aigateway(unified("cerebras/qwen-3-235b-a22b-instruct-2507"));
     }
 
-    const builtTools: Record<string, ReturnType<typeof tool>> = {};
-    const adaptedDefineTool = (
-      name: string,
-      config: { description: string; parameters: any; handler: (...args: any[]) => any }
-    ) => {
-      builtTools[name] = tool({
-        description: config.description,
-        inputSchema: config.parameters,
-        execute: config.handler as any,
+    if (mode === "fast") {
+      const unified = createUnified({ apiKey: this.env.GROQ_API_KEY });
+      return wrapLanguageModel({
+        model: aigateway(unified("groq/openai/gpt-oss-120b")),
+        middleware: sanitizeGroqMiddleware
       });
-      return builtTools[name];
-    };
+    }
 
-    createUserScopedTools(adaptedDefineTool as any, userId, allowDestructive);
-    const tools = builtTools;
+    const unified = createUnified();
+    return aigateway(unified("workers-ai/@cf/nvidia/nemotron-3-120b-a12b"));
+  }
 
-    const coreMessages = await convertToModelMessages(messages);
-    const sanitizedMessages = coreMessages.map((msg: any) => {
-      const newMsg = { ...msg } as any;
-      if (newMsg.reasoning_content !== undefined) delete newMsg.reasoning_content;
-      if (newMsg.role === 'assistant' && Array.isArray(newMsg.content)) {
-        newMsg.content = newMsg.content.filter((c: any) => c.type !== 'reasoning');
+  async fetch(request: Request) {
+    try {
+      const url = new URL(request.url);
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405 });
       }
-      return newMsg;
-    });
 
-    const result = streamText({
-      model: getModel(model),
-      system: SYSTEM_PROMPT(!!allowDestructive),
-      messages: sanitizedMessages,
-      tools,
-      stopWhen: stepCountIs(20),
-      timeout: {
-        stepMs: 30_000,
-        totalMs: 120_000,
-      },
-      maxRetries: 2,
-      onError: (error: unknown) => {
-        console.error("[Chat Stream Error]:", error);
-      },
-      onStepFinish: (event) => {
-        console.log("[Chat Step Finish] reason:", event.finishReason);
-      },
-    });
+      const body = await request.json() as any;
+      const { messages, model, allowDestructive, userId, action, token } = body;
 
-    return result.toUIMessageStreamResponse() as Response;
-}
+      if (!userId) {
+        return new Response(JSON.stringify({ error: "No userId provided" }), { status: 400 });
+      }
 
-  export async function POST(req: Request): Promise<Response> {
-  try {
-    const session = await getAuthSession();
-    if (!session?.user?.id) {
-      return new Response("Unauthorized", { status: 401 });
-    }
-
-    const json = await req.json();
-
-    // The Durable Object Namespace is available in process.env when compiled with Cloudflare next-on-pages
-    const doNamespace = (process.env as any).AGENT_SESSION_DO;
-    const doUrl = process.env.AGENT_SESSION_URL;
-
-    if (doNamespace && typeof doNamespace.idFromName === 'function') {
-      console.log("[Chat Proxy] Forwarding to Durable Object AgentSessionDO (Native Binding)");
-      json.userId = session.user.id;
-      const doSessionId = `chat-session-${session.user.id}`;
-      const id = doNamespace.idFromName(doSessionId);
-      const stub = doNamespace.get(id);
-
-      const doReq = new Request(req.url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(json),
-      });
-
-      return await withTimeout(
-        stub.fetch(doReq),
-        CHAT_PROXY_TIMEOUT_MS,
-        "Durable Object chat request timed out."
-      );
-    } else if (doUrl) {
-      console.log(`[Chat Proxy] Forwarding to External Worker DO Proxy: ${doUrl}`);
-      json.userId = session.user.id;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), CHAT_PROXY_TIMEOUT_MS);
-      let doReq: Response;
-      try {
-        doReq = await fetch(`${doUrl}/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(json),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        if ((error as any)?.name === "AbortError") {
-          throw new ChatProxyTimeoutError("External chat proxy request timed out.");
+      // Handle direct mutation execution (Total Control confirmation)
+      if (action === "execute") {
+        if (!token) return new Response(JSON.stringify({ error: "Missing token" }), { status: 400 });
+        
+        console.log(`[DO Mutation] Executing mutation for user ${userId} with token ${token.substring(0, 8)}...`);
+        const auditLog = await validateAndConsumeMutationToken(token, userId);
+        let result;
+        try {
+          result = await executeMutation(
+            getDb(),
+            userId,
+            auditLog.toolName,
+            auditLog.targetId,
+            auditLog.action as "create" | "update" | "delete",
+            auditLog.previousValues as Record<string, unknown>,
+            auditLog.id
+          );
+        } catch (error) {
+          await rollbackConsumedMutationToken(auditLog.id, userId);
+          throw error;
         }
-        throw error;
-      } finally {
-        clearTimeout(timeoutId);
+
+        return new Response(JSON.stringify({
+          success: true,
+          auditLogId: auditLog.id,
+          result,
+        }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
       }
 
-      return new Response(doReq.body, {
-        status: doReq.status,
-        headers: doReq.headers
+      if (!messages?.length) {
+        return new Response(JSON.stringify({ error: "No messages found" }), { status: 400 });
+      }
+
+      // Build tools
+      const builtTools: Record<string, ReturnType<typeof tool>> = {};
+      const adaptedDefineTool = (
+        name: string,
+        config: { description: string; parameters: any; handler: (...args: any[]) => any }
+      ) => {
+        builtTools[name] = tool({
+          description: config.description,
+          inputSchema: config.parameters,
+          execute: config.handler as any,
+        });
+        return builtTools[name];
+      };
+
+      createUserScopedTools(adaptedDefineTool as any, userId, allowDestructive);
+      const tools = builtTools;
+
+      const coreMessages = await convertToModelMessages(messages);
+      const sanitizedMessages = coreMessages.map((msg: any) => {
+        const newMsg = { ...msg } as any;
+        if (newMsg.reasoning_content !== undefined) delete newMsg.reasoning_content;
+        if (newMsg.role === 'assistant' && Array.isArray(newMsg.content)) {
+          newMsg.content = newMsg.content.filter((c: any) => c.type !== 'reasoning');
+        }
+        return newMsg;
       });
-    } else {
-      console.log("[Chat Proxy] Using Local Dev Execution Container (No Binding/URL)");
-      return await executeLocalChat(json, session.user.id);
+
+      // Execute Agent Loop (safely isolated within this DO instance)
+      const result = streamText({
+        model: this.getModel(model),
+        system: SYSTEM_PROMPT(!!allowDestructive),
+        messages: sanitizedMessages,
+        tools,
+        stopWhen: stepCountIs(20),
+        timeout: {
+          stepMs: 30_000,
+          totalMs: 120_000,
+        },
+        maxRetries: 2,
+        onError: (error: unknown) => {
+          console.error("[DO Chat Stream Error]:", error);
+        },
+        onStepFinish: (event) => {
+          console.log("[DO Step Finish] reason:", event.finishReason);
+        },
+      });
+
+      // Stream the raw stream to the requesting frontend
+      return result.toUIMessageStreamResponse();
+
+    } catch (err: unknown) {
+      const error = err as Error;
+      console.error("[DO Session Error]:", error?.message || err);
+      return new Response(
+        JSON.stringify({ error: error?.message || "DO Error" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
-  } catch (err: unknown) {
-    const error = err as Error;
-    console.error("[Chat API Critical Error]:", error?.message || err);
-    console.error("[Chat API Stack]:", error?.stack);
-    const statusCode = error instanceof ChatProxyTimeoutError ? 504 : 500;
-    return new Response(
-      JSON.stringify({ error: error?.message || "Failed to connect to AI service" }),
-      { status: statusCode, headers: { "Content-Type": "application/json" } }
-    );
   }
 }

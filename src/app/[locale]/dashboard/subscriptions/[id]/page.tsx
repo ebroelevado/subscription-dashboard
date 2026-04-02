@@ -35,15 +35,9 @@ import { useSession } from "@/lib/auth-client";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
-
-
-
-async function fetchApi<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? "Request failed");
-  return json.data;
-}
+import { useQueryClient } from "@tanstack/react-query";
+import { fetchApi } from "@/lib/fetch-api";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 export default function SubscriptionDetailPage({
   params,
@@ -54,6 +48,7 @@ export default function SubscriptionDetailPage({
   const tc = useTranslations("common");
   const th = useTranslations("history");
   const { id } = use(params);
+  const qc = useQueryClient();
   const { data: sub, isLoading, isError } = useSubscription(id);
   const [addSeatOpen, setAddSeatOpen] = useState(false);
   const [editSeat, setEditSeat] = useState<typeof sub extends undefined ? never : NonNullable<typeof sub>["clientSubscriptions"][number] | null>(null);
@@ -125,8 +120,7 @@ export default function SubscriptionDetailPage({
         body: JSON.stringify({ action: "pause" }),
       });
       toast.success(t("pauseAll"));
-      pauseMutation.reset(); // trigger cache invalidation via window reload
-      window.location.reload();
+      invalidateAll(qc);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : tc("error"));
     } finally {
@@ -143,7 +137,7 @@ export default function SubscriptionDetailPage({
         body: JSON.stringify({ action: "resume" }),
       });
       toast.success(t("resumeAll"));
-      window.location.reload();
+      invalidateAll(qc);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : tc("error"));
     } finally {

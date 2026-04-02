@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/fetch-api";
 import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 export interface Subscription {
   id: string;
@@ -91,7 +92,7 @@ export function useCreateSubscription() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
+      invalidateAll(qc);
       toast.success("Subscription created");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -119,7 +120,7 @@ export function useUpdateSubscription() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
+      invalidateAll(qc);
       toast.success("Subscription updated");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -134,8 +135,7 @@ export function useDeleteSubscription() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.clients });
+      invalidateAll(qc);
       toast.success("Subscription deleted");
     },
     onError: (err: Error) => toast.error(err.message),

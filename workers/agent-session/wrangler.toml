@@ -1,0 +1,35 @@
+name = "agent-session-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+# For allowing Node APIs in auth/drizzle (though Better Auth/Drizzle usually works natively)
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+# using standard wrangler build means it will transpile TS automatically using esbuild
+
+[[durable_objects.bindings]]
+name = "AGENT_SESSION_DO"
+class_name = "AgentSessionDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AgentSessionDO"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pearfect"
+database_id = "62cd2aa1-e011-486b-9893-d81c0f7a2756"
+# we don't strictly need migrations_dir here if we don't run migrations from the worker
+
+[vars]
+# Ensure env vars needed by AI Gateway and Groq/Together are passed via wrangler secret put or here
+CF_AI_GATEWAY_NAME = "default"
+
+[[queues.producers]]
+binding = "MUTATION_EXEC_QUEUE"
+queue = "mutation-exec-queue"
+
+[[queues.consumers]]
+queue = "mutation-exec-queue"
+max_batch_size = 10
+max_batch_timeout = 5

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { signIn } from "@/lib/auth-client";
+import { signIn, signUp } from "@/lib/auth-client";
 import { Link } from "@/i18n/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -42,16 +42,15 @@ export default function SignupPage() {
   const onSubmit = async (data: SignupInput) => {
     setIsLoading(true);
     try {
-      // 1. Create the account
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      // 1. Create account via Better Auth directly.
+      const signUpRes = await signUp.email({
+        name: (data.name?.trim() || data.email.split("@")[0] || "User"),
+        email: data.email,
+        password: data.password,
       });
 
-      if (!res.ok) {
-        const body = await res.json();
-        toast.error(body.error || "Failed to create account");
+      if (signUpRes?.error) {
+        toast.error(signUpRes.error.message || "Failed to create account");
         return;
       }
 

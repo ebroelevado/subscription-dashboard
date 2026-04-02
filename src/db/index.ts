@@ -210,9 +210,128 @@ function createWrappedSQLiteDb(): SchemaDatabase {
   return wrappedDb;
 }
 
+// Build a wrapped Remote D1 database that talks to our Worker Proxy
+function createRemoteD1Db(): SchemaDatabase {
+  const remoteUrl = process.env.AGENT_SESSION_URL;
+  const secret = process.env.DB_PROXY_SECRET;
+
+  if (!remoteUrl || !secret) {
+    throw new Error("Remote DB requested but AGENT_SESSION_URL or DB_PROXY_SECRET is missing.");
+  }
+
+  const d1Proxy: D1Database = {
+    prepare(sqlStr: string) {
+      return {
+        bind(...values: unknown[]) {
+          return {
+            _sql: sqlStr,
+            _params: values,
+            async run() {
+              const res = await fetch(`${remoteUrl}/query`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sql: sqlStr, params: values, secret, method: "run" }),
+              });
+              if (!res.ok) throw new Error(`Remote D1 Error: ${await res.text()}`);
+              return res.json();
+            },
+            async all() {
+              const res = await fetch(`${remoteUrl}/query`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sql: sqlStr, params: values, secret, method: "all" }),
+              });
+              if (!res.ok) throw new Error(`Remote D1 Error: ${await res.text()}`);
+              return res.json();
+            },
+            async first(colName?: string) {
+              const res = await fetch(`${remoteUrl}/query`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sql: sqlStr, params: values, secret, method: "all" }),
+              });
+              if (!res.ok) throw new Error(`Remote D1 Error: ${await res.text()}`);
+              const result = await res.json() as any;
+              const first = result?.results?.[0];
+              if (!first) return null;
+              return colName ? first[colName] : first;
+            },
+            async raw(options?: { columnNames: boolean }) {
+              const res = await fetch(`${remoteUrl}/query`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sql: sqlStr, params: values, secret, method: "all" }),
+              });
+              if (!res.ok) throw new Error(`Remote D1 Error: ${await res.text()}`);
+              const result = await res.json() as any;
+              const rows = Array.isArray(result?.results) ? result.results : [];
+
+              if (rows.length === 0) {
+                return [];
+              }
+
+              if (Array.isArray(rows[0])) {
+                return rows;
+              }
+
+              const columns = Object.keys(rows[0]);
+              const matrix = rows.map((row: Record<string, unknown>) =>
+                columns.map((col) => row[col])
+              );
+
+              return options?.columnNames ? [columns, ...matrix] : matrix;
+            }
+          } as any;
+        },
+        _sql: sqlStr,
+        _params: [] as unknown[],
+        async run() { return this.bind().run(); },
+        async all() { return this.bind().all(); },
+        async first(colName?: string) { return this.bind().first(colName); },
+        async raw(options?: { columnNames: boolean }) { return this.bind().raw(options); }
+      } as any;
+    },
+    async dump() { throw new Error("Dump not supported on remote D1 proxy"); },
+    async batch(statements: any[]) {
+      const queries = statements.map(s => ({
+        sql: s._sql,
+        params: s._params
+      }));
+      
+      const res = await fetch(`${remoteUrl}/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queries, secret }),
+      });
+      if (!res.ok) throw new Error(`Remote D1 Batch Error: ${await res.text()}`);
+      return res.json();
+    },
+    async exec(sql: string) {
+      const res = await fetch(`${remoteUrl}/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql, secret }),
+      });
+      if (!res.ok) throw new Error(`Remote D1 Error: ${await res.text()}`);
+      const result = await res.json() as any;
+      return { count: result.meta?.changes || 0, duration: 0 };
+    }
+  };
+
+  return createWrappedD1Db(d1Proxy);
+}
+
 // Get database instance - automatically detects context
 export function getDb(): SchemaDatabase {
   if (_cachedDb) {
+    return _cachedDb;
+  }
+
+  // Support for Remote D1 Sync (Real DB) in local development
+  if (process.env.USE_REMOTE_DB === "true") {
+    console.log("🌐 Connecting to REMOTE Cloudflare D1 database via Worker Proxy");
+    _cachedDb = createRemoteD1Db();
+    _cachedDirectDb = _cachedDb;
     return _cachedDb;
   }
 

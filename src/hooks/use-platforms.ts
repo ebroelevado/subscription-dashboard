@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/fetch-api";
 import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 // ── Types ──────────────────────────────────────────────
 export interface Platform {
@@ -36,7 +37,7 @@ export function useCreatePlatform() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.platforms });
+      invalidateAll(qc);
       toast.success("Platform created");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -53,7 +54,7 @@ export function useUpdatePlatform() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.platforms });
+      invalidateAll(qc);
       toast.success("Platform updated");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -68,7 +69,7 @@ export function useDeletePlatform() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.platforms });
+      invalidateAll(qc);
       toast.success("Platform deleted");
     },
     onError: (err: Error) => toast.error(err.message),

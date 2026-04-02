@@ -43,7 +43,27 @@ function parseJsonArray(value: unknown): unknown[] {
   return value as unknown[];
 }
 
-export async function POST(req: Request) {
+async function runUndoInTransaction(fn: (tx: typeof db) => Promise<void>) {
+  try {
+    await db.transaction(async (tx) => fn(tx as unknown as typeof db));
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const beginUnsupported =
+      message.includes("Failed query: begin") ||
+      message.includes("cannot start a transaction") ||
+      message.includes('near "begin"');
+
+    if (!beginUnsupported) {
+      throw error;
+    }
+
+    console.warn("[Mutations/Undo] Transaction BEGIN unsupported. Retrying without explicit transaction.");
+    await fn(db as unknown as typeof db);
+  }
+}
+
+export async function POST(req: Request): Promise<Response> {
   try {
     const session = await getAuthSession();
     if (!session?.user?.id) {
@@ -136,7 +156,7 @@ async function undoMutation(
       });
       if (!client) throw new Error("Client not found or unauthorized.");
 
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         await tx.update(clients).set({
           name: previousValues.name as string,
           phone: (previousValues.phone as string) ?? null,
@@ -154,14 +174,14 @@ async function undoMutation(
       });
       if (!client) throw new Error("Client not found.");
 
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         await tx.delete(clients).where(eq(clients.id, targetId));
       });
       break;
     }
 
     case "updateUserConfig": {
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         await tx.update(users).set(previousValues as Record<string, unknown>).where(eq(users.id, userId));
       });
       break;
@@ -176,7 +196,7 @@ async function undoMutation(
       });
       if (!cs || cs.client.userId !== userId) throw new Error("Assignment not found.");
 
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         await tx.delete(clientSubscriptions).where(eq(clientSubscriptions.id, targetId));
       });
       break;
@@ -197,7 +217,7 @@ async function undoMutation(
       });
       if (!log || log.clientSubscription?.subscription.userId !== userId) throw new Error("Payment log not found.");
 
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         if (log.clientSubscriptionId) {
           await tx.update(clientSubscriptions).set({ activeUntil: log.dueOn }).where(eq(clientSubscriptions.id, log.clientSubscriptionId));
         }
@@ -209,7 +229,7 @@ async function undoMutation(
     case "removeClientsFromSubscription": {
       const items = previousValues as unknown as Array<Record<string, unknown>>;
       if (!items || !items.length) break;
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         // Insert client subscriptions back
         for (const item of items) {
           await tx.insert(clientSubscriptions).values({
@@ -241,7 +261,7 @@ async function undoMutation(
       const items = parseDeletedClientSnapshots(previousValues);
       if (!items || !items.length) break;
       const restoreData = buildDeletedClientRestoreData(userId, items);
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         // Restore clients
         for (const c of restoreData.clients) {
           await tx.insert(clients).values({
@@ -372,7 +392,7 @@ async function undoMutation(
       if (action === "delete") {
         const items = previousValues as unknown as Array<Record<string, unknown>>;
         if (!items || !items.length) break;
-        await db.transaction(async (tx) => {
+        await runUndoInTransaction(async (tx) => {
           for (const sub of items) {
             await tx.insert(subscriptions).values({
               id: sub.id as string,
@@ -465,7 +485,7 @@ async function undoMutation(
 
           if (cs && cs.subscription.userId !== userId) throw new Error("Access denied.");
 
-          await db.transaction(async (tx) => {
+          await runUndoInTransaction(async (tx) => {
             await tx.insert(renewalLogs).values({
               id: prev.id,
               clientSubscriptionId: prev.clientSubscriptionId,
@@ -497,7 +517,7 @@ async function undoMutation(
         });
         if (!log || log.clientSubscription?.subscription.userId !== userId) throw new Error("Payment log not found for undo.");
 
-        await db.transaction(async (tx) => {
+        await runUndoInTransaction(async (tx) => {
           await tx.update(renewalLogs).set({
             amountPaid: amountToCents(prev.amountPaid),
             paidOn: toDateStr(prev.paidOn),
@@ -518,7 +538,7 @@ async function undoMutation(
       }>;
       if (!items || !items.length) break;
 
-      await db.transaction(async (tx) => {
+      await runUndoInTransaction(async (tx) => {
         // Restore each seat to its original status, grouped by status for efficiency
         const byStatus: Record<string, string[]> = {};
         for (const item of items) {

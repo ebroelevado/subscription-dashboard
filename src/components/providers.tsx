@@ -19,8 +19,8 @@ export function Providers({ children, locale, messages }: ProvidersProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 2 * 60 * 1000, // 2 min — data stays fresh across navigation
-            gcTime: 10 * 60 * 1000,   // 10 min — cache entries survive longer
+            staleTime: 0,            // always stale — refetch on mount after invalidation
+            gcTime: 10 * 60 * 1000,  // 10 min — cache entries survive longer
             refetchOnWindowFocus: false,
           },
         },

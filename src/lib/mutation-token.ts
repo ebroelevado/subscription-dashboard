@@ -8,7 +8,7 @@
  *   4. The execute endpoint applies the mutation inside a transaction
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { mutationAuditLogs } from "@/db/schema";
 
@@ -84,10 +84,57 @@ export async function validateAndConsumeMutationToken(
     throw new Error("Token has expired. Propose the change again.");
   }
 
-  // Mark as consumed
-  await db.update(mutationAuditLogs).set({ executedAt: new Date().toISOString() }).where(eq(mutationAuditLogs.id, auditLog.id));
+  // Mark as consumed atomically. Under concurrent accepts, only one request can
+  // transition executedAt from null -> timestamp.
+  const consumedAt = new Date().toISOString();
+  const consumedRows = await db
+    .update(mutationAuditLogs)
+    .set({ executedAt: consumedAt })
+    .where(
+      and(
+        eq(mutationAuditLogs.id, auditLog.id),
+        eq(mutationAuditLogs.userId, userId),
+        isNull(mutationAuditLogs.executedAt)
+      )
+    )
+    .returning({ id: mutationAuditLogs.id });
 
-  return auditLog;
+  if (!consumedRows.length) {
+    // Re-read to return a deterministic error in race conditions.
+    const refreshed = await db.query.mutationAuditLogs.findFirst({
+      where: eq(mutationAuditLogs.id, auditLog.id),
+    });
+
+    if (!refreshed) {
+      throw new Error("Invalid or not found token.");
+    }
+
+    if (refreshed.executedAt) {
+      throw new Error("This change has already been executed.");
+    }
+
+    if (new Date() > new Date(refreshed.expiresAt)) {
+      throw new Error("Token has expired. Propose the change again.");
+    }
+
+    throw new Error("Unable to consume mutation token. Please retry.");
+  }
+
+  return { ...auditLog, executedAt: consumedAt };
+}
+
+/**
+ * Re-open a consumed token when execution fails after consumption.
+ * This allows the user to retry the exact same accepted action.
+ */
+export async function rollbackConsumedMutationToken(
+  auditLogId: string,
+  userId: string
+) {
+  await db
+    .update(mutationAuditLogs)
+    .set({ executedAt: null })
+    .where(and(eq(mutationAuditLogs.id, auditLogId), eq(mutationAuditLogs.userId, userId)));
 }
 
 /**

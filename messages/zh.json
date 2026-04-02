@@ -561,6 +561,8 @@
     "daysAgo": "{count}天前"
   },
   "chat": {
+    "errorTitle": "连接错误",
+    "retry": "重试",
     "placeholder": "询问有关您的客户...",
     "emptyTitle": "今天我能帮您什么？",
     "emptyDescription": "您可以询问有关客户、活跃订阅、收入指标或其他业务相关的任何问题。",

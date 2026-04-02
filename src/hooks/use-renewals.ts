@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/fetch-api";
-import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 // ── Client Renewal: client pays me → extend their seat ──
 
@@ -28,11 +28,7 @@ export function useRenewClient() {
         }),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsPlatformContribution });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Client renewed successfully");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -60,11 +56,7 @@ export function useRenewBulkClients() {
         }),
       }),
     onSuccess: (result, variables) => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsPlatformContribution });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success(
         `Successfully renewed ${result.renewed} service${result.renewed !== 1 ? "s" : ""} for ${variables.clientName}`
       );
@@ -94,9 +86,7 @@ export function useRenewPlatform() {
         }),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsPlatformContribution });
+      invalidateAll(qc);
       toast.success("Platform subscription renewed");
     },
     onError: (err: Error) => toast.error(err.message),

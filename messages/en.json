@@ -569,6 +569,8 @@
     "daysAgo": "{count}d ago"
   },
   "chat": {
+    "errorTitle": "Connection Error",
+    "retry": "Retry",
     "placeholder": "Ask about your clients...",
     "emptyTitle": "How can I help you today?",
     "emptyDescription": "Ask me about your clients, active subscriptions, revenue metrics, or anything else about your business.",

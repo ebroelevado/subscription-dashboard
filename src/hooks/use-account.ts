@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/fetch-api";
 import { signOut } from "@/lib/auth-client";
 import type { UpdateProfileInput } from "@/lib/validations/account";
-import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 // ── Update Profile ──
 export function useUpdateProfile() {
@@ -34,22 +34,8 @@ export function useUpdateSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       }),
-    onSuccess: (_, variables) => {
-      // If discipline penalty changes, we must force a refetch of discipline APIs
-      // so the charts and scores reflect the new mathematical formula immediately
-      if (variables.disciplinePenalty !== undefined) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-        queryClient.invalidateQueries({ queryKey: ["analytics-discipline"] });
-      }
-      if (variables.currency !== undefined) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.analyticsSummary });
-        queryClient.invalidateQueries({ queryKey: ["analytics-history"] });
-        queryClient.invalidateQueries({ queryKey: ["analytics-trends"] });
-        queryClient.invalidateQueries({ queryKey: queryKeys.analyticsPlatformContribution });
-        queryClient.invalidateQueries({ queryKey: queryKeys.analyticsClients });
-        queryClient.invalidateQueries({ queryKey: queryKeys.analyticsBreakEven });
-        queryClient.invalidateQueries({ queryKey: queryKeys.clients });
-      }
+    onSuccess: () => {
+      invalidateAll(queryClient);
     }
   });
 }
@@ -78,6 +64,7 @@ export function useExportData() {
 
 // ── Import Data ──
 export function useImportData() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: unknown) =>
       fetchApi("/api/account/import", {
@@ -85,6 +72,9 @@ export function useImportData() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       }),
+    onSuccess: () => {
+      invalidateAll(qc);
+    },
   });
 }
 

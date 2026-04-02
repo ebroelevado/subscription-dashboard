@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/fetch-api";
-import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 export function useCreateSeat() {
   const qc = useQueryClient();
@@ -25,10 +25,7 @@ export function useCreateSeat() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Seat assigned");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -56,10 +53,7 @@ export function useUpdateSeat() {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Seat updated");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -76,10 +70,7 @@ export function usePauseSeat() {
         body: JSON.stringify({ status: "paused" }),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Seat paused");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -96,10 +87,7 @@ export function useResumeSeat() {
         body: JSON.stringify({ status: "active" }),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Seat reactivated — remaining paid days restored");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -114,10 +102,7 @@ export function useCancelSeat() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allSubscriptions });
-      qc.invalidateQueries({ queryKey: queryKeys.dashboardStats });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Seat removed (hard delete)");
     },
     onError: (err: Error) => toast.error(err.message),

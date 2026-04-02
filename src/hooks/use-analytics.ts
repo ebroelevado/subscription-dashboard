@@ -107,7 +107,7 @@ export interface DisciplineData {
 
 // ── Shared config — analytics data changes rarely ──
 
-const ANALYTICS_STALE = 5 * 1000; // 5 seconds (temporary for debugging)
+const ANALYTICS_STALE = 30 * 1000; // 30 seconds
 
 // ── Hooks ──
 

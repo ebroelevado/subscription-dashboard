@@ -8,9 +8,11 @@ import { getDirectDb } from "@/db";
 import * as schema from "@/db/schema";
 import bcrypt from "bcryptjs";
 
+const authSecret = process.env.AUTH_SECRET || "dev-auth-secret-change-in-production";
+
 export const auth = betterAuth({
   baseURL: process.env.AUTH_URL || "http://localhost:3000",
-  secret: process.env.AUTH_SECRET,
+  secret: authSecret,
   database: drizzleAdapter(getDirectDb(), {
     provider: "sqlite",
     schema: {
@@ -50,6 +52,11 @@ export const auth = betterAuth({
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
     },
+  },
+  account: {
+    // In local dev with mixed runtimes (vinext/next/worker proxy), keeping OAuth state
+    // in encrypted cookie is more robust than DB-backed state rows.
+    storeStateStrategy: "cookie",
   },
   session: {
     expiresIn: 30 * 24 * 60 * 60, // 30 days

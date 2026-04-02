@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users, accounts } from "@/db/schema";
 import { z } from "zod";
@@ -15,38 +15,78 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { email, password, name } = signupSchema.parse(body);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const existingUser = await db.query.users.findFirst({
       where: eq(users.email, email),
     });
 
     if (existingUser) {
+      const existingCredentialAccount = await db.query.accounts.findFirst({
+        where: and(
+          eq(accounts.userId, existingUser.id),
+          eq(accounts.providerId, "credential")
+        ),
+      });
+
+      // Auto-repair legacy partial signups where user exists without credential account.
+      if (!existingCredentialAccount) {
+        const passwordToStore = existingUser.password ?? hashedPassword;
+
+        await db.insert(accounts).values({
+          userId: existingUser.id,
+          accountId: existingUser.id,
+          providerId: "credential",
+          password: passwordToStore,
+        });
+
+        if (!existingUser.password) {
+          await db
+            .update(users)
+            .set({ password: passwordToStore })
+            .where(eq(users.id, existingUser.id));
+        }
+
+        return NextResponse.json({
+          ok: true,
+          repaired: true,
+          user: {
+            id: existingUser.id,
+            email: existingUser.email,
+            name: existingUser.name,
+          },
+        });
+      }
+
       return NextResponse.json(
         { error: "User already exists" },
         { status: 400 }
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Generate IDs explicitly so we don't depend on driver-specific RETURNING behavior.
+    const userId = crypto.randomUUID();
 
     // Create the user
-    const [user] = await db.insert(users).values({
+    await db.insert(users).values({
+      id: userId,
       email,
       password: hashedPassword,
       name,
-    }).returning({ id: users.id, email: users.email, name: users.name });
+    });
 
     // Create credential account for better-auth
     await db.insert(accounts).values({
-      userId: user.id,
-      accountId: email,
+      userId,
+      // Better Auth uses the user id as credential accountId in sign-up flow.
+      accountId: userId,
       providerId: "credential",
       password: hashedPassword,
     });
 
     return NextResponse.json({
       ok: true,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: { id: userId, email, name },
     });
   } catch (error) {
     console.error("Signup error details:", error);

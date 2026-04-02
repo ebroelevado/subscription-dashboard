@@ -55,7 +55,6 @@ export function usePrefetch() {
       qc.prefetchQuery({
         queryKey: config.queryKey,
         queryFn: () => fetchApi(config.url),
-        staleTime: 2 * 60 * 1000, // match global default
       });
     },
     [qc],

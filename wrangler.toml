@@ -5,6 +5,12 @@ compatibility_flags = ["nodejs_compat"]
 # Cloudflare Pages build output
 pages_build_output_dir = ".vercel/output/static"
 
+[[durable_objects.bindings]]
+name = "AGENT_SESSION_DO"
+class_name = "AgentSessionDO"
+script_name = "agent-session-worker"
+
+
 # D1 Database binding
 [[d1_databases]]
 binding = "DB"

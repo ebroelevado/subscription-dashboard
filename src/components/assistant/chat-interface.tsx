@@ -36,12 +36,20 @@ type ExtendedUIMessagePart = {
   result?: unknown;
   output?: unknown;
   state?: string;
-  toolInvocation?: { state: string; result?: unknown; args?: unknown };
+  toolInvocation?: { state: string; result?: unknown; args?: unknown; toolName?: string; toolCallId?: string; error?: string };
   toolCall?: { toolName: string; args?: unknown };
   input?: unknown;
 };
 
 const FULL_CONTROL_WARNING_KEY = "assistant-full-control-warning-dismissed";
+const STREAM_STOP_WAIT_MS = 2000;
+const STALLED_STREAM_TIMEOUT_MS = 90000;
+const QUEUE_POLL_MAX_ATTEMPTS = 30;
+const QUEUE_POLL_DELAY_MS = 1000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function Spinner({ className }: { className?: string }) {
   return (
@@ -253,8 +261,9 @@ function RotatingPhrase({ phrases, intervalMs = 2500 }: { phrases: string[]; int
 }
 
 
-function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejectedActionIds, acceptedActionIds }: { 
+function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, executedMutations, rejectedActionIds, acceptedActionIds }: {
   part: ExtendedUIMessagePart & { toolInvocation?: { toolName?: string; state: string; result?: unknown; args?: unknown; error?: string }; errorText?: string },
+  stableToolCallId?: string,
   onConfirm?: (toolName: string, args: any, accepted: boolean, toolCallId?: string) => void,
   onUndo?: (toolName: string) => void,
   executedMutations?: Map<string, { auditLogId: string; toolName: string; undone?: boolean }>,
@@ -517,7 +526,7 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
 
            if (!confirmData) return null;
 
-           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId;
+           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
            
            // If we've dismissed (rejected) this action, show a collapsed view
            if (callId && rejectedActionIds?.has(callId)) {
@@ -533,7 +542,7 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
            const token = confirmData?.__token as string | undefined;
            const executionResult = token ? executedMutations?.get(token) : undefined;
            const expiresAt = confirmData?.expiresAt ? new Date(confirmData.expiresAt as string) : null;
-           const isExpired = expiresAt && expiresAt < new Date() && !executionResult && !acceptedActionIds?.has(callId);
+           const isExpired = !!(expiresAt && expiresAt.getTime() < Date.now() && !executionResult && !acceptedActionIds?.has(callId));
 
            // If this token has been executed, show the Undo button
            if (executionResult) {
@@ -557,14 +566,22 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
                          headers: { "Content-Type": "application/json" },
                          body: JSON.stringify({ auditLogId: executionResult.auditLogId }),
                        });
-                       const data = await res.json();
-                       if (data.success) {
+                       const rawBody = await res.text();
+                       let data: any = null;
+                       if (rawBody) {
+                         try {
+                           data = JSON.parse(rawBody);
+                         } catch {
+                           data = null;
+                         }
+                       }
+                       if (data?.success) {
                          // Mark as undone in local state
                          executedMutations?.set(token!, { ...executionResult, undone: true });
                          // Force a re-render by notifying the AI
                          onUndo?.(toolName);
                        } else {
-                         console.error("[Undo] Error:", data.error);
+                         console.error("[Undo] Error:", data?.error || rawBody || `HTTP ${res.status}`);
                        }
                      } catch (err) {
                        console.error("[Undo] Network error:", err);
@@ -630,7 +647,7 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
                      <>
                        <Button
                          onClick={() => {
-                            const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId;
+                           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
                             onConfirm?.(toolName, { ...(confirmData.pendingChanges as Record<string, unknown> || {}), __token: confirmData?.__token }, true, callId);
                          }}
                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
@@ -641,7 +658,7 @@ function ToolInvocationBlock({ part, onConfirm, onUndo, executedMutations, rejec
                        <Button
                          variant="outline"
                          onClick={() => {
-                            const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId;
+                           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
                             onConfirm?.(toolName, confirmData.pendingChanges || formattedArgs, false, callId);
                          }}
                          className="flex-1 border-red-500/30 hover:bg-red-500/10 text-red-400 font-bold py-2.5 rounded-xl text-sm transition-all active:scale-[0.97]"
@@ -770,13 +787,128 @@ export function ChatInterface() {
   };
 
   // Vercel AI SDK — useChat
-  const { messages, sendMessage, status, setMessages, stop, error: chatError } = useChat({
+  const { messages, sendMessage, status, setMessages, stop, error: chatError, regenerate } = useChat({
     onError: (err) => {
       console.error("AI SDK Chat Error:", err);
     },
+    onFinish: (options) => {
+      if (options.isAbort) {
+        console.warn("[Chat] Stream was aborted");
+      }
+      if (options.isDisconnect) {
+        console.warn("[Chat] Stream disconnected unexpectedly");
+      }
+      if (options.isError) {
+        console.error("[Chat] Stream finished with error");
+      }
+    },
   });
+  const statusRef = useRef(status);
+  const activePollControllerRef = useRef<AbortController | null>(null);
+  const confirmingTokensRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    return () => {
+      activePollControllerRef.current?.abort();
+      activePollControllerRef.current = null;
+    };
+  }, []);
 
   const isPremiumRequired = chatError?.message?.includes("PREMIUM_REQUIRED") || (chatError as any)?.data?.code === "PREMIUM_REQUIRED";
+
+  const waitForStreamToStop = useCallback(async () => {
+    if (statusRef.current !== "streaming" && statusRef.current !== "submitted") {
+      return;
+    }
+
+    stop();
+    const deadline = Date.now() + STREAM_STOP_WAIT_MS;
+    while ((statusRef.current === "streaming" || statusRef.current === "submitted") && Date.now() < deadline) {
+      await sleep(25);
+    }
+  }, [stop]);
+
+  const clearAcceptedAction = useCallback((callId?: string | null) => {
+    if (!callId) return;
+    setAcceptedActionIds((prev) => {
+      const next = new Set(prev);
+      next.delete(callId);
+      return next;
+    });
+  }, []);
+
+  const waitForMutationExecuted = useCallback(async (token: string, signal?: AbortSignal) => {
+    for (let attempt = 0; attempt < QUEUE_POLL_MAX_ATTEMPTS; attempt++) {
+      if (signal?.aborted) {
+        throw new Error("Execution status polling was cancelled.");
+      }
+
+      await sleep(QUEUE_POLL_DELAY_MS);
+
+      let statusRes: Response;
+      try {
+        statusRes = await fetch("/api/mutations/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+          signal,
+        });
+      } catch (statusError) {
+        if ((statusError as any)?.name === "AbortError") {
+          throw new Error("Execution status polling was cancelled.");
+        }
+        if (attempt === QUEUE_POLL_MAX_ATTEMPTS - 1) {
+          throw new Error("Unable to check mutation status. Please retry.");
+        }
+        continue;
+      }
+
+      let statusData: any = null;
+      try {
+        statusData = await statusRes.json();
+      } catch {
+        if (attempt === QUEUE_POLL_MAX_ATTEMPTS - 1) {
+          throw new Error("Unable to parse mutation status response.");
+        }
+        continue;
+      }
+
+      if (!statusRes.ok) {
+        const statusErrorMessage = statusData?.error || `Status check failed (HTTP ${statusRes.status}).`;
+        if (statusRes.status === 401 || statusRes.status === 403 || statusRes.status === 404) {
+          throw new Error(statusErrorMessage);
+        }
+        if (statusData?.status === "expired") {
+          throw new Error(statusData?.error || "Token has expired. Propose the change again.");
+        }
+        if (attempt === QUEUE_POLL_MAX_ATTEMPTS - 1) {
+          throw new Error(statusErrorMessage);
+        }
+        continue;
+      }
+
+      if (statusData?.status === "executed") {
+        if (!statusData?.auditLogId || typeof statusData.auditLogId !== "string") {
+          throw new Error("Mutation was executed but audit log details are invalid.");
+        }
+        return { auditLogId: statusData.auditLogId as string };
+      }
+
+      if (statusData?.status === "expired" || statusData?.status === "invalid" || statusData?.status === "forbidden") {
+        throw new Error(statusData?.error || "Token has expired. Propose the change again.");
+      }
+
+      if (statusData?.status === "failed_permanent") {
+        throw new Error(statusData?.error || "Mutation failed permanently.");
+      }
+    }
+
+    throw new Error("Queued execution is taking too long. Please retry in a few seconds.");
+  }, []);
 
   // HITL (Human-in-the-Loop) state — moved before auto-save hook to avoid ordering issues
   type HitlPending = {
@@ -903,7 +1035,7 @@ export function ChatInterface() {
             const res = findConfirmation(candidate);
             if (!res) continue;
 
-            const toolCallId = (part as any).toolCallId ?? (part as any).toolInvocation?.toolCallId ?? crypto.randomUUID();
+            const toolCallId = (part as any).toolCallId ?? (part as any).toolInvocation?.toolCallId ?? `msg-${i}-part-${j}`;
 
             // Optimistically hide if the user just clicked Aceptar/Rechazar 
             if (rejectedActionIds.has(toolCallId) || acceptedActionIds.has(toolCallId)) continue;
@@ -932,7 +1064,23 @@ export function ChatInterface() {
       }
     }
     return null;
-  }, [messages, status, executedMutations, findConfirmation, rejectedActionIds, acceptedActionIds]);
+  }, [messages, executedMutations, findConfirmation, rejectedActionIds, acceptedActionIds]);
+
+  // Parsing markdown/thinking tags for every text part is expensive and was
+  // being recomputed on every render (including input typing). Cache per
+  // message-part and recompute only when `messages` changes.
+  const parsedTextParts = useMemo(() => {
+    const parsed = new Map<string, { type: string; content: string; isComplete?: boolean }[]>();
+    messages.forEach((msg, messageIndex) => {
+      const parts = (msg.parts ?? []) as ExtendedUIMessagePart[];
+      parts.forEach((part, partIndex) => {
+        if (part.type !== "text") return;
+        const rawText = typeof part.text === "string" ? part.text : String(part.text ?? "");
+        parsed.set(`${messageIndex}-${partIndex}`, parseTextWithThinking(rawText));
+      });
+    });
+    return parsed;
+  }, [messages]);
 
 
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -956,7 +1104,7 @@ export function ChatInterface() {
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (hitlPending || !input.trim() || !sendMessage) return;
+    if (!input.trim() || !sendMessage) return;
 
     // SaaS Usage Tracking: Increment points (ultra-fast costs 0.2, fast 0.3, default 0.5)
     const cost = selectedModel === "ultra-fast" ? 0.2 : selectedModel === "fast" ? 0.3 : 0.5;
@@ -977,88 +1125,151 @@ export function ChatInterface() {
     }
   };
 
-  const handleUndoTool = async (toolName: string) => {
+  const appendLocalAssistantNote = useCallback((text: string) => {
+    setMessages((prev) => {
+      const note = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        parts: [{ type: "text", text }],
+      } as unknown as UIMessage;
+      return [...prev, note];
+    });
+  }, [setMessages]);
+
+  const notifyAgentMutationOutcome = useCallback(async (toolName: string, auditLogId: string) => {
     if (!sendMessage) return;
-    // Abort any in-flight AI stream and wait for SDK cleanup before sending
-    if (status === "streaming" || status === "submitted") {
-      stop();
-      await new Promise(r => setTimeout(r, 80));
-    }
-    sendMessage(
-      { text: `${t("chat.undo")} <!-- [SYSTEM] Action ${toolName} undone successfully. User has reverted changes. -->` },
-      { body: { model: selectedModel || undefined, allowDestructive } }
-    );
+
+    const sendNotification = async (retries = 2): Promise<void> => {
+      try {
+        sendMessage(
+          { text: `${t("chat.accept")} <!-- [SYSTEM] Mutation ${toolName} executed successfully. AuditLogId: ${auditLogId}. Continue with the next required step if any. -->` },
+          { body: { model: selectedModel || undefined, allowDestructive } }
+        );
+      } catch (err) {
+        console.error("[NotifyAgent] Failed to send notification:", err);
+        if (retries > 0) {
+          await sleep(1000);
+          return sendNotification(retries - 1);
+        }
+        appendLocalAssistantNote("⚠️ La mutación se ejecutó correctamente pero no pude continuar automáticamente. Escribe \"continúa\" para reanudar.");
+      }
+    };
+
+    await sendNotification();
+  }, [sendMessage, t, selectedModel, allowDestructive, appendLocalAssistantNote]);
+
+  const handleUndoTool = async (toolName: string) => {
+    // Stop active stream before injecting the local confirmation message.
+    await waitForStreamToStop();
+    appendLocalAssistantNote(`${t("chat.undo")} ✅ ${toolName}`);
   };
 
   const handleConfirmTool = async (toolName: string, args: any, accepted: boolean, toolCallId?: string) => {
-    // If the user clicks Aceptar/Rechazar while the AI is still streaming its explanation,
-    // we MUST abort the stream and wait for SDK cleanup before injecting the confirmation message.
-    if (status === "streaming" || status === "submitted") {
-      stop();
-      await new Promise(r => setTimeout(r, 80));
-    }
-    
-    if (!sendMessage) return;
+    await waitForStreamToStop();
     
     const targetCallId = toolCallId || (hitlPending && hitlPending.toolName === toolName ? hitlPending.toolCallId : null);
     
     if (!accepted) {
       if (targetCallId) setRejectedActionIds(prev => new Set(prev).add(targetCallId));
-      
-      // Just tell the AI it was rejected (no DB call needed)
-      sendMessage(
-        { text: `${t("chat.reject")} <!-- [SYSTEM] I do not confirm the action: ${toolName}. Cancelled. -->` },
-        { body: { model: selectedModel || undefined, allowDestructive } }
-      );
+      appendLocalAssistantNote(`${t("chat.reject")} ❌ ${toolName}`);
       return;
     } else {
       if (targetCallId) setAcceptedActionIds(prev => new Set(prev).add(targetCallId));
     }
 
     // Extract the crypto token from the tool output
-    const token = args?.__token;
+    const token = args?.__token || hitlPending?.__token;
     if (!token) {
-      // Fallback: if no token (shouldn't happen with new system), tell the AI
-      sendMessage(
-        { text: `${t("chat.accept")} <!-- [SYSTEM] Yes, confirm the action: ${toolName}. -->` },
-        { body: { model: selectedModel || undefined, allowDestructive } }
-      );
+      clearAcceptedAction(targetCallId);
+      appendLocalAssistantNote(`${t("chat.accept")} ⚠️ ${toolName}: token no disponible para ejecutar.`);
       return;
     }
 
+    if (confirmingTokensRef.current.has(token)) {
+      return;
+    }
+    confirmingTokensRef.current.add(token);
+
     // === DIRECT BACKEND EXECUTION — bypasses AI entirely ===
+    let pollController: AbortController | null = null;
     try {
       const res = await fetch("/api/mutations/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      const data = await res.json();
+      let rawBody = "";
+      let data: any = null;
+      try {
+        rawBody = await res.text();
+        if (rawBody) {
+          try {
+            data = JSON.parse(rawBody);
+          } catch {
+            data = null;
+          }
+        }
+      } catch (decodeError) {
+        // Some proxy paths can return HTTP 200 but fail body decoding.
+        // Verify execution via status endpoint before surfacing an error.
+        if (res.ok) {
+          const executed = await waitForMutationExecuted(token);
+          setExecutedMutations(prev => {
+            const next = new Map(prev);
+            next.set(token, { auditLogId: executed.auditLogId, toolName });
+            return next;
+          });
+          clearAcceptedAction(targetCallId);
+          appendLocalAssistantNote(`${t("chat.accept")} ✅ ${toolName}`);
+          return;
+        }
+        throw decodeError;
+      }
 
-      if (data.success) {
+      if (!res.ok) {
+        throw new Error(data?.error || rawBody || `HTTP ${res.status}`);
+      }
+
+      if (data?.queued) {
+        pollController = new AbortController();
+        activePollControllerRef.current?.abort();
+        activePollControllerRef.current = pollController;
+        const executed = await waitForMutationExecuted(token, pollController.signal);
+
+        setExecutedMutations(prev => {
+          const next = new Map(prev);
+          next.set(token, { auditLogId: executed.auditLogId, toolName });
+          return next;
+        });
+        clearAcceptedAction(targetCallId);
+        appendLocalAssistantNote(`${t("chat.accept")} ✅ ${toolName} (${t("chat.executing")}: queue OK)`);
+        notifyAgentMutationOutcome(toolName, executed.auditLogId);
+        return;
+      }
+
+      if (data?.success) {
         // Track this token as executed so the ToolInvocationBlock can show Undo
         setExecutedMutations(prev => {
           const next = new Map(prev);
           next.set(token, { auditLogId: data.auditLogId, toolName });
           return next;
         });
-        // Inform the AI post-facto so it can acknowledge in the conversation
-        sendMessage(
-          { text: `${t("chat.accept")} <!-- [SYSTEM] Mutation ${toolName} executed successfully. AuditLogId: ${data.auditLogId}. Result: ${JSON.stringify(data.result?.message || "OK")} -->` },
-          { body: { model: selectedModel || undefined, allowDestructive } }
-        );
+        clearAcceptedAction(targetCallId);
+        appendLocalAssistantNote(`${t("chat.accept")} ✅ ${toolName}`);
+        notifyAgentMutationOutcome(toolName, data.auditLogId);
       } else {
-        sendMessage(
-          { text: `${t("chat.accept")} <!-- [SYSTEM] Error executing ${toolName}: ${data.error} -->` },
-          { body: { model: selectedModel || undefined, allowDestructive } }
-        );
+        throw new Error(data?.error || rawBody || "Invalid empty response from mutation execute endpoint");
       }
     } catch (err) {
       console.error("[Execute] Network error:", err);
-      sendMessage(
-        { text: `${t("chat.accept")} <!-- [SYSTEM] Network error executing ${toolName}. -->` },
-        { body: { model: selectedModel || undefined, allowDestructive } }
-      );
+      clearAcceptedAction(targetCallId);
+      const message = err instanceof Error ? err.message : "Unknown network error";
+      appendLocalAssistantNote(`${t("chat.accept")} ❌ ${toolName}: ${message}`);
+    } finally {
+      confirmingTokensRef.current.delete(token);
+      if (pollController && activePollControllerRef.current === pollController) {
+        activePollControllerRef.current = null;
+      }
     }
   };
 
@@ -1082,6 +1293,33 @@ export function ChatInterface() {
   };
 
   const isLoading = (status === "submitted" || status === "streaming") && !chatError;
+
+  // Recover automatically when a streaming request gets stuck and blocks the input.
+  useEffect(() => {
+    if (status !== "submitted" && status !== "streaming") return;
+
+    const timeoutId = setTimeout(() => {
+      if (statusRef.current === "submitted" || statusRef.current === "streaming") {
+        console.warn("[Chat] Stream watchdog triggered. Stopping stalled request.");
+        stop();
+
+        // After a brief delay, try to regenerate the last response
+        setTimeout(() => {
+          if (statusRef.current === "ready" && messages.length > 0) {
+            const hasAssistantMessage = messages.some(m => m.role === "assistant");
+            if (hasAssistantMessage) {
+              console.log("[Chat] Attempting auto-recovery via regenerate...");
+              regenerate();
+            } else {
+              console.warn("[Chat] No assistant message to regenerate from.");
+            }
+          }
+        }, 1500);
+      }
+    }, STALLED_STREAM_TIMEOUT_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [status, messages, stop, regenerate]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -1172,7 +1410,8 @@ export function ChatInterface() {
           const tState = (lastPart as any).toolInvocation?.state || (lastPart as any).state;
           if (tState !== 'result' && tState !== 'error') isVisiblyActive = true;
         } else if (lastPart.type === 'text') {
-          const parsed = parseTextWithThinking(lastPart.text || "");
+          const rawText = typeof lastPart.text === "string" ? lastPart.text : String(lastPart.text ?? "");
+          const parsed = parseTextWithThinking(rawText);
           const lastP = parsed[parsed.length - 1];
           if (lastP) {
             if (lastP.type === 'thinking' && !lastP.isComplete) isVisiblyActive = true;
@@ -1271,7 +1510,7 @@ export function ChatInterface() {
                   >
                     {m.parts && m.parts.length > 0 && m.parts.map((part: ExtendedUIMessagePart, i: number) => {
                       if (part.type === 'text') {
-                        const parsed = parseTextWithThinking(part.text || "");
+                        const parsed = parsedTextParts.get(`${index}-${i}`) || [];
                         return parsed.map((p: { type: string; content: string; isComplete?: boolean }, j: number) => {
                           if (p.type === "thinking") {
                             return <ReasonerBlock key={`${i}-${j}`} text={p.content.trim()} isThinking={!p.isComplete} />;
@@ -1292,7 +1531,8 @@ export function ChatInterface() {
                             // If the tag is closed AND we already have a tool call part after it,
                             // or it's not the active message anymore, hide it.
                             if (p.isComplete && (!isActiveMessage || hasToolCallAfterThis)) return null;
-                            const toolLabel = p.content.trim() || (t.raw('chat.thinkingPhrases') as string[])[0];
+                            const thinkingPhrases = t.raw('chat.thinkingPhrases') as string[] | undefined;
+                            const toolLabel = p.content.trim() || (Array.isArray(thinkingPhrases) && thinkingPhrases.length > 0 ? thinkingPhrases[0] : t("chat.querying"));
                             return (
                               <div key={`${i}-${j}`} className="my-3 flex items-center gap-3 animate-in fade-in slide-in-from-left-1 duration-300">
                                 <div className="relative size-5 shrink-0">
@@ -1349,7 +1589,7 @@ export function ChatInterface() {
                       }
                       
                       if (part.type === 'tool-invocation' || part.type?.startsWith('tool-') || part.type === 'dynamic-tool' || part.type === 'tool-call') {
-                        return <ToolInvocationBlock key={i} part={part} onConfirm={handleConfirmTool} onUndo={handleUndoTool} executedMutations={executedMutations} rejectedActionIds={rejectedActionIds} acceptedActionIds={acceptedActionIds} />;
+                        return <ToolInvocationBlock key={i} part={part} stableToolCallId={`msg-${index}-part-${i}`} onConfirm={handleConfirmTool} onUndo={handleUndoTool} executedMutations={executedMutations} rejectedActionIds={rejectedActionIds} acceptedActionIds={acceptedActionIds} />;
                       }
                       return null;
                     })}
@@ -1359,8 +1599,9 @@ export function ChatInterface() {
                   {m.role !== "user" && (status !== "streaming" || messages.indexOf(m) < messages.length - 1) && (
                     <div className="flex items-center gap-1 mt-2 px-1.5 opacity-40 hover:opacity-100 transition-opacity">
                       <CopyButton 
-                        text={m.parts?.filter((p) => p.type === 'text').map((p) => {
-                          const parsed = parseTextWithThinking(p.text || "");
+                        text={m.parts?.map((p, partIndex) => {
+                          if (p.type !== 'text') return "";
+                          const parsed = parsedTextParts.get(`${index}-${partIndex}`) || [];
                           return parsed.filter(t => t.type === 'text').map(t => t.content).join("").trim();
                         }).filter(Boolean).join("\n") || ""} 
                       />
@@ -1500,21 +1741,14 @@ export function ChatInterface() {
               </div>
 
               <div className="flex items-center gap-2">
-                {isLoading || hitlPending ? (
+                {isLoading ? (
                   <Button 
                     type="button"
                     size="icon"
                     onClick={() => {
                       if (isLoading) stop();
-                      if (hitlPending) {
-                        handleConfirmTool(hitlPending.toolName, hitlPending.pendingChanges, false, hitlPending.toolCallId);
-                      }
                     }}
-                    className={`size-9 rounded-full shrink-0 shadow-lg transition-all active:scale-95 ${
-                      hitlPending 
-                        ? "bg-amber-500 hover:bg-amber-600 animate-pulse text-white" 
-                        : "bg-foreground hover:bg-foreground/90"
-                    }`}
+                    className="size-9 rounded-full shrink-0 shadow-lg transition-all active:scale-95 bg-foreground hover:bg-foreground/90"
                   >
                     <Square className="size-3.5 fill-current" />
                   </Button>

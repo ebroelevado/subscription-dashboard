@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/fetch-api";
 import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 // ── Types ──────────────────────────────────────────────
 export interface Plan {
@@ -46,8 +47,7 @@ export function useCreatePlan() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allPlans });
-      qc.invalidateQueries({ queryKey: queryKeys.platforms }); // refresh plan count
+      invalidateAll(qc);
       toast.success("Plan created");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -67,8 +67,7 @@ export function useUpdatePlan() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allPlans });
-      qc.invalidateQueries({ queryKey: queryKeys.platforms });
+      invalidateAll(qc);
       toast.success("Plan updated");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -83,8 +82,7 @@ export function useDeletePlan() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.allPlans });
-      qc.invalidateQueries({ queryKey: queryKeys.platforms });
+      invalidateAll(qc);
       toast.success("Plan deleted");
     },
     onError: (err: Error) => toast.error(err.message),

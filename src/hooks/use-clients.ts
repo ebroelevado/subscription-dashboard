@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchApi } from "@/lib/fetch-api";
 import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 export interface Client {
   id: string;
@@ -97,7 +98,7 @@ export function useCreateClient() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.clients });
+      invalidateAll(qc);
       toast.success("Client created");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -114,9 +115,7 @@ export function useUpdateClient() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.clients });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Client updated");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -131,9 +130,7 @@ export function useDeleteClient() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.clients });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsClientsDiscipline });
-      qc.invalidateQueries({ queryKey: queryKeys.analyticsDiscipline({}) });
+      invalidateAll(qc);
       toast.success("Client deleted");
     },
     onError: (err: Error) => toast.error(err.message),
