@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { addMonths, subMonths, startOfDay, format } from "date-fns";
 import { AlertTriangle } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
-import { CURRENCIES, formatCurrency } from "@/lib/currency";
+import { CURRENCIES, centsToAmount, formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
 interface RenewClientDialogProps {
@@ -33,7 +33,7 @@ export function RenewClientDialog({ seat, open, onOpenChange }: RenewClientDialo
   const [paidOn, setPaidOn] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [notes, setNotes] = useState("");
 
-  const price = seat ? Number(seat.customPrice) : 0;
+  const price = seat ? centsToAmount(seat.customPrice) : 0;
 
   // Compute the new expiry preview
   const currentExpiry = seat ? startOfDay(new Date(seat.activeUntil)) : new Date();
@@ -86,7 +86,7 @@ export function RenewClientDialog({ seat, open, onOpenChange }: RenewClientDialo
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && seat) {
-      setAmount(Number(seat.customPrice));
+      setAmount(Number(seat.customPrice) / 100);
       setMonths(1);
       setPaidOn(format(new Date(), "yyyy-MM-dd"));
       setNotes("");

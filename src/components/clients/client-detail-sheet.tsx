@@ -105,7 +105,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
       ...seat,
       clientName: client?.name ?? "Client",
     });
-    setRenewAmount(Number(seat.customPrice));
+    setRenewAmount(Number(seat.customPrice) / 100);
     setRenewMonths(1);
     setRenewPaidOn(format(new Date(), "yyyy-MM-dd"));
     setRenewNotes("");
@@ -115,7 +115,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
     let clamped = Math.max(-12, Math.min(12, newMonths));
     if (clamped === 0) clamped = newMonths > 0 ? 1 : -1;
     setRenewMonths(clamped);
-    const seatPrice = renewSeat ? Number(renewSeat.customPrice) : 0;
+    const seatPrice = renewSeat ? Number(renewSeat.customPrice) / 100 : 0;
     if (clamped > 0) {
       setRenewAmount(Number((seatPrice * clamped).toFixed(2)));
     } else {

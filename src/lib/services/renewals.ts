@@ -73,7 +73,7 @@ export async function renewClientSubscription({
     const [log] = await tx.insert(renewalLogs).values({
       clientSubscriptionId,
       amountPaid: amountToCents(paid),
-      expectedAmount: amountToCents(customPrice),
+      expectedAmount: customPrice,
       periodStart: periodStart.toISOString().split("T")[0],
       periodEnd: periodEnd.toISOString().split("T")[0],
       paidOn: today.toISOString().split("T")[0],
@@ -152,7 +152,7 @@ export async function renewBulkClientSubscriptions({
       const [log] = await tx.insert(renewalLogs).values({
         clientSubscriptionId: item.clientSubscriptionId,
         amountPaid: amountToCents(paid),
-        expectedAmount: amountToCents(customPrice * seatMonths),
+        expectedAmount: customPrice * seatMonths,
         periodStart: periodStart.toISOString().split("T")[0],
         periodEnd: periodEnd.toISOString().split("T")[0],
         paidOn: itemToday.toISOString().split("T")[0],

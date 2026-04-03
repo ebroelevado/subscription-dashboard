@@ -217,7 +217,7 @@ export async function executeMutation(
         const [renewalLog] = await tx.insert(renewalLogs).values({
           clientSubscriptionId: csId,
           amountPaid: amountToCents(pendingChanges.amountPaid as number),
-          expectedAmount: amountToCents(cs.customPrice),
+          expectedAmount: cs.customPrice,
           periodStart: startDateStr,
           periodEnd: endDateStr,
           paidOn: paidOnStr,

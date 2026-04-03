@@ -19,7 +19,7 @@ import { addMonths, startOfDay, format, differenceInDays } from "date-fns";
 import { useRenewBulkClients } from "@/hooks/use-renewals";
 import { useTranslations } from "next-intl";
 import { useSession } from "@/lib/auth-client";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrency, centsToAmount } from "@/lib/currency";
 
 export interface BulkRenewSeat {
   id: string;
@@ -47,9 +47,10 @@ interface SeatConfig {
 }
 
 function makeSeatConfig(customPrice: number, globalMonths: number): SeatConfig {
+  const decimalPrice = customPrice / 100;
   return {
     months: globalMonths,
-    amount: (customPrice * globalMonths).toFixed(2),
+    amount: (decimalPrice * globalMonths).toFixed(2),
     expanded: false,
     monthsOverridden: false,
     amountOverridden: false,
@@ -107,7 +108,7 @@ export function BulkRenewDialog({
         if (!cfg) continue;
         const newCfg = { ...cfg, months: m };
         if (!cfg.amountOverridden) {
-          newCfg.amount = (Number(seat.customPrice) * m).toFixed(2);
+          newCfg.amount = ((Number(seat.customPrice) / 100) * m).toFixed(2);
         }
         if (!cfg.monthsOverridden) {
           next[seat.id] = newCfg;
@@ -131,7 +132,7 @@ export function BulkRenewDialog({
         // Recalculate amount unless user overrode it
         const seat = renewableSeats.find((s) => s.id === seatId);
         if (seat && !cfg.amountOverridden) {
-          cfg.amount = (Number(seat.customPrice) * m).toFixed(2);
+          cfg.amount = ((Number(seat.customPrice) / 100) * m).toFixed(2);
         }
       } else {
         cfg.amount = String(value);

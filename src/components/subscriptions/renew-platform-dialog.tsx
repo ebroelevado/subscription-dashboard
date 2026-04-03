@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "@/lib/auth-client";
-import { CURRENCIES, type Currency } from "@/lib/currency";
+import { CURRENCIES, centsToAmount, type Currency } from "@/lib/currency";
 import { useRenewPlatform } from "@/hooks/use-renewals";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -62,7 +62,7 @@ export function RenewPlatformDialog({
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && subscription) {
-      setAmount(Number(subscription.plan.cost));
+      setAmount(Number(subscription.plan.cost) / 100);
       setPaidOn(format(new Date(), "yyyy-MM-dd"));
       setNotes("");
     }
