@@ -4,11 +4,9 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useTranslations } from "next-intl";
 import type { UIMessage } from "ai";
-import { SendHorizontal, Bot, Loader2, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, ShieldAlert, Clock, Download, RefreshCcw } from "lucide-react";
+import { SendHorizontal, Bot, Loader2, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, Clock, Download, RefreshCcw, GitBranch } from "lucide-react";
 import HistoryPanel from "@/components/assistant/history-panel";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -46,6 +44,13 @@ const STREAM_STOP_WAIT_MS = 2000;
 const STALLED_STREAM_TIMEOUT_MS = 90000;
 const QUEUE_POLL_MAX_ATTEMPTS = 30;
 const QUEUE_POLL_DELAY_MS = 1000;
+const MUTATION_TOOL_NAMES = new Set([
+  "createClient", "updateClient", "deleteClients",
+  "assignClientToSubscription", "removeClientsFromSubscription",
+  "logPayment", "managePayments",
+  "managePlatforms", "managePlans", "manageSubscriptions",
+  "createSeat", "updateSeat", "pauseSeat", "resumeSeat", "cancelSeat",
+]);
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -404,14 +409,21 @@ function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, execut
         )}
         {(() => {
            // Recursively find { status: "requires_confirmation" } at any depth.
-           // Skip csvData arrays to avoid O(n) traversal on large exports.
-           const findStatus = (obj: any, depth = 0): any => {
-             if (!obj || typeof obj !== 'object' || depth > 2) return null;
+           // Skip csvData values to avoid O(n) traversal on large exports.
+           const findStatus = (obj: any, depth = 0, maxDepth = 10): any => {
+             if (!obj || typeof obj !== 'object' || depth > maxDepth) return null;
              if (obj.status === "requires_confirmation") return obj;
              for (const [key, val] of Object.entries(obj)) {
-               if (key === 'csvData' || Array.isArray(val)) continue; // never recurse into arrays
-               const found = findStatus(val, depth + 1);
-               if (found) return found;
+               if (key === 'csvData') continue;
+               if (Array.isArray(val)) {
+                 for (const item of val) {
+                   const found = findStatus(item, depth + 1, maxDepth);
+                   if (found) return found;
+                 }
+               } else {
+                 const found = findStatus(val, depth + 1, maxDepth);
+                 if (found) return found;
+               }
              }
              return null;
            };
@@ -736,55 +748,14 @@ export function ChatInterface() {
     setAcceptedActionIds(new Set());
     setConversationId(null);
     setConversationCreatedAt(null);
-    setAllowDestructive(false);
   };
 
 
   const [input, setInput] = useState("");
-  const [allowDestructive, setAllowDestructive] = useState(false);
-  const [showFullControlAlert, setShowFullControlAlert] = useState(false);
-  const [dontShowFullControlWarningAgain, setDontShowFullControlWarningAgain] = useState(false);
-  const [skipFullControlWarning, setSkipFullControlWarning] = useState(false);
+  const [allowDestructive, setAllowDestructive] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setSkipFullControlWarning(window.localStorage.getItem(FULL_CONTROL_WARNING_KEY) === "1");
-  }, []);
-
-  const handleDestructiveToggle = (checked: boolean) => {
-    if (!checked) {
-      setAllowDestructive(false);
-      return;
-    }
-
-    if (skipFullControlWarning) {
-      setAllowDestructive(true);
-      return;
-    }
-
-    setShowFullControlAlert(true);
-  };
-
-  const confirmFullControl = () => {
-    setAllowDestructive(true);
-
-    if (dontShowFullControlWarningAgain && typeof window !== "undefined") {
-      window.localStorage.setItem(FULL_CONTROL_WARNING_KEY, "1");
-      setSkipFullControlWarning(true);
-    }
-
-    setShowFullControlAlert(false);
-    setDontShowFullControlWarningAgain(false);
-  };
-
-  const cancelFullControl = () => {
-    setAllowDestructive(false);
-    setShowFullControlAlert(false);
-    setDontShowFullControlWarningAgain(false);
-  };
 
   // Vercel AI SDK — useChat
   const { messages, sendMessage, status, setMessages, stop, error: chatError, regenerate } = useChat({
@@ -955,6 +926,11 @@ export function ChatInterface() {
         messages,
         createdAt: conversationCreatedAt || new Date().toISOString(),
         executedMutations: Array.from(executedMutations.entries()),
+        hitlPending: hitlPending ? {
+          toolName: hitlPending.toolName,
+          toolCallId: hitlPending.toolCallId,
+          __token: hitlPending.__token,
+        } : null,
       }),
     })
       .catch((err) => console.error("[AutoSave] Failed:", err))
@@ -977,32 +953,36 @@ export function ChatInterface() {
       } else {
         setExecutedMutations(new Map());
       }
-      // Clear ephemeral UI states and reset Control Total
+      // Clear ephemeral UI states
       setAcceptedActionIds(new Set());
       setRejectedActionIds(new Set());
-      setAllowDestructive(false);
     } catch (err) {
       console.error("[History] Failed to load conversation:", err);
     }
   };
 
 
-  const findConfirmation = useCallback((rawObj: unknown, depth = 0): Record<string, unknown> | null => {
+  const findConfirmation = useCallback((rawObj: unknown, depth = 0, maxDepth = 10): Record<string, unknown> | null => {
     const obj = depth === 0 ? deepParseJson(rawObj) : rawObj;
-    if (!obj || typeof obj !== "object" || depth > 2) return null;
+    if (!obj || typeof obj !== "object" || depth > maxDepth) return null;
     
-    // Bail out on any array — confirmations are never inside arrays
-    if (Array.isArray(obj)) return null;
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findConfirmation(item, depth + 1, maxDepth);
+        if (found) return found;
+      }
+      return null;
+    }
 
     const record = obj as Record<string, unknown>;
     // Early short-circuit: download_available results are never confirmations
     if (record.status === "download_available") return null;
     if (record.status === "requires_confirmation") return record;
     
-    // Search top-level objects but skip arrays
+    // Search all values, including arrays
     for (const [key, val] of Object.entries(record)) {
-      if (key === "csvData" || Array.isArray(val)) continue;
-      const found = findConfirmation(val, depth + 1);
+      if (key === "csvData") continue;
+      const found = findConfirmation(val, depth + 1, maxDepth);
       if (found) return found;
     }
     return null;
@@ -1065,6 +1045,20 @@ export function ChatInterface() {
     }
     return null;
   }, [messages, executedMutations, findConfirmation, rejectedActionIds, acceptedActionIds]);
+
+  // ── Step Indicator: count mutation tool calls in the current conversation ──
+  const currentStep = useMemo(() => {
+    let count = 0;
+    for (const msg of messages) {
+      const parts = (msg.parts ?? []) as ExtendedUIMessagePart[];
+      for (const part of parts) {
+        if (part.type === "tool-invocation" && MUTATION_TOOL_NAMES.has(part.toolName || "")) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [messages]);
 
   // Parsing markdown/thinking tags for every text part is expensive and was
   // being recomputed on every render (including input typing). Cache per
@@ -1139,23 +1133,30 @@ export function ChatInterface() {
   const notifyAgentMutationOutcome = useCallback(async (toolName: string, auditLogId: string) => {
     if (!sendMessage) return;
 
-    const sendNotification = async (retries = 2): Promise<void> => {
+    const sendNotification = async (retries = 3, delay = 1000): Promise<boolean> => {
       try {
         sendMessage(
           { text: `${t("chat.accept")} <!-- [SYSTEM] Mutation ${toolName} executed successfully. AuditLogId: ${auditLogId}. Continue with the next required step if any. -->` },
           { body: { model: selectedModel || undefined, allowDestructive } }
         );
+        return true;
       } catch (err) {
-        console.error("[NotifyAgent] Failed to send notification:", err);
+        console.error(`[NotifyAgent] Failed (attempt ${4 - retries}/3):`, err);
         if (retries > 0) {
-          await sleep(1000);
-          return sendNotification(retries - 1);
+          await sleep(delay);
+          return sendNotification(retries - 1, delay * 2);
         }
-        appendLocalAssistantNote("⚠️ La mutación se ejecutó correctamente pero no pude continuar automáticamente. Escribe \"continúa\" para reanudar.");
+        return false;
       }
     };
 
-    await sendNotification();
+    const success = await sendNotification();
+    if (!success) {
+      appendLocalAssistantNote(
+        `⚠️ La mutación se ejecutó correctamente pero no pude continuar automáticamente. ` +
+        `Escribe "continúa" para reanudar.`
+      );
+    }
   }, [sendMessage, t, selectedModel, allowDestructive, appendLocalAssistantNote]);
 
   const handleUndoTool = async (toolName: string) => {
@@ -1682,6 +1683,15 @@ export function ChatInterface() {
       {/* ── Input Area ── sticky bottom dock (No border/footer) */}
       <div className="shrink-0 px-4 pt-2 pb-6 sm:pb-8 bg-background relative z-20 flex justify-center w-full">
         <div className="w-full max-w-4xl group relative">
+          {/* Step Indicator */}
+          {currentStep > 0 && (
+            <div className="flex items-center justify-center mb-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-[11px] font-bold text-primary">
+                <GitBranch className="size-3" />
+                Paso {currentStep}
+              </div>
+            </div>
+          )}
           {/* Scroll to Bottom Button — repositioned above dock */}
           {showScrollBottom && (
             <Button
@@ -1709,38 +1719,26 @@ export function ChatInterface() {
             />
             
             <div className="flex items-center justify-between mt-1 pt-1">
-              <div className="flex items-center gap-1.5">
-                {/* Model Selector within dock */}
-                <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isLoading}>
-                  <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[130px] flex items-center justify-between">
-                    <SelectValue placeholder="Ultra Fast" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-border/40">
-                    {AI_MODELS.map(m => {
-                      const cost = m.id === "ultra-fast" ? 0.2 : m.id === "fast" ? 0.3 : 0.5;
-                      return (
-                        <SelectItem key={m.id} value={m.id} className="text-xs font-medium rounded-lg">
-                          {m.name} <span className="text-muted-foreground ml-1">({m.description})</span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                
-                <div className="flex items-center space-x-2 ml-2 bg-red-500/10 dark:bg-red-500/5 px-2.5 py-1.5 rounded-full border border-red-500/20">
-                  <Switch 
-                    id="destructive-mode" 
-                    checked={allowDestructive} 
-                    onCheckedChange={handleDestructiveToggle}
-                    className="data-[state=checked]:bg-red-500 scale-90"
-                  />
-                  <Label htmlFor="destructive-mode" className="text-[10px] sm:text-xs font-bold text-red-500 flex items-center gap-1 cursor-pointer">
-                    <ShieldAlert className="size-3" /> {t("chat.fullControlTitle")}
-                  </Label>
+                <div className="flex items-center gap-1.5">
+                  {/* Model Selector within dock */}
+                  <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isLoading}>
+                    <SelectTrigger className="w-auto h-8 bg-muted/40 border-none px-3 rounded-full text-[11px] sm:text-xs font-bold hover:bg-muted/60 transition-colors shadow-none focus:ring-0 min-w-[130px] flex items-center justify-between">
+                      <SelectValue placeholder="Ultra Fast" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-border/40">
+                      {AI_MODELS.map(m => {
+                        const cost = m.id === "ultra-fast" ? 0.2 : m.id === "fast" ? 0.3 : 0.5;
+                        return (
+                          <SelectItem key={m.id} value={m.id} className="text-xs font-medium rounded-lg">
+                            {m.name} <span className="text-muted-foreground ml-1">({m.description})</span>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
                 {isLoading ? (
                   <Button 
                     type="button"
@@ -1775,35 +1773,6 @@ export function ChatInterface() {
   return (
     <>
       {chatContent}
-      <AlertDialog open={showFullControlAlert} onOpenChange={(open) => !open && cancelFullControl()}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("chat.fullControlAlertTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("chat.fullControlAlertDescription")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={dontShowFullControlWarningAgain}
-              onChange={(event) => setDontShowFullControlWarningAgain(event.target.checked)}
-              className="size-4 rounded border-input"
-            />
-            {t("chat.fullControlDontShowAgain")}
-          </label>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelFullControl}>
-              {t("common.cancel")}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmFullControl} className="bg-red-600 hover:bg-red-700 text-white">
-              {t("chat.fullControlAccept")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <HistoryPanel
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
