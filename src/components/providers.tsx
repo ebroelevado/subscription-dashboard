@@ -4,8 +4,28 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { NextIntlClientProvider } from "next-intl";
 import { Toaster } from "sonner";
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, useEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+
+// Suppress noisy SES/lockdown warnings from AI SDK that don't affect functionality
+if (typeof window !== "undefined") {
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const msg = String(args[0] ?? "");
+    if (msg.includes("lockdown-install.js") || msg.includes("Removing intrinsics")) return;
+    origWarn.apply(console, args);
+  };
+}
+
+// Suppress noisy SES/lockdown warnings from AI SDK that don't affect functionality
+if (typeof window !== "undefined") {
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const msg = String(args[0] ?? "");
+    if (msg.includes("lockdown-install.js") || msg.includes("Removing intrinsics")) return;
+    origWarn.apply(console, args);
+  };
+}
 
 interface ProvidersProps {
   children: ReactNode;
