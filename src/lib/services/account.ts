@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { platforms, plans, subscriptions, clients, clientSubscriptions, renewalLogs, platformRenewals, users } from "@/db/schema";
+import { platforms, plans, subscriptions, clients, clientSubscriptions, renewalLogs, platformRenewals, users, mutationAuditLogs } from "@/db/schema";
 import type { ImportDataInput } from "@/lib/validations/account";
 import { amountToCents } from "@/lib/currency";
+import { deleteR2Folder } from "@/lib/r2";
 
 // ──────────────────────────────────────────
 // Export — collects ALL user data into a
@@ -11,6 +12,7 @@ import { amountToCents } from "@/lib/currency";
 
 export async function exportUserData(userId: string) {
   const [
+    userRow,
     platformsList,
     plansList,
     subscriptionsList,
@@ -18,7 +20,9 @@ export async function exportUserData(userId: string) {
     clientSubscriptionsList,
     renewalLogsList,
     platformRenewalsList,
+    auditLogsList,
   ] = await Promise.all([
+    db.query.users.findFirst({ where: eq(users.id, userId) }),
     db.select().from(platforms).where(eq(platforms.userId, userId)),
     db.select().from(plans).where(eq(plans.userId, userId)),
     db.select().from(subscriptions).where(eq(subscriptions.userId, userId)),
@@ -35,6 +39,7 @@ export async function exportUserData(userId: string) {
       .from(platformRenewals)
       .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
       .where(eq(subscriptions.userId, userId)),
+    db.select().from(mutationAuditLogs).where(eq(mutationAuditLogs.userId, userId)),
   ]);
 
   // Strip userId from all records — the importing user gets their own
@@ -45,6 +50,12 @@ export async function exportUserData(userId: string) {
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
+    userSettings: userRow ? {
+      currency: userRow.currency,
+      disciplinePenalty: userRow.disciplinePenalty,
+      companyName: userRow.companyName,
+      whatsappSignatureMode: userRow.whatsappSignatureMode,
+    } : undefined,
     platforms: stripUser(platformsList),
     plans: stripUser(plansList),
     subscriptions: stripUser(subscriptionsList),
@@ -52,12 +63,14 @@ export async function exportUserData(userId: string) {
     clientSubscriptions: clientSubscriptionsList.map(r => r.client_subscriptions),
     renewalLogs: renewalLogsList.map(r => r.renewalLogs),
     platformRenewals: platformRenewalsList.map(r => r.platformRenewals),
+    mutationAuditLogs: stripUser(auditLogsList),
   };
 }
 
 // ──────────────────────────────────────────
 // Import — atomic insert of a full data dump
 // into the current user's account.
+// Clears existing data first to avoid duplicates.
 // ──────────────────────────────────────────
 
 export async function importUserData(
@@ -65,6 +78,57 @@ export async function importUserData(
   data: ImportDataInput,
 ) {
   await db.transaction(async (tx) => {
+    // ── Pre-import cleanup: delete existing data in reverse FK order ──
+    const existingSubIds = await tx.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.userId, userId));
+    const existingClientIds = await tx.select({ id: clients.id }).from(clients).where(eq(clients.userId, userId));
+    const existingSubIdsList = existingSubIds.map(s => s.id);
+    const existingClientIdsList = existingClientIds.map(c => c.id);
+
+    if (existingSubIdsList.length > 0) {
+      await tx.delete(platformRenewals).where(inArray(platformRenewals.subscriptionId, existingSubIdsList));
+    }
+    if (existingClientIdsList.length > 0) {
+      const existingClientSubIds = await tx.select({ id: clientSubscriptions.id })
+        .from(clientSubscriptions)
+        .where(inArray(clientSubscriptions.clientId, existingClientIdsList));
+      const existingClientSubIdsList = existingClientSubIds.map(cs => cs.id);
+      if (existingClientSubIdsList.length > 0) {
+        await tx.delete(renewalLogs).where(inArray(renewalLogs.clientSubscriptionId, existingClientSubIdsList));
+        await tx.delete(clientSubscriptions).where(inArray(clientSubscriptions.clientId, existingClientIdsList));
+      }
+      // Also delete clientSubscriptions linked to user's subscriptions
+      if (existingSubIdsList.length > 0) {
+        const csForSubs = await tx.select({ id: clientSubscriptions.id })
+          .from(clientSubscriptions)
+          .where(inArray(clientSubscriptions.subscriptionId, existingSubIdsList));
+        const csForSubsList = csForSubs.map(cs => cs.id);
+        if (csForSubsList.length > 0) {
+          await tx.delete(renewalLogs).where(inArray(renewalLogs.clientSubscriptionId, csForSubsList));
+        }
+        await tx.delete(clientSubscriptions).where(inArray(clientSubscriptions.subscriptionId, existingSubIdsList));
+      }
+      await tx.delete(clients).where(eq(clients.userId, userId));
+    }
+
+    if (existingSubIdsList.length > 0) {
+      await tx.delete(subscriptions).where(eq(subscriptions.userId, userId));
+    }
+    await tx.delete(plans).where(eq(plans.userId, userId));
+    await tx.delete(platforms).where(eq(platforms.userId, userId));
+    await tx.delete(mutationAuditLogs).where(eq(mutationAuditLogs.userId, userId));
+
+    // ── Update user settings if provided ──
+    if (data.userSettings) {
+      const settings: Record<string, unknown> = {};
+      if (data.userSettings.currency) settings.currency = data.userSettings.currency;
+      if (data.userSettings.disciplinePenalty !== undefined) settings.disciplinePenalty = data.userSettings.disciplinePenalty;
+      if (data.userSettings.companyName !== undefined) settings.companyName = data.userSettings.companyName;
+      if (data.userSettings.whatsappSignatureMode) settings.whatsappSignatureMode = data.userSettings.whatsappSignatureMode;
+      if (Object.keys(settings).length > 0) {
+        await tx.update(users).set(settings).where(eq(users.id, userId));
+      }
+    }
+
     // ── ID mappings: old → new ──
     const platformMap = new Map<string, string>();
     const planMap = new Map<string, string>();
@@ -116,6 +180,11 @@ export async function importUserData(
         startDate: new Date(s.startDate).toISOString().split("T")[0],
         activeUntil: new Date(s.activeUntil).toISOString().split("T")[0],
         status: s.status,
+        masterUsername: s.masterUsername ?? null,
+        masterPassword: s.masterPassword ?? null,
+        ownerId: s.ownerId ?? null,
+        isAutopayable: s.isAutopayable ?? true,
+        defaultPaymentNote: s.defaultPaymentNote ?? null,
         ...(s.createdAt && { createdAt: new Date(s.createdAt).toISOString() }),
       });
     }
@@ -130,6 +199,10 @@ export async function importUserData(
         name: c.name,
         phone: c.phone ?? null,
         notes: c.notes ?? null,
+        dailyPenalty: c.dailyPenalty ?? null,
+        daysOverdue: c.daysOverdue ?? 0,
+        disciplineScore: c.disciplineScore ?? null,
+        healthStatus: c.healthStatus ?? null,
         ...(c.createdAt && { createdAt: new Date(c.createdAt).toISOString() }),
       });
     }
@@ -186,8 +259,29 @@ export async function importUserData(
         periodStart: new Date(pr.periodStart).toISOString().split("T")[0],
         periodEnd: new Date(pr.periodEnd).toISOString().split("T")[0],
         paidOn: new Date(pr.paidOn).toISOString().split("T")[0],
+        notes: (pr as any).notes ?? null,
         ...(pr.createdAt && { createdAt: new Date(pr.createdAt).toISOString() }),
       });
+    }
+
+    // 8 · Mutation Audit Logs (optional)
+    if (data.mutationAuditLogs && data.mutationAuditLogs.length > 0) {
+      for (const al of data.mutationAuditLogs) {
+        await tx.insert(mutationAuditLogs).values({
+          id: crypto.randomUUID(),
+          userId,
+          toolName: al.toolName,
+          targetId: al.targetId ?? null,
+          action: al.action,
+          previousValues: al.previousValues ?? null,
+          newValues: al.newValues ?? null,
+          undone: al.undone ?? false,
+          token: al.token,
+          expiresAt: al.expiresAt,
+          executedAt: al.executedAt ?? null,
+          ...(al.createdAt && { createdAt: new Date(al.createdAt).toISOString() }),
+        });
+      }
     }
   });
 }
@@ -195,8 +289,17 @@ export async function importUserData(
 // ──────────────────────────────────────────
 // Delete — removes User row; all children
 // cascade-delete via onDelete: Cascade.
+// Also deletes R2 conversation storage.
 // ──────────────────────────────────────────
 
 export async function deleteUserAccount(userId: string) {
+  // Delete R2 conversations first
+  try {
+    await deleteR2Folder(userId);
+  } catch (err) {
+    // Log but don't block account deletion if R2 fails
+    console.error("[Delete Account] Failed to delete R2 conversations:", err);
+  }
+
   await db.delete(users).where(eq(users.id, userId));
 }

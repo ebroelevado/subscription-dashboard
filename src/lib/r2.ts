@@ -120,3 +120,27 @@ export async function deleteConversation(userId: string, convId: string) {
   const filtered = index.filter((e) => e.id !== convId);
   await putIndex(userId, filtered);
 }
+
+/**
+ * Delete ALL R2 objects for a user (conversations + index).
+ * Used during account deletion to prevent orphaned storage.
+ */
+export async function deleteR2Folder(userId: string) {
+  const prefix = `conversations/${userId}/`;
+
+  // List all objects under the user's prefix
+  const listRes = await r2.send(
+    new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix })
+  );
+
+  if (!listRes.Contents || listRes.Contents.length === 0) return;
+
+  // Delete each object
+  for (const obj of listRes.Contents) {
+    if (obj.Key) {
+      await r2.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: obj.Key })
+      );
+    }
+  }
+}

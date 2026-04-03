@@ -40,6 +40,11 @@ const subscriptionImportSchema = z.object({
   activeUntil: z.string(),
   status: z.enum(["active", "paused"]).default("active"),
   createdAt: z.string().optional(),
+  masterUsername: z.string().max(200).nullable().optional(),
+  masterPassword: z.string().max(500).nullable().optional(),
+  ownerId: z.string().nullable().optional(),
+  isAutopayable: z.boolean().optional().default(true),
+  defaultPaymentNote: z.string().nullable().optional(),
 });
 
 const clientImportSchema = z.object({
@@ -48,6 +53,10 @@ const clientImportSchema = z.object({
   phone: z.string().max(30).nullable().optional(),
   notes: z.string().nullable().optional(),
   createdAt: z.string().optional(),
+  dailyPenalty: z.number().int().nullable().optional(),
+  daysOverdue: z.number().int().nullable().optional(),
+  disciplineScore: z.string().nullable().optional(),
+  healthStatus: z.string().nullable().optional(),
 });
 
 const clientSubscriptionImportSchema = z.object({
@@ -86,11 +95,34 @@ const platformRenewalImportSchema = z.object({
   periodEnd: z.string(),
   paidOn: z.string(),
   createdAt: z.string().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+const mutationAuditLogImportSchema = z.object({
+  id: z.string(),
+  toolName: z.string(),
+  targetId: z.string().nullable().optional(),
+  action: z.string(),
+  previousValues: z.unknown().nullable().optional(),
+  newValues: z.unknown().nullable().optional(),
+  undone: z.boolean().optional().default(false),
+  token: z.string(),
+  expiresAt: z.string(),
+  executedAt: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+});
+
+const userSettingsImportSchema = z.object({
+  currency: z.string().optional(),
+  disciplinePenalty: z.number().min(0).optional(),
+  companyName: z.string().nullable().optional(),
+  whatsappSignatureMode: z.string().optional(),
 });
 
 export const importDataSchema = z.object({
   version: z.number().int().positive(),
   exportedAt: z.string(),
+  userSettings: userSettingsImportSchema.optional(),
   platforms: z.array(platformImportSchema),
   plans: z.array(planImportSchema),
   subscriptions: z.array(subscriptionImportSchema),
@@ -98,6 +130,7 @@ export const importDataSchema = z.object({
   clientSubscriptions: z.array(clientSubscriptionImportSchema),
   renewalLogs: z.array(renewalLogImportSchema),
   platformRenewals: z.array(platformRenewalImportSchema),
+  mutationAuditLogs: z.array(mutationAuditLogImportSchema).optional(),
 });
 
 export type ImportDataInput = z.infer<typeof importDataSchema>;
