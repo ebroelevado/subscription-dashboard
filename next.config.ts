@@ -13,11 +13,7 @@ const nextConfig: NextConfig = {
   // because we execute its path manually.
   // bun:sqlite must be external - it's a built-in Bun module, not an npm package
   // Without this, Turbopack tries to resolve it as a regular module and fails
-  serverExternalPackages: [
-    "@github/copilot",
-    "@cloudflare/next-on-pages",
-    "bun:sqlite",
-  ],
+  serverExternalPackages: [],
 
   experimental: {
     // Limit CPU count to prevent OOM during production build on high-core machines.
