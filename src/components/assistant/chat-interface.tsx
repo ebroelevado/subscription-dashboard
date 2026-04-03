@@ -994,7 +994,7 @@ export function ChatInterface() {
 
             // Use __token as the stable callId — it survives reloads
             const tokenId = res.__token as string | undefined;
-            const toolCallId = tokenId || (part as any).toolCallId ?? (part as any).toolInvocation?.toolCallId ?? `msg-${i}-part-${j}`;
+            const toolCallId = tokenId ?? (part as any).toolCallId ?? (part as any).toolInvocation?.toolCallId ?? `msg-${i}-part-${j}`;
 
             // Optimistically hide if the user just clicked Aceptar/Rechazar 
             if (rejectedActionIds.has(toolCallId) || acceptedActionIds.has(toolCallId)) continue;
