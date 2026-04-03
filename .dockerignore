@@ -15,3 +15,31 @@ project_data.json
 build_log.txt
 collect_files.py
 split_batches.py
+# Workers (separate deployment)
+workers/
+# Tests
+tests/
+*.test.ts
+*.test.tsx
+vitest.config.ts
+# Scripts
+scripts/
+# Drizzle migrations (not needed for runtime)
+drizzle/meta
+# Local dev DB
+local.db*
+# Wrangler cache
+.wrangler/
+# Playwright
+.playwright/
+# AI/Agents
+.ai/
+.agents/
+.claude/
+# VSCode
+.vscode/
+# Misc
+reporte_completo_*.csv
+log.log
+skills-lock.json
+ai.md
