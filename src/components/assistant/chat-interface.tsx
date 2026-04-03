@@ -52,6 +52,29 @@ const MUTATION_TOOL_NAMES = new Set([
   "createSeat", "updateSeat", "pauseSeat", "resumeSeat", "cancelSeat",
 ]);
 
+/**
+ * Unified recursive search for confirmation/download status in tool output.
+ * Used by both ToolInvocationBlock and hitlPending useMemo.
+ */
+function findStatusInOutput(obj: any, depth = 0, maxDepth = 10): any {
+  if (!obj || typeof obj !== 'object' || depth > maxDepth) return null;
+  if (obj.status === "requires_confirmation") return obj;
+  if (obj.status === "download_available") return obj;
+  for (const [key, val] of Object.entries(obj)) {
+    if (key === 'csvData') continue;
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        const found = findStatusInOutput(item, depth + 1, maxDepth);
+        if (found) return found;
+      }
+    } else {
+      const found = findStatusInOutput(val, depth + 1, maxDepth);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -408,27 +431,7 @@ function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, execut
           </div>
         )}
         {(() => {
-           // Recursively find { status: "requires_confirmation" } at any depth.
-           // Skip csvData values to avoid O(n) traversal on large exports.
-           const findStatus = (obj: any, depth = 0, maxDepth = 10): any => {
-             if (!obj || typeof obj !== 'object' || depth > maxDepth) return null;
-             if (obj.status === "requires_confirmation") return obj;
-             for (const [key, val] of Object.entries(obj)) {
-               if (key === 'csvData') continue;
-               if (Array.isArray(val)) {
-                 for (const item of val) {
-                   const found = findStatus(item, depth + 1, maxDepth);
-                   if (found) return found;
-                 }
-               } else {
-                 const found = findStatus(val, depth + 1, maxDepth);
-                 if (found) return found;
-               }
-             }
-             return null;
-           };
-
-           const confirmData = isFinished && !isError ? findStatus(formattedOutput) : null;
+           const confirmData = isFinished && !isError ? findStatusInOutput(formattedOutput) : null;
            
            // === DOWNLOAD BLOCK (Non-blocking) ===
            // Recursively find { status: "download_available" } at any depth.
@@ -536,9 +539,11 @@ function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, execut
              );
            }
 
-           if (!confirmData) return null;
+            if (!confirmData) return null;
 
-           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
+            // Use __token as the stable callId — it survives reloads unlike generated IDs
+            const tokenId = confirmData?.__token as string | undefined;
+            const callId = tokenId || part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
            
            // If we've dismissed (rejected) this action, show a collapsed view
            if (callId && rejectedActionIds?.has(callId)) {
@@ -656,29 +661,31 @@ function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, execut
                        <Clock className="size-3" /> {t("chat.expired")}
                      </div>
                    ) : (
-                     <>
-                       <Button
-                         onClick={() => {
-                           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
-                            onConfirm?.(toolName, { ...(confirmData.pendingChanges as Record<string, unknown> || {}), __token: confirmData?.__token }, true, callId);
-                         }}
-                         className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
-                       >
-                         <Check className="size-4 mr-2" />
-                          {t("chat.accept")}
-                       </Button>
-                       <Button
-                         variant="outline"
-                         onClick={() => {
-                           const callId = part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
-                            onConfirm?.(toolName, confirmData.pendingChanges || formattedArgs, false, callId);
-                         }}
-                         className="flex-1 border-red-500/30 hover:bg-red-500/10 text-red-400 font-bold py-2.5 rounded-xl text-sm transition-all active:scale-[0.97]"
-                       >
-                         <X className="size-4 mr-2" />
-                          {t("chat.reject")}
-                       </Button>
-                     </>
+                      <>
+                        <Button
+                          onClick={() => {
+                            const tokenId = confirmData?.__token as string | undefined;
+                            const callId = tokenId || part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
+                             onConfirm?.(toolName, { ...(confirmData.pendingChanges as Record<string, unknown> || {}), __token: confirmData?.__token }, true, callId);
+                          }}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
+                        >
+                          <Check className="size-4 mr-2" />
+                           {t("chat.accept")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            const tokenId = confirmData?.__token as string | undefined;
+                            const callId = tokenId || part.toolCallId || (part.toolInvocation as any)?.toolCallId || stableToolCallId;
+                             onConfirm?.(toolName, confirmData.pendingChanges || formattedArgs, false, callId);
+                          }}
+                          className="flex-1 border-red-500/30 hover:bg-red-500/10 text-red-400 font-bold py-2.5 rounded-xl text-sm transition-all active:scale-[0.97]"
+                        >
+                          <X className="size-4 mr-2" />
+                           {t("chat.reject")}
+                        </Button>
+                      </>
                    )}
                  </div>
                </div>
@@ -926,6 +933,8 @@ export function ChatInterface() {
         messages,
         createdAt: conversationCreatedAt || new Date().toISOString(),
         executedMutations: Array.from(executedMutations.entries()),
+        acceptedActionIds: Array.from(acceptedActionIds),
+        rejectedActionIds: Array.from(rejectedActionIds),
         hitlPending: hitlPending ? {
           toolName: hitlPending.toolName,
           toolCallId: hitlPending.toolCallId,
@@ -953,39 +962,28 @@ export function ChatInterface() {
       } else {
         setExecutedMutations(new Map());
       }
-      // Clear ephemeral UI states
-      setAcceptedActionIds(new Set());
-      setRejectedActionIds(new Set());
+      // Restore accepted/rejected action states to prevent showing already-handled confirmations
+      if (data.acceptedActionIds && Array.isArray(data.acceptedActionIds)) {
+        setAcceptedActionIds(new Set(data.acceptedActionIds));
+      } else {
+        setAcceptedActionIds(new Set());
+      }
+      if (data.rejectedActionIds && Array.isArray(data.rejectedActionIds)) {
+        setRejectedActionIds(new Set(data.rejectedActionIds));
+      } else {
+        setRejectedActionIds(new Set());
+      }
     } catch (err) {
       console.error("[History] Failed to load conversation:", err);
     }
   };
 
 
-  const findConfirmation = useCallback((rawObj: unknown, depth = 0, maxDepth = 10): Record<string, unknown> | null => {
-    const obj = depth === 0 ? deepParseJson(rawObj) : rawObj;
-    if (!obj || typeof obj !== "object" || depth > maxDepth) return null;
-    
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
-        const found = findConfirmation(item, depth + 1, maxDepth);
-        if (found) return found;
-      }
-      return null;
-    }
-
-    const record = obj as Record<string, unknown>;
-    // Early short-circuit: download_available results are never confirmations
-    if (record.status === "download_available") return null;
-    if (record.status === "requires_confirmation") return record;
-    
-    // Search all values, including arrays
-    for (const [key, val] of Object.entries(record)) {
-      if (key === "csvData") continue;
-      const found = findConfirmation(val, depth + 1, maxDepth);
-      if (found) return found;
-    }
-    return null;
+  const findConfirmation = useCallback((rawObj: unknown): Record<string, unknown> | null => {
+    const obj = deepParseJson(rawObj);
+    const result = findStatusInOutput(obj);
+    if (result?.status === "download_available") return null;
+    return result;
   }, []);
   // 🪝 HITL HOOK: Deterministically compute pending active confirmations
   const hitlPending = useMemo(() => {
@@ -1015,7 +1013,9 @@ export function ChatInterface() {
             const res = findConfirmation(candidate);
             if (!res) continue;
 
-            const toolCallId = (part as any).toolCallId ?? (part as any).toolInvocation?.toolCallId ?? `msg-${i}-part-${j}`;
+            // Use __token as the stable callId — it survives reloads
+            const tokenId = res.__token as string | undefined;
+            const toolCallId = tokenId || (part as any).toolCallId ?? (part as any).toolInvocation?.toolCallId ?? `msg-${i}-part-${j}`;
 
             // Optimistically hide if the user just clicked Aceptar/Rechazar 
             if (rejectedActionIds.has(toolCallId) || acceptedActionIds.has(toolCallId)) continue;
@@ -1045,6 +1045,14 @@ export function ChatInterface() {
     }
     return null;
   }, [messages, executedMutations, findConfirmation, rejectedActionIds, acceptedActionIds]);
+
+  // ── Stop AI stream immediately when a confirmation appears ──
+  // This prevents the AI from executing additional tools while waiting for user confirmation.
+  useEffect(() => {
+    if (hitlPending && (status === "streaming" || status === "submitted")) {
+      stop();
+    }
+  }, [hitlPending, status, stop]);
 
   // ── Step Indicator: count mutation tool calls in the current conversation ──
   const currentStep = useMemo(() => {
