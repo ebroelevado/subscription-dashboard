@@ -62,7 +62,8 @@ export async function renewClientSubscription({
     const periodEnd = months > 0 ? newExpiry : currentExpiry;
 
     // 4. The amount collected — defaults to custom_price if not specified
-    const paid = amountPaid ?? customPrice;
+    // customPrice is already in cents; amountPaid from user is in decimal euros
+    const paid = amountPaid !== undefined ? amountToCents(amountPaid) : customPrice;
 
     // 5. Auto-tag correction notes
     const finalNotes =
@@ -73,7 +74,7 @@ export async function renewClientSubscription({
     // 6. INSERT append-only renewal_log (NEVER update or delete these)
     const [log] = await tx.insert(renewalLogs).values({
       clientSubscriptionId,
-      amountPaid: amountToCents(paid),
+      amountPaid: paid,
       expectedAmount: customPrice,
       periodStart: periodStart.toISOString().split("T")[0],
       periodEnd: periodEnd.toISOString().split("T")[0],
@@ -187,13 +188,15 @@ export async function renewBulkClientSubscriptions({
 
 interface RenewPlatformParams {
   subscriptionId: string;
-  amountPaid?: number; // defaults to plan.cost
+  amountPaid?: number; // defaults to plan.cost (already in cents)
+  months?: number;     // defaults to 1
   notes?: string | null;
 }
 
 export async function renewPlatformSubscription({
   subscriptionId,
   amountPaid,
+  months = 1,
   paidOn,
   notes,
 }: RenewPlatformParams & { paidOn?: string }) {
@@ -206,25 +209,24 @@ export async function renewPlatformSubscription({
 
     if (!subscription) throw new Error(`Subscription ${subscriptionId} not found`);
 
-    // Subscriptions are now only active or paused (cancelled was removed from schema)
-
     const today = startOfDay(paidOn ? new Date(paidOn) : new Date());
     const currentExpiry = startOfDay(new Date(subscription.activeUntil));
     const planCost = Number(subscription.plan.cost);
 
-    // 2. Always extend from current expiry (platform renewals are never lapsed)
-    const newExpiry = addMonths(currentExpiry, 1);
+    // 2. Extend from current expiry
+    const newExpiry = addMonths(currentExpiry, months);
 
     // 3. Calculate period
     const periodStart = addDays(currentExpiry, 1);
     const periodEnd = newExpiry;
 
-    const paid = amountPaid ?? planCost;
+    // amountPaid from user is in decimal euros; planCost is already in cents
+    const paid = amountPaid !== undefined ? amountToCents(amountPaid) : Math.round(planCost);
 
     // 4. INSERT platform_renewal log
     const [log] = await tx.insert(platformRenewals).values({
       subscriptionId,
-      amountPaid: amountToCents(paid),
+      amountPaid: paid,
       periodStart: periodStart.toISOString().split("T")[0],
       periodEnd: periodEnd.toISOString().split("T")[0],
       paidOn: today.toISOString().split("T")[0],
