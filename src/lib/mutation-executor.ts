@@ -22,7 +22,7 @@ function parseJsonField(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function runMutationInTransaction<T>(
+export async function runMutationInTransaction<T>(
   db: Database,
   fn: (tx: Database) => Promise<T>,
 ): Promise<T> {

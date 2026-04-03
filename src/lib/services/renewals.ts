@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clientSubscriptions, renewalLogs, subscriptions, platformRenewals } from "@/db/schema";
 import { addMonths, subMonths, addDays, startOfDay } from "date-fns";
 import { amountToCents } from "@/lib/currency";
+import { runMutationInTransaction } from "@/lib/mutation-executor";
 
 // ──────────────────────────────────────────
 // renewClientSubscription
@@ -32,7 +33,7 @@ export async function renewClientSubscription({
   paidOn,
   notes = null,
 }: RenewClientParams & { paidOn?: string }) {
-  return db.transaction(async (tx) => {
+  return runMutationInTransaction(db, async (tx) => {
     // 1. Fetch the seat with its current state
     const seat = await tx.query.clientSubscriptions.findFirst({
       where: eq(clientSubscriptions.id, clientSubscriptionId),
@@ -118,7 +119,7 @@ export async function renewBulkClientSubscriptions({
   months,
   paidOn,
 }: BulkRenewParams & { paidOn?: string }) {
-  return db.transaction(async (tx) => {
+  return runMutationInTransaction(db, async (tx) => {
     const defaultToday = startOfDay(paidOn ? new Date(paidOn) : new Date());
     const results: Array<{ seat: any; log: any }> = [];
 
@@ -196,7 +197,7 @@ export async function renewPlatformSubscription({
   paidOn,
   notes,
 }: RenewPlatformParams & { paidOn?: string }) {
-  return db.transaction(async (tx) => {
+  return runMutationInTransaction(db, async (tx) => {
     // 1. Fetch subscription with its plan cost
     const subscription = await tx.query.subscriptions.findFirst({
       where: eq(subscriptions.id, subscriptionId),
