@@ -9,7 +9,7 @@
     "build": {
       "commands": [
         "bun install",
-        "bun run build",
+        "bun run build:next",
         "cp -r public .next/standalone/public",
         "cp -r .next/static .next/standalone/.next/static",
         "cp -r node_modules/@github/copilot .next/standalone/copilot-cli"
