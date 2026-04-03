@@ -39,6 +39,8 @@ type ExtendedUIMessagePart = {
   input?: unknown;
 };
 
+import { findStatusInOutput } from "@/lib/find-status";
+
 const FULL_CONTROL_WARNING_KEY = "assistant-full-control-warning-dismissed";
 const STREAM_STOP_WAIT_MS = 2000;
 const STALLED_STREAM_TIMEOUT_MS = 90000;
@@ -51,29 +53,6 @@ const MUTATION_TOOL_NAMES = new Set([
   "managePlatforms", "managePlans", "manageSubscriptions",
   "createSeat", "updateSeat", "pauseSeat", "resumeSeat", "cancelSeat",
 ]);
-
-/**
- * Unified recursive search for confirmation/download status in tool output.
- * Used by both ToolInvocationBlock and hitlPending useMemo.
- */
-function findStatusInOutput(obj: any, depth = 0, maxDepth = 10): any {
-  if (!obj || typeof obj !== 'object' || depth > maxDepth) return null;
-  if (obj.status === "requires_confirmation") return obj;
-  if (obj.status === "download_available") return obj;
-  for (const [key, val] of Object.entries(obj)) {
-    if (key === 'csvData') continue;
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        const found = findStatusInOutput(item, depth + 1, maxDepth);
-        if (found) return found;
-      }
-    } else {
-      const found = findStatusInOutput(val, depth + 1, maxDepth);
-      if (found) return found;
-    }
-  }
-  return null;
-}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

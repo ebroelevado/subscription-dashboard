@@ -29,6 +29,9 @@
     "dev:vinext": "vite dev --port 3000",
     "build:vinext": "vite build",
     "test:mutations": "vitest --config vitest.config.ts run tests/mutations-execute-route.test.ts tests/mutations-status-route.test.ts tests/mutation-executor-db.test.ts tests/ai-full-control-flow.test.ts",
+    "test:ai": "vitest run tests/assistant-tools.test.ts tests/ai-full-control-flow.test.ts tests/hitl-flow.test.ts tests/chat-api-route.test.ts",
+    "test:services": "vitest run tests/renewals-service.test.ts tests/export-import-delete.test.ts tests/r2-utils.test.ts",
+    "test:all": "vitest run",
     "test": "vitest run",
     "test:watch": "vitest"
   },
