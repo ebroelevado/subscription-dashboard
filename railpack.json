@@ -9,7 +9,6 @@
     "build": {
       "commands": [
         "bun install",
-        "bunx prisma generate",
         "bun run build",
         "cp -r public .next/standalone/public",
         "cp -r .next/static .next/standalone/.next/static",
@@ -21,12 +20,11 @@
     }
   },
   "deploy": {
-    "startCommand": "prisma migrate deploy && bun .next/standalone/server.js",
+    "startCommand": "bun .next/standalone/server.js",
     "variables": {
       "NODE_ENV": "production",
       "HOSTNAME": "0.0.0.0",
       "AUTH_TRUST_HOST": "true"
     }
-  },
-  "secrets": ["DATABASE_URL"]
+  }
 }
