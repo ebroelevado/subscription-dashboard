@@ -8,7 +8,7 @@
   "steps": {
     "build": {
       "commands": [
-        "set -euo pipefail; bun install --frozen-lockfile; bun run build:next; mkdir -p .next/standalone/public .next/standalone/.next; cp -r public .next/standalone/public; cp -r .next/static .next/standalone/.next/static; rm -rf node_modules .next/cache"
+        "set -eu; bun install --frozen-lockfile; bun run build:next; mkdir -p .next/standalone/public .next/standalone/.next; cp -r public/. .next/standalone/public/; cp -r .next/static .next/standalone/.next/static; rm -rf node_modules .next/cache"
       ],
       "deployOutputs": [
         {
