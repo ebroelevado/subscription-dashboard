@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       const [logs, cnt] = await Promise.all([
         db
           .select({
-            id: renewalLogs.id,
+            id: sql<string>`${renewalLogs.id}`.as("renewal_log_id"),
             amountPaid: renewalLogs.amountPaid,
             paidOn: renewalLogs.paidOn,
             periodStart: renewalLogs.periodStart,
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
             platformName: sql<string>`${platforms.name}`.as("platform_name"),
             planName: sql<string>`${plans.name}`.as("plan_name"),
             subscriptionLabel: sql<string>`${subscriptions.label}`.as("subscription_label"),
-            subscriptionId: subscriptions.id,
+            subscriptionId: sql<string>`${subscriptions.id}`.as("subscription_id"),
             clientName: sql<string>`${clients.name}`.as("client_name"),
           })
           .from(renewalLogs)
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
       const [renewals, cnt] = await Promise.all([
         db
           .select({
-            id: platformRenewals.id,
+            id: sql<string>`${platformRenewals.id}`.as("platform_renewal_id"),
             amountPaid: platformRenewals.amountPaid,
             paidOn: platformRenewals.paidOn,
             periodStart: platformRenewals.periodStart,
@@ -132,12 +132,14 @@ export async function GET(request: NextRequest) {
             platformName: sql<string>`${platforms.name}`.as("platform_name"),
             planName: sql<string>`${plans.name}`.as("plan_name"),
             subscriptionLabel: sql<string>`${subscriptions.label}`.as("subscription_label"),
-            subscriptionId: subscriptions.id,
+            subscriptionId: sql<string>`${subscriptions.id}`.as("subscription_id"),
+            ownerClientName: sql<string>`${clients.name}`.as("owner_client_name"),
           })
           .from(platformRenewals)
           .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
           .leftJoin(plans, eq(subscriptions.planId, plans.id))
           .leftJoin(platforms, eq(plans.platformId, platforms.id))
+          .leftJoin(clients, eq(subscriptions.ownerId, clients.id))
           .where(and(...conditions))
           .orderBy(desc(platformRenewals.paidOn)),
         db
@@ -159,7 +161,7 @@ export async function GET(request: NextRequest) {
         plan: r.planName ?? "Deleted",
         subscriptionLabel: r.subscriptionLabel ?? "Deleted",
         subscriptionId: r.subscriptionId ?? "deleted",
-        clientName: r.subscriptionLabel ?? "Deleted",
+        clientName: r.ownerClientName ?? "Deleted Client",
         notes: "platform_payment",
       }));
       costCount = Number(cnt[0]?.total ?? 0);
