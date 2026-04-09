@@ -520,6 +520,8 @@ async function undoMutation(
         await runUndoInTransaction(async (tx) => {
           await tx.update(renewalLogs).set({
             amountPaid: amountToCents(prev.amountPaid),
+            expectedAmount: amountToCents(prev.expectedAmount),
+            clientSubscriptionId: prev.clientSubscriptionId,
             paidOn: toDateStr(prev.paidOn),
             periodStart: toDateStr(prev.periodStart),
             periodEnd: toDateStr(prev.periodEnd),
@@ -527,6 +529,152 @@ async function undoMutation(
           }).where(eq(renewalLogs.id, prev.id));
         });
       }
+      break;
+    }
+
+    case "managePlatformPayments": {
+      const prev = previousValues as {
+        id: string;
+        subscriptionId: string;
+        amountPaid: number;
+        paidOn: string;
+        periodStart: string;
+        periodEnd: string;
+        notes: string | null;
+      };
+
+      if (!prev?.id || !prev?.subscriptionId) {
+        throw new Error("Missing previousValues for managePlatformPayments undo.");
+      }
+
+      if (action === "delete") {
+        const exists = await db.query.platformRenewals.findFirst({
+          where: eq(platformRenewals.id, prev.id),
+        });
+
+        if (!exists) {
+          const sub = await db.query.subscriptions.findFirst({
+            where: eq(subscriptions.id, prev.subscriptionId),
+            columns: { userId: true },
+          });
+          if (!sub || sub.userId !== userId) throw new Error("Access denied.");
+
+          await runUndoInTransaction(async (tx) => {
+            await tx.insert(platformRenewals).values({
+              id: prev.id,
+              subscriptionId: prev.subscriptionId,
+              amountPaid: amountToCents(prev.amountPaid),
+              periodStart: toDateStr(prev.periodStart),
+              periodEnd: toDateStr(prev.periodEnd),
+              paidOn: toDateStr(prev.paidOn),
+              notes: prev.notes ?? null,
+            });
+          });
+        }
+      } else {
+        const payment = await db.query.platformRenewals.findFirst({
+          where: eq(platformRenewals.id, prev.id),
+          with: {
+            subscription: {
+              columns: { userId: true },
+            },
+          },
+        });
+        if (!payment || payment.subscription.userId !== userId) {
+          throw new Error("Platform payment log not found for undo.");
+        }
+
+        await runUndoInTransaction(async (tx) => {
+          await tx.update(platformRenewals).set({
+            subscriptionId: prev.subscriptionId,
+            amountPaid: amountToCents(prev.amountPaid),
+            paidOn: toDateStr(prev.paidOn),
+            periodStart: toDateStr(prev.periodStart),
+            periodEnd: toDateStr(prev.periodEnd),
+            notes: prev.notes ?? null,
+          }).where(eq(platformRenewals.id, prev.id));
+        });
+      }
+      break;
+    }
+
+    case "switchHistoryType": {
+      const prev = previousValues as {
+        id: string;
+        fromType: "income" | "cost";
+        toType: "income" | "cost";
+        fromRecord: Record<string, unknown>;
+      };
+
+      if (!prev?.id || !prev?.fromType || !prev?.toType || !prev?.fromRecord) {
+        throw new Error("Missing previousValues for switchHistoryType undo.");
+      }
+
+      const source = prev.fromRecord;
+
+      if (prev.toType === "income") {
+        const currentIncome = await db.query.renewalLogs.findFirst({
+          where: eq(renewalLogs.id, prev.id),
+          with: {
+            clientSubscription: {
+              with: {
+                subscription: {
+                  columns: { userId: true },
+                },
+              },
+            },
+          },
+        });
+        if (!currentIncome || currentIncome.clientSubscription?.subscription.userId !== userId) {
+          throw new Error("History entry not found for undo.");
+        }
+      } else {
+        const currentCost = await db.query.platformRenewals.findFirst({
+          where: eq(platformRenewals.id, prev.id),
+          with: {
+            subscription: {
+              columns: { userId: true },
+            },
+          },
+        });
+        if (!currentCost || currentCost.subscription.userId !== userId) {
+          throw new Error("History entry not found for undo.");
+        }
+      }
+
+      await runUndoInTransaction(async (tx) => {
+        if (prev.toType === "income") {
+          await tx.delete(renewalLogs).where(eq(renewalLogs.id, prev.id));
+        } else {
+          await tx.delete(platformRenewals).where(eq(platformRenewals.id, prev.id));
+        }
+
+        if (prev.fromType === "income") {
+          await tx.insert(renewalLogs).values({
+            id: prev.id,
+            clientSubscriptionId: (source.clientSubscriptionId as string | null) ?? null,
+            amountPaid: amountToCents(Number(source.amountPaid)),
+            expectedAmount: amountToCents(Number(source.expectedAmount)),
+            periodStart: String(source.periodStart),
+            periodEnd: String(source.periodEnd),
+            paidOn: String(source.paidOn),
+            dueOn: String(source.dueOn),
+            monthsRenewed: Number(source.monthsRenewed ?? 1),
+            notes: (source.notes as string | null) ?? null,
+          }).onConflictDoNothing();
+        } else {
+          await tx.insert(platformRenewals).values({
+            id: prev.id,
+            subscriptionId: String(source.subscriptionId),
+            amountPaid: amountToCents(Number(source.amountPaid)),
+            periodStart: String(source.periodStart),
+            periodEnd: String(source.periodEnd),
+            paidOn: String(source.paidOn),
+            notes: (source.notes as string | null) ?? null,
+          }).onConflictDoNothing();
+        }
+      });
+
       break;
     }
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useMutation, useQuery, keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/fetch-api";
 import { queryKeys } from "@/lib/query-keys";
+import { invalidateAll } from "@/lib/invalidate-helpers";
 
 // ── Types ──
 
@@ -25,10 +26,14 @@ export interface HistoryRow {
   paidOn: string;
   periodStart: string;
   periodEnd: string;
+  platformId: string | null;
   platform: string;
+  planId: string | null;
   plan: string;
   subscriptionLabel: string;
   subscriptionId: string;
+  clientSubscriptionId: string | null;
+  clientId: string | null;
   clientName: string | null;
   notes: string | null;
 }
@@ -131,6 +136,31 @@ export interface HistoryFilters {
   dateTo?: string;
 }
 
+export interface UpdateHistoryEntryInput {
+  id: string;
+  type: "income" | "cost";
+  nextType?: "income" | "cost";
+  reason: string;
+  amountPaid?: number;
+  paidOn?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  notes?: string | null;
+  subscriptionId?: string;
+  clientSubscriptionId?: string;
+}
+
+export interface DeleteHistoryEntryInput {
+  id: string;
+  type: "income" | "cost";
+  reason: string;
+}
+
+export interface HistoryMutationResponse {
+  auditLogId: string;
+  result: unknown;
+}
+
 export function useAnalyticsHistory(filters: HistoryFilters = {}) {
   const params = new URLSearchParams();
   if (filters.page) params.set("page", String(filters.page));
@@ -150,6 +180,53 @@ export function useAnalyticsHistory(filters: HistoryFilters = {}) {
     placeholderData: keepPreviousData,
     staleTime: ANALYTICS_STALE,
   });
+}
+
+export function useUpdateHistoryEntry() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, ...payload }: UpdateHistoryEntryInput) =>
+      fetchApi<HistoryMutationResponse>(`/api/analytics/history/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      invalidateAll(qc);
+      qc.invalidateQueries({ queryKey: ["analytics-history"] });
+    },
+  });
+}
+
+export function useDeleteHistoryEntry() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, ...payload }: DeleteHistoryEntryInput) =>
+      fetchApi<HistoryMutationResponse>(`/api/analytics/history/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      invalidateAll(qc);
+      qc.invalidateQueries({ queryKey: ["analytics-history"] });
+    },
+  });
+}
+
+export async function undoHistoryMutation(auditLogId: string): Promise<void> {
+  const res = await fetch("/api/mutations/undo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auditLogId }),
+  });
+
+  const json = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!res.ok || !json.success) {
+    throw new Error((json.error as string) ?? "Failed to undo mutation");
+  }
 }
 
 export function useAnalyticsTrends(scale: TrendScale = "monthly") {

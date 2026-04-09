@@ -19,10 +19,14 @@ interface UnifiedRow {
   paidOn: string;
   periodStart: string;
   periodEnd: string;
+  platformId: string | null;
   platform: string;
+  planId: string | null;
   plan: string;
   subscriptionLabel: string;
   subscriptionId: string;
+  clientSubscriptionId: string | null;
+  clientId: string | null;
   clientName: string | null;
   notes: string | null;
 }
@@ -68,10 +72,14 @@ export async function GET(request: NextRequest) {
             periodStart: renewalLogs.periodStart,
             periodEnd: renewalLogs.periodEnd,
             notes: renewalLogs.notes,
+            platformId: sql<string>`${platforms.id}`.as("platform_id"),
             platformName: sql<string>`${platforms.name}`.as("platform_name"),
+            planId: sql<string>`${plans.id}`.as("plan_id"),
             planName: sql<string>`${plans.name}`.as("plan_name"),
             subscriptionLabel: sql<string>`${subscriptions.label}`.as("subscription_label"),
             subscriptionId: sql<string>`${subscriptions.id}`.as("subscription_id"),
+            clientSubscriptionId: sql<string>`${clientSubscriptions.id}`.as("client_subscription_id"),
+            clientId: sql<string>`${clients.id}`.as("client_id"),
             clientName: sql<string>`${clients.name}`.as("client_name"),
           })
           .from(renewalLogs)
@@ -98,10 +106,14 @@ export async function GET(request: NextRequest) {
         paidOn: l.paidOn,
         periodStart: l.periodStart,
         periodEnd: l.periodEnd,
+        platformId: l.platformId ?? null,
         platform: l.platformName ?? "Deleted",
+        planId: l.planId ?? null,
         plan: l.planName ?? "Deleted",
         subscriptionLabel: l.subscriptionLabel ?? "Deleted",
         subscriptionId: l.subscriptionId ?? "deleted",
+        clientSubscriptionId: l.clientSubscriptionId ?? null,
+        clientId: l.clientId ?? null,
         clientName: l.clientName ?? "Deleted Client",
         notes: l.notes,
       }));
@@ -129,10 +141,14 @@ export async function GET(request: NextRequest) {
             paidOn: platformRenewals.paidOn,
             periodStart: platformRenewals.periodStart,
             periodEnd: platformRenewals.periodEnd,
+            notes: platformRenewals.notes,
+            platformId: sql<string>`${platforms.id}`.as("platform_id"),
             platformName: sql<string>`${platforms.name}`.as("platform_name"),
+            planId: sql<string>`${plans.id}`.as("plan_id"),
             planName: sql<string>`${plans.name}`.as("plan_name"),
             subscriptionLabel: sql<string>`${subscriptions.label}`.as("subscription_label"),
             subscriptionId: sql<string>`${subscriptions.id}`.as("subscription_id"),
+            ownerClientId: sql<string>`${subscriptions.ownerId}`.as("owner_client_id"),
             ownerClientName: sql<string>`${clients.name}`.as("owner_client_name"),
           })
           .from(platformRenewals)
@@ -157,12 +173,16 @@ export async function GET(request: NextRequest) {
         paidOn: r.paidOn,
         periodStart: r.periodStart,
         periodEnd: r.periodEnd,
+        platformId: r.platformId ?? null,
         platform: r.platformName ?? "Deleted",
+        planId: r.planId ?? null,
         plan: r.planName ?? "Deleted",
         subscriptionLabel: r.subscriptionLabel ?? "Deleted",
         subscriptionId: r.subscriptionId ?? "deleted",
+        clientSubscriptionId: null,
+        clientId: r.ownerClientId ?? null,
         clientName: r.ownerClientName ?? "Deleted Client",
-        notes: "platform_payment",
+        notes: r.notes ?? "platform_payment",
       }));
       costCount = Number(cnt[0]?.total ?? 0);
     }

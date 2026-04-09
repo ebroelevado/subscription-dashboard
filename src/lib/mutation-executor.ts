@@ -7,6 +7,7 @@ import {
   platforms,
   plans,
   renewalLogs,
+  platformRenewals,
   mutationAuditLogs,
 } from "@/db/schema";
 import {
@@ -373,7 +374,16 @@ export async function executeMutation(
     }
 
     case "managePayments": {
-      const { operation, paymentId, amountPaid, paidOn, notes, periodStart, periodEnd } = pendingChanges;
+      const {
+        operation,
+        paymentId,
+        amountPaid,
+        paidOn,
+        notes,
+        periodStart,
+        periodEnd,
+        clientSubscriptionId,
+      } = pendingChanges;
       if (!paymentId) throw new Error("Missing paymentId");
 
       const payment = await db.query.renewalLogs.findFirst({
@@ -417,6 +427,27 @@ export async function executeMutation(
 
       // Update operation
       const [updated] = await runMutationInTransaction(db, async (tx) => {
+        let nextClientSubscriptionId: string | undefined;
+        let nextExpectedAmount: number | undefined;
+
+        if (clientSubscriptionId !== undefined) {
+          const nextSeat = await tx.query.clientSubscriptions.findFirst({
+            where: eq(clientSubscriptions.id, clientSubscriptionId as string),
+            with: {
+              subscription: {
+                columns: { userId: true },
+              },
+            },
+          });
+
+          if (!nextSeat || nextSeat.subscription.userId !== userId) {
+            throw new Error("Target seat not found or access denied.");
+          }
+
+          nextClientSubscriptionId = nextSeat.id;
+          nextExpectedAmount = Number(nextSeat.customPrice);
+        }
+
         const paidOnStr = paidOn
           ? (typeof paidOn === "string" ? paidOn : new Date(paidOn as string).toISOString().split("T")[0])
           : undefined;
@@ -432,6 +463,8 @@ export async function executeMutation(
           ...(notes !== undefined ? { notes: notes as string } : {}),
           ...(periodStartStr ? { periodStart: periodStartStr } : {}),
           ...(periodEndStr ? { periodEnd: periodEndStr } : {}),
+          ...(nextClientSubscriptionId ? { clientSubscriptionId: nextClientSubscriptionId } : {}),
+          ...(nextExpectedAmount !== undefined ? { expectedAmount: amountToCents(nextExpectedAmount) } : {}),
         }).where(eq(renewalLogs.id, paymentId as string)).returning();
       });
 
@@ -441,9 +474,93 @@ export async function executeMutation(
         notes: updated.notes,
         periodStart: updated.periodStart,
         periodEnd: updated.periodEnd,
+        clientSubscriptionId: updated.clientSubscriptionId,
+        expectedAmount: Number(updated.expectedAmount),
       });
 
       return { message: `Payment updated successfully.`, payment: updated };
+    }
+
+    case "managePlatformPayments": {
+      const {
+        operation,
+        paymentId,
+        amountPaid,
+        paidOn,
+        notes,
+        periodStart,
+        periodEnd,
+        subscriptionId,
+      } = pendingChanges;
+      if (!paymentId) throw new Error("Missing paymentId");
+
+      const payment = await db.query.platformRenewals.findFirst({
+        where: eq(platformRenewals.id, paymentId as string),
+        with: {
+          subscription: {
+            columns: { userId: true },
+          },
+        },
+      });
+      if (!payment || payment.subscription.userId !== userId) {
+        throw new Error("Platform payment record not found or access denied.");
+      }
+
+      if (operation === "delete") {
+        await runMutationInTransaction(db, async (tx) => {
+          await tx.delete(platformRenewals).where(eq(platformRenewals.id, paymentId as string));
+        });
+
+        await setAuditLogNewValues(auditLogId, { deleted: true, paymentId });
+        return { message: "Platform payment deleted successfully." };
+      }
+
+      const [updated] = await runMutationInTransaction(db, async (tx) => {
+        let nextSubscriptionId: string | undefined;
+
+        if (subscriptionId !== undefined) {
+          const nextSubscription = await tx.query.subscriptions.findFirst({
+            where: eq(subscriptions.id, subscriptionId as string),
+            columns: { id: true, userId: true },
+          });
+
+          if (!nextSubscription || nextSubscription.userId !== userId) {
+            throw new Error("Target subscription not found or access denied.");
+          }
+
+          nextSubscriptionId = nextSubscription.id;
+        }
+
+        const paidOnStr = paidOn
+          ? (typeof paidOn === "string" ? paidOn : new Date(paidOn as string).toISOString().split("T")[0])
+          : undefined;
+        const periodStartStr = periodStart
+          ? (typeof periodStart === "string" ? periodStart : new Date(periodStart as string).toISOString().split("T")[0])
+          : undefined;
+        const periodEndStr = periodEnd
+          ? (typeof periodEnd === "string" ? periodEnd : new Date(periodEnd as string).toISOString().split("T")[0])
+          : undefined;
+
+        return tx.update(platformRenewals).set({
+          ...(amountPaid !== undefined ? { amountPaid: amountToCents(amountPaid as number) } : {}),
+          ...(paidOnStr ? { paidOn: paidOnStr } : {}),
+          ...(notes !== undefined ? { notes: notes as string } : {}),
+          ...(periodStartStr ? { periodStart: periodStartStr } : {}),
+          ...(periodEndStr ? { periodEnd: periodEndStr } : {}),
+          ...(nextSubscriptionId ? { subscriptionId: nextSubscriptionId } : {}),
+        }).where(eq(platformRenewals.id, paymentId as string)).returning();
+      });
+
+      await setAuditLogNewValues(auditLogId, {
+        amountPaid: Number(updated.amountPaid),
+        paidOn: updated.paidOn,
+        notes: updated.notes,
+        periodStart: updated.periodStart,
+        periodEnd: updated.periodEnd,
+        subscriptionId: updated.subscriptionId,
+      });
+
+      return { message: "Platform payment updated successfully.", payment: updated };
     }
 
     case "bulkManageSeats": {
