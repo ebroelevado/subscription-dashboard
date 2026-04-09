@@ -31,7 +31,7 @@
         ]
       }
     ],
-    "startCommand": "bun .next/standalone/server.js",
+    "startCommand": "node .next/standalone/server.js",
     "variables": {
       "NODE_ENV": "production",
       "HOSTNAME": "0.0.0.0",
