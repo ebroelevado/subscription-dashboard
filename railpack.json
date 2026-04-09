@@ -8,10 +8,14 @@
   "steps": {
     "build": {
       "commands": [
-        "bun install",
-        "bun run build:next",
-        "cp -r public .next/standalone/public",
-        "cp -r .next/static .next/standalone/.next/static"
+        "set -euo pipefail; bun install --frozen-lockfile; bun run build:next; mkdir -p .next/standalone/public .next/standalone/.next; cp -r public .next/standalone/public; cp -r .next/static .next/standalone/.next/static; rm -rf node_modules .next/cache"
+      ],
+      "deployOutputs": [
+        {
+          "include": [
+            ".next/standalone/**"
+          ]
+        }
       ],
       "variables": {
         "NEXT_CPU_COUNT": "4"
@@ -19,6 +23,14 @@
     }
   },
   "deploy": {
+    "inputs": [
+      {
+        "step": "build",
+        "include": [
+          ".next/standalone/**"
+        ]
+      }
+    ],
     "startCommand": "bun .next/standalone/server.js",
     "variables": {
       "NODE_ENV": "production",
