@@ -57,6 +57,20 @@ export type SchemaDatabase = ReturnType<typeof drizzleD1<typeof schema>> & {
   }>;
 };
 
+function resolveLocalDbPath(pathModule: any): string {
+  const explicitPath = process.env.LOCAL_SQLITE_PATH?.trim();
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  // In containerized production environments, /tmp is typically writable.
+  if (process.env.NODE_ENV === "production") {
+    return "/tmp/local.db";
+  }
+
+  return pathModule.join(process.cwd(), "local.db");
+}
+
 // Build a wrapped D1 database with execute method
 function createWrappedD1Db(d1Binding: D1Database): SchemaDatabase {
   const baseDb = drizzleD1(d1Binding, { schema, logger: true });
@@ -114,10 +128,12 @@ let _sqlite: any = null;
 // Uses better-sqlite3 which works with Node.js (Vinext's SSR runtime)
 function createWrappedSQLiteDb(): SchemaDatabase {
   const Database = require("better-sqlite3");
+  const fs = require("fs");
   const { drizzle: drizzleSQLite } = require("drizzle-orm/better-sqlite3");
   const path = require("path");
 
-  const dbPath = path.join(process.cwd(), "local.db");
+  const dbPath = resolveLocalDbPath(path);
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
   _sqlite = new Database(dbPath);
   _sqlite.pragma("journal_mode = WAL");
@@ -329,10 +345,19 @@ export function getDb(): SchemaDatabase {
 
   // Support for Remote D1 Sync (Real DB) in local development
   if (process.env.USE_REMOTE_DB === "true") {
-    console.log("🌐 Connecting to REMOTE Cloudflare D1 database via Worker Proxy");
-    _cachedDb = createRemoteD1Db();
-    _cachedDirectDb = _cachedDb;
-    return _cachedDb;
+    const hasRemoteUrl = Boolean(process.env.AGENT_SESSION_URL);
+    const hasRemoteSecret = Boolean(process.env.DB_PROXY_SECRET);
+
+    if (hasRemoteUrl && hasRemoteSecret) {
+      console.log("🌐 Connecting to REMOTE Cloudflare D1 database via Worker Proxy");
+      _cachedDb = createRemoteD1Db();
+      _cachedDirectDb = _cachedDb;
+      return _cachedDb;
+    }
+
+    console.warn(
+      "[db] USE_REMOTE_DB=true but AGENT_SESSION_URL/DB_PROXY_SECRET are missing. Falling back to local SQLite.",
+    );
   }
 
   // For local development, use better-sqlite3 with Node.js (Vinext SSR)
