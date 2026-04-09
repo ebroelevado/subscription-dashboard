@@ -27,11 +27,14 @@ function isBeginTransactionError(error: unknown): boolean {
   );
 }
 
+type TransactionDb = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DatabaseContext = TransactionDb | typeof db;
+
 async function runWithTransactionFallback<T>(
-  callback: (tx: typeof db) => Promise<T>,
+  callback: (tx: DatabaseContext) => Promise<T>,
 ): Promise<T> {
   try {
-    return await db.transaction(async (tx) => callback(tx as typeof db));
+    return await db.transaction(async (tx) => callback(tx));
   } catch (error) {
     if (!isBeginTransactionError(error)) {
       throw error;
@@ -42,7 +45,7 @@ async function runWithTransactionFallback<T>(
   }
 }
 
-async function clearUserDataInTransaction(tx: typeof db, userId: string) {
+async function clearUserDataInTransaction(tx: DatabaseContext, userId: string) {
   const existingSubIds = await tx
     .select({ id: subscriptions.id })
     .from(subscriptions)
