@@ -1,9 +1,110 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { platforms, plans, subscriptions, clients, clientSubscriptions, renewalLogs, platformRenewals, users, mutationAuditLogs } from "@/db/schema";
+import {
+  platforms,
+  plans,
+  subscriptions,
+  clients,
+  clientSubscriptions,
+  renewalLogs,
+  platformRenewals,
+  users,
+  mutationAuditLogs,
+  accounts,
+  sessions,
+} from "@/db/schema";
 import type { ImportDataInput } from "@/lib/validations/account";
 import { amountToCents } from "@/lib/currency";
 import { deleteR2Folder } from "@/lib/r2";
+
+function isBeginTransactionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("failed query: begin") ||
+    message.includes("cannot start a transaction") ||
+    message.includes("near \"begin\"")
+  );
+}
+
+async function runWithTransactionFallback<T>(
+  callback: (tx: typeof db) => Promise<T>,
+): Promise<T> {
+  try {
+    return await db.transaction(async (tx) => callback(tx as typeof db));
+  } catch (error) {
+    if (!isBeginTransactionError(error)) {
+      throw error;
+    }
+
+    console.warn("[Account Service] Transaction BEGIN failed, retrying without transaction");
+    return callback(db);
+  }
+}
+
+async function clearUserDataInTransaction(tx: typeof db, userId: string) {
+  const existingSubIds = await tx
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId));
+
+  const existingClientIds = await tx
+    .select({ id: clients.id })
+    .from(clients)
+    .where(eq(clients.userId, userId));
+
+  const existingSubIdsList = existingSubIds.map((s) => s.id);
+  const existingClientIdsList = existingClientIds.map((c) => c.id);
+
+  if (existingSubIdsList.length > 0) {
+    await tx
+      .delete(platformRenewals)
+      .where(inArray(platformRenewals.subscriptionId, existingSubIdsList));
+  }
+
+  if (existingClientIdsList.length > 0) {
+    const existingClientSubIds = await tx
+      .select({ id: clientSubscriptions.id })
+      .from(clientSubscriptions)
+      .where(inArray(clientSubscriptions.clientId, existingClientIdsList));
+
+    const existingClientSubIdsList = existingClientSubIds.map((cs) => cs.id);
+
+    if (existingClientSubIdsList.length > 0) {
+      await tx
+        .delete(renewalLogs)
+        .where(inArray(renewalLogs.clientSubscriptionId, existingClientSubIdsList));
+      await tx
+        .delete(clientSubscriptions)
+        .where(inArray(clientSubscriptions.clientId, existingClientIdsList));
+    }
+
+    await tx.delete(clients).where(eq(clients.userId, userId));
+  }
+
+  if (existingSubIdsList.length > 0) {
+    const csForSubs = await tx
+      .select({ id: clientSubscriptions.id })
+      .from(clientSubscriptions)
+      .where(inArray(clientSubscriptions.subscriptionId, existingSubIdsList));
+
+    const csForSubsList = csForSubs.map((cs) => cs.id);
+    if (csForSubsList.length > 0) {
+      await tx
+        .delete(renewalLogs)
+        .where(inArray(renewalLogs.clientSubscriptionId, csForSubsList));
+    }
+
+    await tx
+      .delete(clientSubscriptions)
+      .where(inArray(clientSubscriptions.subscriptionId, existingSubIdsList));
+    await tx.delete(subscriptions).where(eq(subscriptions.userId, userId));
+  }
+
+  await tx.delete(plans).where(eq(plans.userId, userId));
+  await tx.delete(platforms).where(eq(platforms.userId, userId));
+  await tx.delete(mutationAuditLogs).where(eq(mutationAuditLogs.userId, userId));
+}
 
 // ──────────────────────────────────────────
 // Export — collects ALL user data into a
@@ -67,6 +168,54 @@ export async function exportUserData(userId: string) {
   };
 }
 
+function ensureImportReferentialIntegrity(data: ImportDataInput) {
+  const platformIds = new Set(data.platforms.map((p) => p.id));
+  const planIds = new Set(data.plans.map((p) => p.id));
+  const subscriptionIds = new Set(data.subscriptions.map((s) => s.id));
+  const clientIds = new Set(data.clients.map((c) => c.id));
+  const clientSubscriptionIds = new Set(data.clientSubscriptions.map((cs) => cs.id));
+
+  const issues: string[] = [];
+
+  data.plans.forEach((p) => {
+    if (!platformIds.has(p.platformId)) {
+      issues.push(`plan ${p.id} references missing platform ${p.platformId}`);
+    }
+  });
+
+  data.subscriptions.forEach((s) => {
+    if (!planIds.has(s.planId)) {
+      issues.push(`subscription ${s.id} references missing plan ${s.planId}`);
+    }
+  });
+
+  data.clientSubscriptions.forEach((cs) => {
+    if (!clientIds.has(cs.clientId)) {
+      issues.push(`clientSubscription ${cs.id} references missing client ${cs.clientId}`);
+    }
+    if (!subscriptionIds.has(cs.subscriptionId)) {
+      issues.push(`clientSubscription ${cs.id} references missing subscription ${cs.subscriptionId}`);
+    }
+  });
+
+  data.renewalLogs.forEach((rl) => {
+    if (!clientSubscriptionIds.has(rl.clientSubscriptionId)) {
+      issues.push(`renewalLog ${rl.id} references missing clientSubscription ${rl.clientSubscriptionId}`);
+    }
+  });
+
+  data.platformRenewals.forEach((pr) => {
+    if (!subscriptionIds.has(pr.subscriptionId)) {
+      issues.push(`platformRenewal ${pr.id} references missing subscription ${pr.subscriptionId}`);
+    }
+  });
+
+  if (issues.length > 0) {
+    const sample = issues.slice(0, 5).join("; ");
+    throw new Error(`Import integrity error: ${sample}${issues.length > 5 ? `; +${issues.length - 5} more` : ""}`);
+  }
+}
+
 // ──────────────────────────────────────────
 // Import — atomic insert of a full data dump
 // into the current user's account.
@@ -77,45 +226,11 @@ export async function importUserData(
   userId: string,
   data: ImportDataInput,
 ) {
-  await db.transaction(async (tx) => {
+  ensureImportReferentialIntegrity(data);
+
+  await runWithTransactionFallback(async (tx) => {
     // ── Pre-import cleanup: delete existing data in reverse FK order ──
-    const existingSubIds = await tx.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.userId, userId));
-    const existingClientIds = await tx.select({ id: clients.id }).from(clients).where(eq(clients.userId, userId));
-    const existingSubIdsList = existingSubIds.map(s => s.id);
-    const existingClientIdsList = existingClientIds.map(c => c.id);
-
-    if (existingSubIdsList.length > 0) {
-      await tx.delete(platformRenewals).where(inArray(platformRenewals.subscriptionId, existingSubIdsList));
-    }
-    if (existingClientIdsList.length > 0) {
-      const existingClientSubIds = await tx.select({ id: clientSubscriptions.id })
-        .from(clientSubscriptions)
-        .where(inArray(clientSubscriptions.clientId, existingClientIdsList));
-      const existingClientSubIdsList = existingClientSubIds.map(cs => cs.id);
-      if (existingClientSubIdsList.length > 0) {
-        await tx.delete(renewalLogs).where(inArray(renewalLogs.clientSubscriptionId, existingClientSubIdsList));
-        await tx.delete(clientSubscriptions).where(inArray(clientSubscriptions.clientId, existingClientIdsList));
-      }
-      // Also delete clientSubscriptions linked to user's subscriptions
-      if (existingSubIdsList.length > 0) {
-        const csForSubs = await tx.select({ id: clientSubscriptions.id })
-          .from(clientSubscriptions)
-          .where(inArray(clientSubscriptions.subscriptionId, existingSubIdsList));
-        const csForSubsList = csForSubs.map(cs => cs.id);
-        if (csForSubsList.length > 0) {
-          await tx.delete(renewalLogs).where(inArray(renewalLogs.clientSubscriptionId, csForSubsList));
-        }
-        await tx.delete(clientSubscriptions).where(inArray(clientSubscriptions.subscriptionId, existingSubIdsList));
-      }
-      await tx.delete(clients).where(eq(clients.userId, userId));
-    }
-
-    if (existingSubIdsList.length > 0) {
-      await tx.delete(subscriptions).where(eq(subscriptions.userId, userId));
-    }
-    await tx.delete(plans).where(eq(plans.userId, userId));
-    await tx.delete(platforms).where(eq(platforms.userId, userId));
-    await tx.delete(mutationAuditLogs).where(eq(mutationAuditLogs.userId, userId));
+    await clearUserDataInTransaction(tx, userId);
 
     // ── Update user settings if provided ──
     if (data.userSettings) {
@@ -150,10 +265,12 @@ export async function importUserData(
 
     // 2 · Plans
     for (const p of data.plans) {
-      const newId = crypto.randomUUID();
-      planMap.set(p.id, newId);
       const platformId = platformMap.get(p.platformId);
-      if (!platformId) continue; // skip orphan
+      if (!platformId) {
+        throw new Error(`Missing mapped platform for plan ${p.id}`);
+      }
+
+      const newId = crypto.randomUUID();
       await tx.insert(plans).values({
         id: newId,
         userId,
@@ -164,35 +281,12 @@ export async function importUserData(
         isActive: p.isActive ?? true,
         ...(p.createdAt && { createdAt: new Date(p.createdAt).toISOString() }),
       });
+      planMap.set(p.id, newId);
     }
 
-    // 3 · Subscriptions
-    for (const s of data.subscriptions) {
-      const newId = crypto.randomUUID();
-      subscriptionMap.set(s.id, newId);
-      const planId = planMap.get(s.planId);
-      if (!planId) continue;
-      await tx.insert(subscriptions).values({
-        id: newId,
-        userId,
-        planId,
-        label: s.label,
-        startDate: new Date(s.startDate).toISOString().split("T")[0],
-        activeUntil: new Date(s.activeUntil).toISOString().split("T")[0],
-        status: s.status,
-        masterUsername: s.masterUsername ?? null,
-        masterPassword: s.masterPassword ?? null,
-        ownerId: s.ownerId ?? null,
-        isAutopayable: s.isAutopayable ?? true,
-        defaultPaymentNote: s.defaultPaymentNote ?? null,
-        ...(s.createdAt && { createdAt: new Date(s.createdAt).toISOString() }),
-      });
-    }
-
-    // 4 · Clients
+    // 3 · Clients
     for (const c of data.clients) {
       const newId = crypto.randomUUID();
-      clientMap.set(c.id, newId);
       await tx.insert(clients).values({
         id: newId,
         userId,
@@ -205,15 +299,46 @@ export async function importUserData(
         healthStatus: c.healthStatus ?? null,
         ...(c.createdAt && { createdAt: new Date(c.createdAt).toISOString() }),
       });
+      clientMap.set(c.id, newId);
+    }
+
+    // 4 · Subscriptions
+    for (const s of data.subscriptions) {
+      const planId = planMap.get(s.planId);
+      if (!planId) {
+        throw new Error(`Missing mapped plan for subscription ${s.id}`);
+      }
+
+      const ownerId = s.ownerId ? (clientMap.get(s.ownerId) ?? null) : null;
+      const newId = crypto.randomUUID();
+
+      await tx.insert(subscriptions).values({
+        id: newId,
+        userId,
+        planId,
+        label: s.label,
+        startDate: new Date(s.startDate).toISOString().split("T")[0],
+        activeUntil: new Date(s.activeUntil).toISOString().split("T")[0],
+        status: s.status,
+        masterUsername: s.masterUsername ?? null,
+        masterPassword: s.masterPassword ?? null,
+        ownerId,
+        isAutopayable: s.isAutopayable ?? true,
+        defaultPaymentNote: s.defaultPaymentNote ?? null,
+        ...(s.createdAt && { createdAt: new Date(s.createdAt).toISOString() }),
+      });
+      subscriptionMap.set(s.id, newId);
     }
 
     // 5 · Client Subscriptions
     for (const cs of data.clientSubscriptions) {
-      const newId = crypto.randomUUID();
-      clientSubMap.set(cs.id, newId);
       const clientId = clientMap.get(cs.clientId);
       const subscriptionId = subscriptionMap.get(cs.subscriptionId);
-      if (!clientId || !subscriptionId) continue;
+      if (!clientId || !subscriptionId) {
+        throw new Error(`Missing mapped client/subscription for clientSubscription ${cs.id}`);
+      }
+
+      const newId = crypto.randomUUID();
       await tx.insert(clientSubscriptions).values({
         id: newId,
         clientId,
@@ -227,12 +352,15 @@ export async function importUserData(
         serviceUser: (cs as any).serviceUser ?? null,
         servicePassword: (cs as any).servicePassword ?? null,
       });
+      clientSubMap.set(cs.id, newId);
     }
 
     // 6 · Renewal Logs (append-only — import as new entries)
     for (const rl of data.renewalLogs) {
       const clientSubscriptionId = clientSubMap.get(rl.clientSubscriptionId);
-      if (!clientSubscriptionId) continue;
+      if (!clientSubscriptionId) {
+        throw new Error(`Missing mapped clientSubscription for renewalLog ${rl.id}`);
+      }
       await tx.insert(renewalLogs).values({
         id: crypto.randomUUID(),
         clientSubscriptionId,
@@ -251,7 +379,9 @@ export async function importUserData(
     // 7 · Platform Renewals
     for (const pr of data.platformRenewals) {
       const subscriptionId = subscriptionMap.get(pr.subscriptionId);
-      if (!subscriptionId) continue;
+      if (!subscriptionId) {
+        throw new Error(`Missing mapped subscription for platformRenewal ${pr.id}`);
+      }
       await tx.insert(platformRenewals).values({
         id: crypto.randomUUID(),
         subscriptionId,
@@ -293,13 +423,34 @@ export async function importUserData(
 // ──────────────────────────────────────────
 
 export async function deleteUserAccount(userId: string) {
-  // Delete R2 conversations first
+  // Delete R2 conversations first.
   try {
     await deleteR2Folder(userId);
   } catch (err) {
-    // Log but don't block account deletion if R2 fails
+    // Log but don't block account deletion if R2 fails.
     console.error("[Delete Account] Failed to delete R2 conversations:", err);
   }
 
-  await db.delete(users).where(eq(users.id, userId));
+  await runWithTransactionFallback(async (tx) => {
+    await clearUserDataInTransaction(tx, userId);
+
+    // Explicitly delete auth rows to avoid relying only on FK cascades.
+    await tx.delete(accounts).where(eq(accounts.userId, userId));
+    await tx.delete(sessions).where(eq(sessions.userId, userId));
+
+    await tx.delete(users).where(eq(users.id, userId));
+  });
+}
+
+export async function clearUserData(userId: string) {
+  try {
+    await deleteR2Folder(userId);
+  } catch (err) {
+    // Log but don't block data cleanup if R2 fails.
+    console.error("[Clear Data] Failed to delete R2 conversations:", err);
+  }
+
+  await runWithTransactionFallback(async (tx) => {
+    await clearUserDataInTransaction(tx, userId);
+  });
 }

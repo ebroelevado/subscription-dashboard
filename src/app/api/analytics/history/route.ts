@@ -68,11 +68,11 @@ export async function GET(request: NextRequest) {
             periodStart: renewalLogs.periodStart,
             periodEnd: renewalLogs.periodEnd,
             notes: renewalLogs.notes,
-            platformName: platforms.name,
-            planName: plans.name,
-            subscriptionLabel: subscriptions.label,
+            platformName: sql<string>`${platforms.name}`.as("platform_name"),
+            planName: sql<string>`${plans.name}`.as("plan_name"),
+            subscriptionLabel: sql<string>`${subscriptions.label}`.as("subscription_label"),
             subscriptionId: subscriptions.id,
-            clientName: clients.name,
+            clientName: sql<string>`${clients.name}`.as("client_name"),
           })
           .from(renewalLogs)
           .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
@@ -129,9 +129,9 @@ export async function GET(request: NextRequest) {
             paidOn: platformRenewals.paidOn,
             periodStart: platformRenewals.periodStart,
             periodEnd: platformRenewals.periodEnd,
-            platformName: platforms.name,
-            planName: plans.name,
-            subscriptionLabel: subscriptions.label,
+            platformName: sql<string>`${platforms.name}`.as("platform_name"),
+            planName: sql<string>`${plans.name}`.as("plan_name"),
+            subscriptionLabel: sql<string>`${subscriptions.label}`.as("subscription_label"),
             subscriptionId: subscriptions.id,
           })
           .from(platformRenewals)

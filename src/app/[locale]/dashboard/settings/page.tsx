@@ -52,6 +52,7 @@ import {
   useUpdateProfile,
   useExportData,
   useImportData,
+  useClearAccountData,
   useDeleteAccount,
   useUpdateSettings,
 } from "@/hooks/use-account";
@@ -584,7 +585,19 @@ function DataTab() {
               <AlertTriangle className="size-4" />
               {t("danger")}
             </div>
+
             <div>
+              <h4 className="text-sm font-medium text-destructive">
+                {t("clearData")}
+              </h4>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t("clearDataWarning")}
+              </p>
+            </div>
+
+            <ClearDataButton />
+
+            <div className="border-t border-destructive/20 pt-4">
               <h4 className="text-sm font-medium text-destructive">
                 {t("deleteAccount")}
               </h4>
@@ -598,6 +611,81 @@ function DataTab() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ClearDataButton() {
+  const clearData = useClearAccountData();
+  const [confirmText, setConfirmText] = useState("");
+  const [open, setOpen] = useState(false);
+  const t = useTranslations("settings");
+  const tc = useTranslations("common");
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" className="bg-destructive/80 hover:bg-destructive">
+          <Trash2 className="size-4 mr-2" />
+          {t("clearData")}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("confirmClearData")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("clearDataDescription")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            {t.rich("typeClearToConfirm", {
+              confirmWord: t("clearConfirmPlaceholder"),
+              word: (word) => (
+                <span className="font-bold text-destructive underline decoration-2 underline-offset-2">
+                  {word}
+                </span>
+              ),
+            })}
+          </p>
+          <Input
+            placeholder={t("clearConfirmPlaceholder")}
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+            className="font-mono"
+          />
+        </div>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setConfirmText("")}>
+            {tc("cancel")}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={confirmText !== t("clearConfirmPlaceholder") || clearData.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              clearData.mutate(undefined, {
+                onSuccess: () => {
+                  toast.success(t("clearDataSuccess"));
+                  setConfirmText("");
+                  setOpen(false);
+                },
+                onError: (err) => {
+                  toast.error(err.message);
+                  setOpen(false);
+                },
+              });
+            }}
+            className="bg-destructive text-white hover:bg-destructive/90"
+          >
+            {clearData.isPending && (
+              <Loader2 className="size-4 animate-spin mr-2" />
+            )}
+            {tc("delete")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -78,6 +78,24 @@ export function useImportData() {
   });
 }
 
+// ── Clear Account Data (keep account) ──
+export function useClearAccountData() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/account/clear-data", { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json();
+        throw new Error(json.error ?? "Data cleanup failed");
+      }
+    },
+    onSuccess: () => {
+      invalidateAll(qc);
+    },
+  });
+}
+
 // ── Delete Account ──
 export function useDeleteAccount() {
   return useMutation({
@@ -87,14 +105,12 @@ export function useDeleteAccount() {
         const json = await res.json();
         throw new Error(json.error ?? "Deletion failed");
       }
-      // Destroy session + redirect to landing
-      await signOut({
-        fetchOptions: {
-          onSuccess: () => {
-             window.location.href = "/";
-          }
-        }
-      });
+      // Best-effort sign-out; always redirect even if the session is already invalid.
+      try {
+        await signOut();
+      } finally {
+        window.location.href = "/";
+      }
     },
   });
 }
