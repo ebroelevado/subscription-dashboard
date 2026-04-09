@@ -35,7 +35,8 @@
     "variables": {
       "NODE_ENV": "production",
       "HOSTNAME": "0.0.0.0",
-      "AUTH_TRUST_HOST": "true"
+      "AUTH_TRUST_HOST": "true",
+      "USE_REMOTE_DB": "true"
     }
   }
 }

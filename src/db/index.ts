@@ -343,11 +343,15 @@ export function getDb(): SchemaDatabase {
     return _cachedDb;
   }
 
-  // Support for Remote D1 Sync (Real DB) in local development
-  if (process.env.USE_REMOTE_DB === "true") {
-    const hasRemoteUrl = Boolean(process.env.AGENT_SESSION_URL);
-    const hasRemoteSecret = Boolean(process.env.DB_PROXY_SECRET);
+  const isProduction = process.env.NODE_ENV === "production";
+  const hasRemoteUrl = Boolean(process.env.AGENT_SESSION_URL);
+  const hasRemoteSecret = Boolean(process.env.DB_PROXY_SECRET);
+  const useRemoteByFlag = process.env.USE_REMOTE_DB === "true";
+  const useRemoteByAutoDetect = isProduction && hasRemoteUrl && hasRemoteSecret;
 
+  // In production, prefer remote DB automatically when proxy env is present,
+  // even if USE_REMOTE_DB was not explicitly set.
+  if (useRemoteByFlag || useRemoteByAutoDetect) {
     if (hasRemoteUrl && hasRemoteSecret) {
       console.log("🌐 Connecting to REMOTE Cloudflare D1 database via Worker Proxy");
       _cachedDb = createRemoteD1Db();
@@ -356,7 +360,7 @@ export function getDb(): SchemaDatabase {
     }
 
     console.warn(
-      "[db] USE_REMOTE_DB=true but AGENT_SESSION_URL/DB_PROXY_SECRET are missing. Falling back to local SQLite.",
+      "[db] Remote DB mode requested but AGENT_SESSION_URL/DB_PROXY_SECRET are missing. Falling back to local SQLite.",
     );
   }
 
