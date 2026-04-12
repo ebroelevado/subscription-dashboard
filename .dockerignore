@@ -43,3 +43,8 @@ reporte_completo_*.csv
 log.log
 skills-lock.json
 ai.md
+
+# Local data dumps / backups (very large, not needed in image builds)
+export/
+d1-export-*/
+prod-backup-before-compat-*.sql

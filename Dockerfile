@@ -19,11 +19,14 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Generator Prisma
-RUN bunx prisma generate
-
 # Build Next.js
-RUN bun run build
+RUN bun run build:next
+
+# Prune non-runtime files from standalone node_modules to reduce image import size.
+RUN if [ -d .next/standalone/node_modules ]; then \
+	find .next/standalone/node_modules -type f \( -name "*.ts" -o -name "*.d.ts" -o -name "*.map" -o -name "*.md" -o -name "*.markdown" -o -name "LICENSE*" -o -name "README*" \) -exec rm -f '{}' +; \
+	find .next/standalone/node_modules -type d \( -name "test" -o -name "tests" -o -name "__tests__" -o -name "docs" -o -name "doc" \) -prune -exec rm -rf '{}' +; \
+fi
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -45,8 +48,6 @@ RUN chown nextjs:nodejs .next
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@github/copilot ./copilot-cli
 
 USER nextjs
 

@@ -76,6 +76,8 @@ const clientSubscriptionImportSchema = z.object({
 const renewalLogImportSchema = z.object({
   id: z.string(),
   clientSubscriptionId: z.string(),
+  clientId: z.string().optional(),
+  subscriptionId: z.string().optional(),
   amountPaid: z.number().min(0),
   expectedAmount: z.number().min(0),
   periodStart: z.string(),

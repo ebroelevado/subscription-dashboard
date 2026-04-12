@@ -9,22 +9,22 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Suppress noisy SES/lockdown warnings from AI SDK that don't affect functionality
 if (typeof window !== "undefined") {
-  const origWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    const msg = String(args[0] ?? "");
-    if (msg.includes("lockdown-install.js") || msg.includes("Removing intrinsics")) return;
-    origWarn.apply(console, args);
+  const patchConsole = (method: keyof Console) => {
+    const orig = console[method] as (...args: unknown[]) => void;
+    (console[method] as any) = (...args: unknown[]) => {
+      const msg = String(args[0] ?? "");
+      if (
+        msg.includes("lockdown-install.js") || 
+        msg.includes("Removing intrinsics") || 
+        msg.includes("SES") ||
+        msg.includes("getOrInsert")
+      ) return;
+      orig.apply(console, args);
+    };
   };
-}
-
-// Suppress noisy SES/lockdown warnings from AI SDK that don't affect functionality
-if (typeof window !== "undefined") {
-  const origWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    const msg = String(args[0] ?? "");
-    if (msg.includes("lockdown-install.js") || msg.includes("Removing intrinsics")) return;
-    origWarn.apply(console, args);
-  };
+  patchConsole("warn");
+  patchConsole("log");
+  patchConsole("info");
 }
 
 interface ProvidersProps {

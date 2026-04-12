@@ -30,6 +30,10 @@ function isBeginTransactionError(error: unknown): boolean {
 type TransactionDb = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type DatabaseContext = TransactionDb | typeof db;
 
+function pairKey(clientId: string, subscriptionId: string): string {
+  return `${clientId}::${subscriptionId}`;
+}
+
 async function runWithTransactionFallback<T>(
   callback: (tx: DatabaseContext) => Promise<T>,
 ): Promise<T> {
@@ -134,7 +138,12 @@ export async function exportUserData(userId: string) {
     db.select().from(clientSubscriptions)
       .innerJoin(clients, eq(clientSubscriptions.clientId, clients.id))
       .where(eq(clients.userId, userId)),
-    db.select({ renewalLogs: renewalLogs })
+    db
+      .select({
+        renewalLog: renewalLogs,
+        legacyClientId: clientSubscriptions.clientId,
+        legacySubscriptionId: clientSubscriptions.subscriptionId,
+      })
       .from(renewalLogs)
       .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
       .innerJoin(clients, eq(clientSubscriptions.clientId, clients.id))
@@ -165,7 +174,11 @@ export async function exportUserData(userId: string) {
     subscriptions: stripUser(subscriptionsList),
     clients: stripUser(clientsList),
     clientSubscriptions: clientSubscriptionsList.map(r => r.client_subscriptions),
-    renewalLogs: renewalLogsList.map(r => r.renewalLogs),
+    renewalLogs: renewalLogsList.map((r) => ({
+      ...r.renewalLog,
+      clientId: r.legacyClientId,
+      subscriptionId: r.legacySubscriptionId,
+    })),
     platformRenewals: platformRenewalsList.map(r => r.platformRenewals),
     mutationAuditLogs: stripUser(auditLogsList),
   };
@@ -177,6 +190,12 @@ function ensureImportReferentialIntegrity(data: ImportDataInput) {
   const subscriptionIds = new Set(data.subscriptions.map((s) => s.id));
   const clientIds = new Set(data.clients.map((c) => c.id));
   const clientSubscriptionIds = new Set(data.clientSubscriptions.map((cs) => cs.id));
+  const clientSubscriptionPairKeys = new Set(
+    data.clientSubscriptions.map((cs) => pairKey(cs.clientId, cs.subscriptionId)),
+  );
+  const clientSubscriptionById = new Map(
+    data.clientSubscriptions.map((cs) => [cs.id, cs] as const),
+  );
 
   const issues: string[] = [];
 
@@ -204,6 +223,31 @@ function ensureImportReferentialIntegrity(data: ImportDataInput) {
   data.renewalLogs.forEach((rl) => {
     if (!clientSubscriptionIds.has(rl.clientSubscriptionId)) {
       issues.push(`renewalLog ${rl.id} references missing clientSubscription ${rl.clientSubscriptionId}`);
+    }
+
+    if (rl.clientId && !clientIds.has(rl.clientId)) {
+      issues.push(`renewalLog ${rl.id} references missing client ${rl.clientId}`);
+    }
+
+    if (rl.subscriptionId && !subscriptionIds.has(rl.subscriptionId)) {
+      issues.push(`renewalLog ${rl.id} references missing subscription ${rl.subscriptionId}`);
+    }
+
+    if (rl.clientId && rl.subscriptionId) {
+      const refKey = pairKey(rl.clientId, rl.subscriptionId);
+      if (!clientSubscriptionPairKeys.has(refKey)) {
+        issues.push(`renewalLog ${rl.id} references missing clientSubscription pair ${refKey}`);
+      }
+
+      const referencedSeat = clientSubscriptionById.get(rl.clientSubscriptionId);
+      if (
+        referencedSeat
+        && (referencedSeat.clientId !== rl.clientId || referencedSeat.subscriptionId !== rl.subscriptionId)
+      ) {
+        issues.push(
+          `renewalLog ${rl.id} has inconsistent references between clientSubscriptionId (${rl.clientSubscriptionId}) and pair (${refKey})`,
+        );
+      }
     }
   });
 
@@ -253,6 +297,7 @@ export async function importUserData(
     const subscriptionMap = new Map<string, string>();
     const clientMap = new Map<string, string>();
     const clientSubMap = new Map<string, string>();
+    const clientSubPairMap = new Map<string, string>();
 
     // 1 · Platforms
     for (const p of data.platforms) {
@@ -356,11 +401,23 @@ export async function importUserData(
         servicePassword: (cs as any).servicePassword ?? null,
       });
       clientSubMap.set(cs.id, newId);
+      clientSubPairMap.set(pairKey(cs.clientId, cs.subscriptionId), newId);
     }
 
     // 6 · Renewal Logs (append-only — import as new entries)
     for (const rl of data.renewalLogs) {
-      const clientSubscriptionId = clientSubMap.get(rl.clientSubscriptionId);
+      const byPair = rl.clientId && rl.subscriptionId
+        ? clientSubPairMap.get(pairKey(rl.clientId, rl.subscriptionId))
+        : undefined;
+      const byLegacyId = clientSubMap.get(rl.clientSubscriptionId);
+      const clientSubscriptionId = byPair ?? byLegacyId;
+
+      if (byPair && byLegacyId && byPair !== byLegacyId) {
+        console.warn(
+          `[Account Service] renewalLog ${rl.id} had conflicting linkage; using pair ${rl.clientId}::${rl.subscriptionId}`,
+        );
+      }
+
       if (!clientSubscriptionId) {
         throw new Error(`Missing mapped clientSubscription for renewalLog ${rl.id}`);
       }

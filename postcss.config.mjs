@@ -1,6 +1,6 @@
 const config = {
   plugins: {
-    "@tailwindcss/postcss": {},
+    // Tailwind is now handled by the Vite plugin (@tailwindcss/vite)
   },
 };
 
