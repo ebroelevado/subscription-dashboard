@@ -68,3 +68,14 @@ node_modules/
 /tests/
 /vitest.config.ts
 /vite.config.ts
+
+# vinext & build artifacts
+.vinext/
+.wrangler/
+dist/
+railpack-bundle/
+
+# SQL dumps and exports
+*.sql
+*-export-*/
+prod-backup-*/
