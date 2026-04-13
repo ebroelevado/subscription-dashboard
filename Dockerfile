@@ -1,62 +1,48 @@
-# Use the official Bun image
-FROM oven/bun:1.3.10-alpine AS base
+FROM oven/bun:1.3.10-alpine AS builder
 
-# Install dependencies only when needed
-FROM base AS deps
 WORKDIR /app
-COPY package.json bun.lockb ./
+
+# Copy package management files first for better caching
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
-# Rebuild the source code only when necessary
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Copy the rest of the application
 COPY . .
 
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry during the build.
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
+# Build the application
+# Ensure environment variables needed for build (if any) are passed when building,
+# but usually Vinext builds standalone bundles purely from source.
+RUN bun run build:vinext
 
-# Build Next.js
-RUN bun run build:next
+# -------------------------
+# Stage 2: Runner
+# -------------------------
+FROM oven/bun:1.3.10-alpine AS runner
 
-# Prune non-runtime files from standalone node_modules to reduce image import size.
-RUN if [ -d .next/standalone/node_modules ]; then \
-	find .next/standalone/node_modules -type f \( -name "*.ts" -o -name "*.d.ts" -o -name "*.map" -o -name "*.md" -o -name "*.markdown" -o -name "LICENSE*" -o -name "README*" \) -exec rm -f '{}' +; \
-	find .next/standalone/node_modules -type d \( -name "test" -o -name "tests" -o -name "__tests__" -o -name "docs" -o -name "doc" \) -prune -exec rm -rf '{}' +; \
-fi
-
-# Production image, copy all the files and run next
-FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME="0.0.0.0"
+ENV PORT=3000
+# Adding Dokploy/Railway fallback variables
+ENV AUTH_TRUST_HOST="true"
+ENV USE_REMOTE_DB="true"
+ENV AUTH_DISABLE_SES="true"
+ENV SES_ALLOW_DYNAMIC_CODE="true"
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Copy package management files (needed for `bun run start` which invokes `vinext start`)
+COPY --from=builder /app/package.json .
+COPY --from=builder /app/bun.lock .
 
+# Note: We must retain node_modules because `vinext start` relies on `vinext` and its dependencies
+# at runtime. In typical Next.js apps, `standalone` mode copies node_modules, but Vinext needs them.
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy build artifacts
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
-
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+COPY --from=builder /app/next.config.ts ./next.config.ts
 
 EXPOSE 3000
 
-ENV PORT=3000
-# set hostname to localhost
-ENV HOSTNAME="0.0.0.0"
-
-# server.js is created by next build from the standalone output
-# https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD ["bun", "server.js"]
+CMD ["bun", "run", "start"]

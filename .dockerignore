@@ -1,50 +1,11 @@
 node_modules
 .next
-out
-build
+.vinext
 dist
-.vercel
-.git
+railpack-bundle
 *.log
-*.tsbuildinfo
 .env*
-! .env.example
-# Temporary/Debug files
-batch_*.json
-project_data.json
-build_log.txt
-collect_files.py
-split_batches.py
-# Workers (separate deployment)
-workers/
-# Tests
-tests/
-*.test.ts
-*.test.tsx
-vitest.config.ts
-# Scripts
-scripts/
-# Drizzle migrations (not needed for runtime)
-drizzle/meta
-# Local dev DB
-local.db*
-# Wrangler cache
-.wrangler/
-# Playwright
-.playwright/
-# AI/Agents
-.ai/
-.agents/
-.claude/
-# VSCode
-.vscode/
-# Misc
-reporte_completo_*.csv
-log.log
-skills-lock.json
-ai.md
-
-# Local data dumps / backups (very large, not needed in image builds)
-export/
-d1-export-*/
-prod-backup-before-compat-*.sql
+!*.example
+.DS_Store
+.github
+*.sql
