@@ -96,47 +96,72 @@ export async function GET() {
     const thisMonthRevenue = Number(thisMonthRevenueAgg[0]?.total ?? 0);
     const thisMonthCost = Number(thisMonthCostAgg[0]?.total ?? 0);
 
-    // Build overdue + expiring-soon lists
-    const overdueSeats = allActiveSeats
-      .filter((s) => new Date(s.activeUntil) < today)
-      .map((s) => ({
-        id: s.id,
-        clientId: s.client.id,
-        clientName: s.client.name,
-        clientPhone: s.client.phone,
-        customPrice: Number(s.customPrice),
-        activeUntil: s.activeUntil,
-        daysOverdue: Math.floor(
-          (today.getTime() - new Date(s.activeUntil).getTime()) /
-            (1000 * 60 * 60 * 24),
-        ),
-        platform: s.subscription.plan.platform.name,
-        plan: s.subscription.plan.name,
-        subscriptionLabel: s.subscription.label,
-        subscriptionId: s.subscription.id,
-      }));
+    // Build client summaries and grouped lists
+    const clientMap = new Map<string, {
+      clientId: string;
+      clientName: string;
+      clientPhone: string | null;
+      overdueCount: number;
+      expiringCount: number;
+      okayCount: number;
+      totalCount: number;
+      maxDaysOverdue: number;
+      minDaysLeft: number;
+    }>();
 
-    const expiringSoonSeats = allActiveSeats
-      .filter(
-        (s) =>
-          new Date(s.activeUntil) >= today &&
-          new Date(s.activeUntil) <= soonThreshold,
-      )
-      .map((s) => ({
-        id: s.id,
-        clientId: s.client.id,
-        clientName: s.client.name,
-        clientPhone: s.client.phone,
-        customPrice: Number(s.customPrice),
-        activeUntil: s.activeUntil,
-        daysLeft: Math.ceil(
-          (new Date(s.activeUntil).getTime() - today.getTime()) /
-            (1000 * 60 * 60 * 24),
-        ),
-        platform: s.subscription.plan.platform.name,
-        subscriptionLabel: s.subscription.label,
-        subscriptionId: s.subscription.id,
-      }));
+    allActiveSeats.forEach((s) => {
+      const activeUntilDate = new Date(s.activeUntil);
+      let status: "overdue" | "expiring" | "okay" = "okay";
+      let daysOverdue = 0;
+      let daysLeft = 0;
+
+      if (activeUntilDate < today) {
+        status = "overdue";
+        daysOverdue = Math.floor(
+          (today.getTime() - activeUntilDate.getTime()) / (1000 * 60 * 60 * 24),
+        );
+      } else if (activeUntilDate <= soonThreshold) {
+        status = "expiring";
+        daysLeft = Math.ceil(
+          (activeUntilDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+        );
+      }
+
+      if (!clientMap.has(s.client.id)) {
+        clientMap.set(s.client.id, {
+          clientId: s.client.id,
+          clientName: s.client.name,
+          clientPhone: s.client.phone,
+          overdueCount: 0,
+          expiringCount: 0,
+          okayCount: 0,
+          totalCount: 0,
+          maxDaysOverdue: 0,
+          minDaysLeft: 9999,
+        });
+      }
+
+      const client = clientMap.get(s.client.id)!;
+      client.totalCount++;
+      if (status === "overdue") {
+        client.overdueCount++;
+        client.maxDaysOverdue = Math.max(client.maxDaysOverdue, daysOverdue);
+      } else if (status === "expiring") {
+        client.expiringCount++;
+        client.minDaysLeft = Math.min(client.minDaysLeft, daysLeft);
+      } else {
+        client.okayCount++;
+      }
+    });
+
+    // Finalize groups
+    const overdueGroups = Array.from(clientMap.values())
+      .filter((c) => c.overdueCount > 0)
+      .sort((a, b) => b.maxDaysOverdue - a.maxDaysOverdue);
+
+    const expiringSoonGroups = Array.from(clientMap.values())
+      .filter((c) => c.overdueCount === 0 && c.expiringCount > 0)
+      .sort((a, b) => a.minDaysLeft - b.minDaysLeft);
 
     return success({
       platformCount,
@@ -150,8 +175,8 @@ export async function GET() {
       thisMonthRevenue,
       thisMonthCost,
       thisMonthProfit: thisMonthRevenue - thisMonthCost,
-      overdueSeats,
-      expiringSoonSeats,
+      overdueGroups,
+      expiringSoonGroups,
     });
   });
 }

@@ -4,31 +4,16 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchApi } from "@/lib/fetch-api";
 import { queryKeys } from "@/lib/query-keys";
 
-export interface OverdueSeat {
-  id: string;
+export interface ClientGroup {
   clientId: string;
   clientName: string;
   clientPhone: string | null;
-  customPrice: number;
-  activeUntil: string;
-  daysOverdue: number;
-  platform: string;
-  plan: string;
-  subscriptionLabel: string;
-  subscriptionId: string;
-}
-
-export interface ExpiringSoonSeat {
-  id: string;
-  clientId: string;
-  clientName: string;
-  clientPhone: string | null;
-  customPrice: number;
-  activeUntil: string;
-  daysLeft: number;
-  platform: string;
-  subscriptionLabel: string;
-  subscriptionId: string;
+  overdueCount: number;
+  expiringCount: number;
+  okayCount: number;
+  totalCount: number;
+  maxDaysOverdue: number;
+  minDaysLeft: number;
 }
 
 export interface DashboardStats {
@@ -43,8 +28,8 @@ export interface DashboardStats {
   thisMonthRevenue: number;
   thisMonthCost: number;
   thisMonthProfit: number;
-  overdueSeats: OverdueSeat[];
-  expiringSoonSeats: ExpiringSoonSeat[];
+  overdueGroups: ClientGroup[];
+  expiringSoonGroups: ClientGroup[];
 }
 
 export function useDashboardStats() {

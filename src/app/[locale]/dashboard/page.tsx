@@ -112,6 +112,10 @@ export default function DashboardPage() {
   const profit = stats.profit;
   const profitTrend = profit >= 0 ? "up" : "down";
 
+  // Groups are now provided pre-calculated by the backend
+  const overdueGroups = stats.overdueGroups || [];
+  const expiringSoonGroups = stats.expiringSoonGroups || [];
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -234,12 +238,12 @@ export default function DashboardPage() {
               <AlertTriangle className="size-5 text-red-500" />
               {t("overdueSeats")}
             </CardTitle>
-            {stats.overdueSeats.length > 0 && (
-              <Badge variant="destructive">{stats.overdueSeats.length}</Badge>
+            {overdueGroups.length > 0 && (
+              <Badge variant="destructive">{overdueGroups.length}</Badge>
             )}
           </CardHeader>
           <CardContent>
-            {stats.overdueSeats.length === 0 ? (
+            {overdueGroups.length === 0 ? (
               <div className="py-6 text-center">
                 <p className="text-muted-foreground">{t("noOverdueSeats")}</p>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -248,25 +252,38 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {stats.overdueSeats.map((seat) => (
+                {overdueGroups.map((group) => (
                   <div
-                    key={seat.id}
+                    key={group.clientId}
                     className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/20 px-3 py-2"
                   >
                     <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-medium">
-                        {seat.clientName}
+                        {group.clientName}
                       </span>
-                      <span className="text-xs text-muted-foreground">
-                        {seat.platform} · {seat.plan}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          {group.totalCount} {group.totalCount === 1 ? tc("subscription") : tc("subscriptions")}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1 max-w-[120px]">
+                          {Array.from({ length: group.overdueCount }).map((_, i) => (
+                            <span key={`ov-${i}`} className="size-1.5 rounded-full bg-red-500 animate-pulse" title={tc("overdue")} />
+                          ))}
+                          {Array.from({ length: group.expiringCount }).map((_, i) => (
+                            <span key={`ex-${i}`} className="size-1.5 rounded-full bg-yellow-500" title={tc("expiring")} />
+                          ))}
+                          {Array.from({ length: group.okayCount }).map((_, i) => (
+                            <span key={`ok-${i}`} className="size-1.5 rounded-full bg-green-500" title={tc("active")} />
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="destructive" className="text-xs">
-                        {tc("daysOverdue", { count: seat.daysOverdue })}
+                        {tc("daysOverdue", { count: group.maxDaysOverdue })}
                       </Badge>
                       <button
-                        onClick={() => setSheetClientId(seat.clientId)}
+                        onClick={() => setSheetClientId(group.clientId)}
                         className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all cursor-pointer disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 hover:bg-accent hover:text-accent-foreground size-8"
                       >
                         <ArrowRight className="size-3.5" />
@@ -286,12 +303,12 @@ export default function DashboardPage() {
               <Clock className="size-5 text-yellow-500" />
               {t("expiringSoon")}
             </CardTitle>
-            {stats.expiringSoonSeats.length > 0 && (
-              <Badge variant="secondary">{stats.expiringSoonSeats.length}</Badge>
+            {expiringSoonGroups.length > 0 && (
+              <Badge variant="secondary">{expiringSoonGroups.length}</Badge>
             )}
           </CardHeader>
           <CardContent>
-            {stats.expiringSoonSeats.length === 0 ? (
+            {expiringSoonGroups.length === 0 ? (
               <div className="py-6 text-center">
                 <p className="text-muted-foreground">
                   {t("noExpiringSoon")}
@@ -299,27 +316,40 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {stats.expiringSoonSeats.map((seat) => (
+                {expiringSoonGroups.map((group) => (
                   <div
-                    key={seat.id}
+                    key={group.clientId}
                     className="flex items-center justify-between rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-900/40 dark:bg-yellow-950/20 px-3 py-2"
                   >
                     <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-medium">
-                        {seat.clientName}
+                        {group.clientName}
                       </span>
-                      <span className="text-xs text-muted-foreground">
-                        {seat.platform} · {seat.subscriptionLabel}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          {group.totalCount} {group.totalCount === 1 ? tc("subscription") : tc("subscriptions")}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1 max-w-[120px]">
+                          {Array.from({ length: group.overdueCount }).map((_, i) => (
+                            <span key={`ov-${i}`} className="size-1.5 rounded-full bg-red-500 animate-pulse" title={tc("overdue")} />
+                          ))}
+                          {Array.from({ length: group.expiringCount }).map((_, i) => (
+                            <span key={`ex-${i}`} className="size-1.5 rounded-full bg-yellow-500" title={tc("expiring")} />
+                          ))}
+                          {Array.from({ length: group.okayCount }).map((_, i) => (
+                            <span key={`ok-${i}`} className="size-1.5 rounded-full bg-green-500" title={tc("active")} />
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="text-xs">
-                        {seat.daysLeft === 0
+                        {group.minDaysLeft === 0
                           ? tc("today")
-                          : tc("daysLeft", { count: seat.daysLeft })}
+                          : tc("daysLeft", { count: group.minDaysLeft })}
                       </Badge>
                       <button
-                        onClick={() => setSheetClientId(seat.clientId)}
+                        onClick={() => setSheetClientId(group.clientId)}
                         className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all cursor-pointer disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 hover:bg-accent hover:text-accent-foreground size-8"
                       >
                         <ArrowRight className="size-3.5" />
