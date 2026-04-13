@@ -4,6 +4,10 @@ WORKDIR /app
 
 # Copy package management files first for better caching
 COPY package.json bun.lock ./
+
+# Install build dependencies for native modules (like better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 RUN bun install --frozen-lockfile
 
 # Copy the rest of the application
