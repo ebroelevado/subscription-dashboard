@@ -8,12 +8,32 @@
   "steps": {
     "build": {
       "commands": [
-        "set -eu; bun install --frozen-lockfile; bun run build:vinext; rm -rf railpack-bundle; mkdir -p railpack-bundle; cp -r dist public package.json bun.lock vite.config.ts next.config.ts postcss.config.mjs railpack-bundle/ 2>/dev/null || true"
+        "set -eu; bun install --frozen-lockfile; bun run build:vinext"
       ],
       "deployOutputs": [
         {
           "include": [
-            "railpack-bundle"
+            "dist"
+          ]
+        },
+        {
+          "include": [
+            "public"
+          ]
+        },
+        {
+          "include": [
+            "package.json"
+          ]
+        },
+        {
+          "include": [
+            "bun.lock"
+          ]
+        },
+        {
+          "include": [
+            "next.config.ts"
           ]
         }
       ],
@@ -27,11 +47,15 @@
       {
         "step": "build",
         "include": [
-          "railpack-bundle"
+          "dist",
+          "public",
+          "package.json",
+          "bun.lock",
+          "next.config.ts"
         ]
       }
     ],
-    "startCommand": "cd railpack-bundle && exec bunx vinext start",
+    "startCommand": "exec bun run start",
     "variables": {
       "NODE_ENV": "production",
       "HOSTNAME": "0.0.0.0",

@@ -16,7 +16,7 @@
     "build:next": "next build",
     "preview": "npx wrangler pages dev .vercel/output/static",
     "deploy": "npx wrangler pages deploy .vercel/output/static",
-    "start": "next start",
+    "start": "vinext start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
