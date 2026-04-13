@@ -8,7 +8,7 @@
   "steps": {
     "build": {
       "commands": [
-        "set -eu; bun install --frozen-lockfile; bun run build:next; mkdir -p .next/standalone/public .next/standalone/.next; cp -r public/. .next/standalone/public/; cp -r .next/static .next/standalone/.next/static; rm -f .next/standalone/.env .next/standalone/local.db; rm -rf railpack-bundle; mkdir -p railpack-bundle; cp -R .next/standalone/. railpack-bundle/"
+        "set -eu; bun install --frozen-lockfile; bun run build:vinext; rm -rf railpack-bundle; mkdir -p railpack-bundle; cp -r dist public package.json bun.lock vite.config.ts next.config.ts postcss.config.mjs railpack-bundle/ 2>/dev/null || true"
       ],
       "deployOutputs": [
         {
@@ -31,7 +31,7 @@
         ]
       }
     ],
-    "startCommand": "if [ -f railpack-bundle/server.js ]; then exec bun railpack-bundle/server.js; elif [ -f .next/standalone/server.js ]; then exec bun .next/standalone/server.js; elif [ -f server.js ]; then exec bun server.js; else echo 'server.js not found in deploy artifact' >&2; find . -maxdepth 5 -name server.js -print >&2; exit 1; fi",
+    "startCommand": "cd railpack-bundle && exec bunx vinext start",
     "variables": {
       "NODE_ENV": "production",
       "HOSTNAME": "0.0.0.0",
