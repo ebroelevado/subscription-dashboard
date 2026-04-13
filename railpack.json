@@ -13,7 +13,7 @@
       "deployOutputs": [
         {
           "include": [
-            "railpack-bundle/**"
+            "railpack-bundle"
           ]
         }
       ],
@@ -27,7 +27,7 @@
       {
         "step": "build",
         "include": [
-          "railpack-bundle/**"
+          "railpack-bundle"
         ]
       }
     ],
