@@ -1,6 +1,6 @@
 # Professional Dashboard
 
-A high-performance, modern dashboard built with **Next.js 16**, **Drizzle ORM**, and **AI integration**. This project provides a comprehensive solution for managing subscriptions, analytics, and client interactions with a premium user experience.
+A high-performance, modern dashboard built with **Next.js 16**, **React 19**, **Drizzle ORM**, **Better Auth**, and **AI integration**. This project provides a comprehensive solution for managing subscriptions, analytics, and client interactions with a premium user experience.
 
 ## ✨ Features
 
@@ -8,23 +8,25 @@ A high-performance, modern dashboard built with **Next.js 16**, **Drizzle ORM**,
 - **🤖 AI Assistant Tab**: Integrated AI capabilities for intelligent support and automation.
 - **💳 Subscription Management**: Full lifecycle management of user plans and seats.
 - **🌐 Internationalization**: Multi-language support (ES, EN, ZH) powered by `next-intl`.
-- **🔐 Secure Authentication**: Robust auth system via `next-auth`.
+- **🔐 Secure Authentication**: Robust auth system via `better-auth`.
 - **🛠️ Platform Integration**: Manage and switch between different workspace platforms easily.
 - **🕘 Conversation History**: Persistent chat history stored securely in Cloudflare R2 with undo/redo support for AI actions.
 - **🌑 Dark/Light Mode**: Beautifully crafted UI with responsive design and theme support.
 
 ## 🚀 Tech Stack
 
-- **Framework**: [Next.js 16 (App Router)](https://nextjs.org/)
+- **Framework**: [Next.js 16](https://nextjs.org/) with App Router and React 19
 - **Database**: [Drizzle ORM](https://orm.drizzle.team/) with Cloudflare D1 (SQLite)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) & [Shadcn UI](https://ui.shadcn.com/)
-- **AI Engine**: [Vercel AI SDK](https://sdk.vercel.ai/) (OpenAI Compatible)
-- **State Management**: [TanStack Query v5](https://tanstack.com/query/latest)
+- **Authentication**: [Better Auth](https://better-auth.com/) with email/password and Google OAuth
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/) & [Shadcn UI](https://ui.shadcn.com/)
+- **AI Engine**: [Vercel AI SDK](https://sdk.vercel.ai/) plus OpenAI-compatible providers
+- **State Management**: [TanStack Query v5](https://tanstack.com/query/latest) and [TanStack Table](https://tanstack.com/table/latest)
 - **Forms**: [React Hook Form](https://react-hook-form.com/) & [Zod](https://zod.dev/)
 - **Animation**: [Framer Motion](https://www.framer.com/motion/)
-- **i18n**: [Next-Intl](https://next-intl-docs.vercel.app/)
+- **i18n**: [next-intl](https://next-intl.dev/)
 - **Storage**: [Cloudflare R2](https://www.cloudflare.com/developer-platform/r2/) (Conversation History)
-- **Deploy**: [Cloudflare Pages](https://pages.cloudflare.com/) with D1
+- **Deployment**: [Cloudflare Pages](https://pages.cloudflare.com/) with D1
+- **Runtime**: Bun, Vite, and Wrangler for local development and deployment workflows
 
 ## 🛠️ Getting Started
 
@@ -57,7 +59,7 @@ A high-performance, modern dashboard built with **Next.js 16**, **Drizzle ORM**,
 
 ### Development Options
 
-#### Option 1: Standard Next.js Development (with local SQLite)
+#### Option 1: Local Next.js Development (with local SQLite)
 
 Fastest iteration time. Uses local SQLite database (`local.db`):
 
@@ -89,6 +91,20 @@ This will:
 bun run db:migrate:local
 ```
 
+#### Option 3: Vinext Development
+
+Use the Vite-based runtime when you want the project's alternate dev server:
+
+```bash
+bun run dev:vinext
+```
+
+For a production-like local start, use:
+
+```bash
+bun run start
+```
+
 ### Database Management
 
 ```bash
@@ -110,21 +126,33 @@ bun db:seed
 
 ## 📜 Scripts
 
-- `bun dev`: Starts Next.js development server (with local SQLite fallback)
-- `bun dev:cf`: Build and run with Cloudflare Pages (with D1)
+- `bun dev`: Starts the local Next.js development server
+- `bun dev:cf`: Build and run with Cloudflare Pages and D1
+- `bun dev:do`: Run the agent-session worker locally with Wrangler
+- `bun deploy:do`: Deploy the agent-session worker to Cloudflare Workers
 - `bun build`: Builds for Cloudflare Pages
-- `bun preview`: Preview production build locally with Wrangler
+- `bun build:vinext`: Build the Vinext app with Vite
+- `bun preview`: Preview the production build locally with Wrangler
 - `bun deploy`: Deploy to Cloudflare Pages
 - `bun db:generate`: Generate Drizzle migrations
 - `bun db:studio`: Open Drizzle Studio
 - `bun db:migrate:local`: Apply migrations to local D1
 - `bun db:migrate:prod`: Apply migrations to production D1
+- `bun auth:check`: Check and repair auth accounts
+- `bun auth:repair`: Repair auth accounts in place
 - `bun db:seed`: Seed local database with test data
+- `bun db:migrate:pg-to-d1`: Migrate PostgreSQL data into D1
+- `bun dev:vinext`: Run the Vinext dev server on port 3000
 - `bun lint`: Runs ESLint
+- `bun test`, `bun test:all`, `bun test:watch`: Run the test suite
+- `bun test:ai`, `bun test:mutations`, `bun test:services`: Run focused test groups
 
 ## 🚀 Deployment
 
 ### Cloudflare Pages
+
+The production deployment target is Cloudflare Pages with a D1 database binding.
+
 
 1. Create a Cloudflare Pages project:
    ```bash
