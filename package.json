@@ -9,10 +9,11 @@
   },
   "scripts": {
     "dev": "next dev",
-    "dev:cf": "bun run build && bun run preview",
+    "dev:cf": "bun run build:cf && bun run preview",
     "dev:do": "cd workers/agent-session && npx wrangler dev --port 8787",
     "deploy:do": "cd workers/agent-session && npx wrangler deploy",
-    "build": "bun run build:next && npx @cloudflare/next-on-pages --skip-build",
+    "build": "bun run build:next",
+    "build:cf": "npx @cloudflare/next-on-pages",
     "build:next": "next build",
     "preview": "npx wrangler pages dev .vercel/output/static",
     "deploy": "npx wrangler pages deploy .vercel/output/static",
