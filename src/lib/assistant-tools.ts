@@ -14,6 +14,10 @@ import { serializeDeletedClients } from "@/lib/client-deletion-snapshot";
 import { createMutationToken } from "@/lib/mutation-token";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { formatCurrency, centsToAmount } from "@/lib/currency";
+import {
+  preparePythonAnalysis,
+  pythonAnalysisTemplateIds,
+} from "@/lib/python-analysis";
 
 // Type for defineTool — imported dynamically in route.ts
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1175,6 +1179,25 @@ export function createUserScopedTools(
           rowCount: data.length,
           columnCount: Object.keys(data[0] || {}).length,
         };
+      },
+    }),
+
+    defineTool("preparePythonAnalysis", {
+      description: "Prepare a SAFE Python analytics payload using fixed templates (no arbitrary Python). Input must include a validated JSON data array. Returns analysisTemplateId + dataPayload + template code for client-side Pyodide execution.",
+      parameters: z.object({
+        templateId: z.enum(pythonAnalysisTemplateIds).describe("Controlled analysis template identifier."),
+        dataPayload: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))).describe("Tabular JSON rows to analyze."),
+        title: z.string().optional().describe("Optional chart/report title."),
+      }),
+      handler: async ({ templateId, dataPayload, title }: any) => {
+        const prepared = preparePythonAnalysis({ templateId, dataPayload, title });
+        if (!prepared.ok) {
+          return {
+            status: "analysis_validation_error",
+            error: prepared.error,
+          };
+        }
+        return prepared.value;
       },
     }),
 
