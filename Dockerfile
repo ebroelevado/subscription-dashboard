@@ -30,7 +30,8 @@ ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
 # Adding Dokploy/Railway fallback variables
 ENV AUTH_TRUST_HOST="true"
-ENV USE_REMOTE_DB="true"
+# Safer default: local SQLite fallback unless deployment explicitly sets remote mode.
+ENV USE_REMOTE_DB="false"
 ENV AUTH_DISABLE_SES="true"
 ENV SES_ALLOW_DYNAMIC_CODE="true"
 

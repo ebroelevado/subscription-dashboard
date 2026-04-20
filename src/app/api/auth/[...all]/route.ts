@@ -1,10 +1,11 @@
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 import { type NextRequest, NextResponse } from "next/server";
 
 // Vinext-compatible auth handler for better-auth
 // The catch-all route handles all /api/auth/* requests
 export async function GET(request: NextRequest) {
   try {
+    const auth = getAuth();
     const response = await auth.handler(request);
     return response;
   } catch (error) {
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = getAuth();
     const response = await auth.handler(request);
     return response;
   } catch (error) {

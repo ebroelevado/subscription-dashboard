@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
  */
 export async function getAuthSession() {
   try {
+    const auth = getAuth();
     const session = await auth.api.getSession({
       headers: await headers(),
     });
@@ -24,6 +25,7 @@ export async function getAuthSession() {
  */
 export async function getAuthUserId(): Promise<string> {
   try {
+    const auth = getAuth();
     const session = await auth.api.getSession({
       headers: await headers(),
     });

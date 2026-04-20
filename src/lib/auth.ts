@@ -10,59 +10,82 @@ import bcrypt from "bcryptjs";
 
 const authSecret = process.env.AUTH_SECRET || "dev-auth-secret-change-in-production";
 
-export const auth = betterAuth({
-  baseURL: process.env.AUTH_URL || "http://localhost:3000",
-  secret: authSecret,
-  database: drizzleAdapter(getDirectDb(), {
-    provider: "sqlite",
-    schema: {
-      user: schema.users,
-      session: schema.sessions,
-      account: schema.accounts,
-      verification: schema.verificationTokens,
-    },
-  }),
-  user: {
-    additionalFields: {
-      currency: { type: "string", defaultValue: "EUR" },
-      disciplinePenalty: { type: "number", defaultValue: 0.5 },
-      usageCredits: { type: "number", defaultValue: 0 },
-      companyName: { type: "string", required: false },
-      whatsappSignatureMode: { type: "string", defaultValue: "name" },
-      plan: { type: "string", defaultValue: "FREE" },
-      stripeCustomerId: { type: "string", required: false },
-      stripeSubscriptionId: { type: "string", required: false },
-      stripePriceId: { type: "string", required: false },
-      stripeCurrentPeriodEnd: { type: "string", required: false },
-    },
-  },
-  emailAndPassword: {
-    enabled: true,
-    password: {
-      hash: async (password: string) => {
-        return await bcrypt.hash(password, 10);
+type AuthInstance = ReturnType<typeof betterAuth>;
+
+let authInstance: AuthInstance | null = null;
+
+function createAuth(): AuthInstance {
+  return betterAuth({
+    baseURL: process.env.AUTH_URL || "http://localhost:3000",
+    secret: authSecret,
+    database: drizzleAdapter(getDirectDb(), {
+      provider: "sqlite",
+      schema: {
+        user: schema.users,
+        session: schema.sessions,
+        account: schema.accounts,
+        verification: schema.verificationTokens,
       },
-      verify: async ({ hash, password }: { hash: string; password: string }) => {
-        return await bcrypt.compare(password, hash);
+    }),
+    user: {
+      additionalFields: {
+        currency: { type: "string", defaultValue: "EUR" },
+        disciplinePenalty: { type: "number", defaultValue: 0.5 },
+        usageCredits: { type: "number", defaultValue: 0 },
+        companyName: { type: "string", required: false },
+        whatsappSignatureMode: { type: "string", defaultValue: "name" },
+        plan: { type: "string", defaultValue: "FREE" },
+        stripeCustomerId: { type: "string", required: false },
+        stripeSubscriptionId: { type: "string", required: false },
+        stripePriceId: { type: "string", required: false },
+        stripeCurrentPeriodEnd: { type: "string", required: false },
       },
     },
-  },
-  socialProviders: {
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+    emailAndPassword: {
+      enabled: true,
+      password: {
+        hash: async (password: string) => {
+          return await bcrypt.hash(password, 10);
+        },
+        verify: async ({ hash, password }: { hash: string; password: string }) => {
+          return await bcrypt.compare(password, hash);
+        },
+      },
     },
+    socialProviders: {
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID as string,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      },
+    },
+    account: {
+      // In local dev with mixed runtimes (vinext/next/worker proxy), keeping OAuth state
+      // in encrypted cookie is more robust than DB-backed state rows.
+      storeStateStrategy: "cookie",
+    },
+    session: {
+      expiresIn: 30 * 24 * 60 * 60, // 30 days
+      updateAge: 5 * 60, // Refresh session every 5 minutes
+    },
+    // Note: nextCookies() removed — it relies on Next.js internals that are
+    // shimmed under vinext and may silently drop session cookies after login.
+    plugins: [],
+  });
+}
+
+export function getAuth(): AuthInstance {
+  if (!authInstance) {
+    authInstance = createAuth();
+  }
+
+  return authInstance;
+}
+
+// Backward-compatible lazy proxy for existing imports using `auth`.
+export const auth: AuthInstance = new Proxy({} as AuthInstance, {
+  get(_target, prop, receiver) {
+    const instance = getAuth() as any;
+    const value = Reflect.get(instance, prop, receiver);
+    return typeof value === "function" ? value.bind(instance) : value;
   },
-  account: {
-    // In local dev with mixed runtimes (vinext/next/worker proxy), keeping OAuth state
-    // in encrypted cookie is more robust than DB-backed state rows.
-    storeStateStrategy: "cookie",
-  },
-  session: {
-    expiresIn: 30 * 24 * 60 * 60, // 30 days
-    updateAge: 5 * 60, // Refresh session every 5 minutes
-  },
-  // Note: nextCookies() removed — it relies on Next.js internals that are
-  // shimmed under vinext and may silently drop session cookies after login.
-  plugins: [],
 });
