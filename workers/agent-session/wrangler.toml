@@ -1,8 +1,21 @@
 name = "agent-session-worker"
 main = "src/index.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2026-04-20"
 # For allowing Node APIs in auth/drizzle (though Better Auth/Drizzle usually works natively)
 compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.1
 
 [build]
 # using standard wrangler build means it will transpile TS automatically using esbuild
@@ -24,6 +37,7 @@ database_id = "62cd2aa1-e011-486b-9893-d81c0f7a2756"
 [vars]
 # Ensure env vars needed by AI Gateway and Groq/Together are passed via wrangler secret put or here
 CF_AI_GATEWAY_NAME = "default"
+APP_ORIGIN = "https://subscription-dashboard.pages.dev"
 
 [[queues.producers]]
 binding = "MUTATION_EXEC_QUEUE"

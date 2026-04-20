@@ -117,14 +117,21 @@ export async function POST(req: Request): Promise<Response> {
       );
     } else if (doUrl) {
       console.log(`[Mutation Proxy] Forwarding to External Worker DO Proxy: ${doUrl}`);
+      if (!proxySecret) {
+        throw new Error("External mutation worker unavailable: DB proxy secret is missing.");
+      }
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_EXECUTE_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${doUrl}/execute`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, userId }),
+          headers: {
+            "Content-Type": "application/json",
+            "X-Agent-Secret": proxySecret,
+          },
+          body: JSON.stringify({ token, userId, secret: proxySecret }),
           signal: controller.signal,
         });
 
@@ -139,7 +146,10 @@ export async function POST(req: Request): Promise<Response> {
           try {
             const enqueueRes = await fetch(`${doUrl}/enqueue`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                "X-Agent-Secret": proxySecret,
+              },
               body: JSON.stringify({ token, userId, secret: proxySecret }),
               signal: enqueueController.signal,
             });

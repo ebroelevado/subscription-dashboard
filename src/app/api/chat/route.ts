@@ -220,6 +220,7 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
     // The Durable Object Namespace is available in process.env when compiled with Cloudflare next-on-pages
     const doNamespace = (process.env as any).AGENT_SESSION_DO;
     const doUrl = process.env.AGENT_SESSION_URL;
+    const proxySecret = process.env.DB_PROXY_SECRET;
 
     if (doNamespace && typeof doNamespace.idFromName === 'function') {
       console.log("[Chat Proxy] Forwarding to Durable Object AgentSessionDO (Native Binding)");
@@ -241,14 +242,22 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
       );
     } else if (doUrl) {
       console.log(`[Chat Proxy] Forwarding to External Worker DO Proxy: ${doUrl}`);
+      if (!proxySecret) {
+        throw new Error("AGENT_SESSION_URL is configured but DB_PROXY_SECRET is missing.");
+      }
+
       json.userId = session.user.id;
+      json.secret = proxySecret;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), CHAT_PROXY_TIMEOUT_MS);
       let doReq: Response;
       try {
         doReq = await fetch(`${doUrl}/chat`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Agent-Secret": proxySecret,
+          },
           body: JSON.stringify(json),
           signal: controller.signal,
         });

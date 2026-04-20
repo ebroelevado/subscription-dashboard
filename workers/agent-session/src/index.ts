@@ -14,9 +14,76 @@ type MutationQueueMessage = {
   userId: string;
 };
 
+const EXTERNAL_PROXY_PATHS = new Set<string>([
+  "/chat",
+  "/execute",
+  "/enqueue",
+  "/query",
+  "/batch",
+]);
+
 const QUEUE_MAX_RETRIES = 5;
 const QUEUE_BASE_RETRY_DELAY_SECONDS = 2;
 const QUEUE_MAX_RETRY_DELAY_SECONDS = 60;
+
+function getAllowedOrigin(request: Request, env: Env): string {
+  const configuredOrigin = env.APP_ORIGIN?.trim();
+  if (!configuredOrigin) {
+    return "*";
+  }
+
+  const requestOrigin = request.headers.get("origin");
+  if (!requestOrigin) {
+    return configuredOrigin;
+  }
+
+  return requestOrigin === configuredOrigin ? requestOrigin : configuredOrigin;
+}
+
+function corsHeaders(request: Request, env: Env): HeadersInit {
+  return {
+    "Access-Control-Allow-Origin": getAllowedOrigin(request, env),
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Agent-Secret",
+  };
+}
+
+async function hashSecret(value: string): Promise<Uint8Array> {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return new Uint8Array(digest);
+}
+
+async function timingSafeEqualSecret(provided: string, expected: string): Promise<boolean> {
+  const [left, right] = await Promise.all([hashSecret(provided), hashSecret(expected)]);
+  let diff = left.length ^ right.length;
+  const maxLength = Math.max(left.length, right.length);
+
+  for (let i = 0; i < maxLength; i += 1) {
+    diff |= (left[i] ?? 0) ^ (right[i] ?? 0);
+  }
+
+  return diff === 0;
+}
+
+async function authorizeProxyRequest(
+  request: Request,
+  env: Env,
+  payload: { secret?: unknown },
+): Promise<boolean> {
+  if (!env.DB_PROXY_SECRET) {
+    return false;
+  }
+
+  const headerSecret = request.headers.get("x-agent-secret");
+  const bodySecret = typeof payload.secret === "string" ? payload.secret : null;
+  const providedSecret = headerSecret || bodySecret;
+  if (!providedSecret) {
+    return false;
+  }
+
+  return timingSafeEqualSecret(providedSecret, env.DB_PROXY_SECRET);
+}
 
 function isPermanentQueueError(message: string) {
   return (
@@ -70,33 +137,30 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
     
-    // Simple CORS for local dev / cross-origin
+    // Preflight handling for browser tooling.
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-        }
-      });
+      return new Response(null, { headers: corsHeaders(request, env) });
     }
 
     // Confirmation path (Total Control) or DB Proxy
-    if (request.method === "POST" && (url.pathname === "/chat" || url.pathname === "/execute" || url.pathname === "/enqueue" || url.pathname === "/query" || url.pathname === "/batch")) {
+    if (request.method === "POST" && EXTERNAL_PROXY_PATHS.has(url.pathname)) {
       try {
         const reqClone = request.clone();
         const json = await reqClone.json() as any;
 
-        if (url.pathname === "/enqueue") {
-          const secret = json.secret;
-          if (!secret || secret !== env.DB_PROXY_SECRET) {
-            return new Response("Unauthorized - Invalid secret", { status: 401 });
-          }
+        const isAuthorized = await authorizeProxyRequest(request, env, json);
+        if (!isAuthorized) {
+          return new Response(JSON.stringify({ error: "Unauthorized - Invalid secret" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json", ...corsHeaders(request, env) },
+          });
+        }
 
+        if (url.pathname === "/enqueue") {
           if (!env.MUTATION_EXEC_QUEUE) {
             return new Response(JSON.stringify({ error: "Queue binding not configured" }), {
               status: 503,
-              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+              headers: { "Content-Type": "application/json", ...corsHeaders(request, env) },
             });
           }
 
@@ -104,23 +168,18 @@ export default {
           if (!token || !userId) {
             return new Response(JSON.stringify({ error: "Missing token or userId" }), {
               status: 400,
-              headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+              headers: { "Content-Type": "application/json", ...corsHeaders(request, env) },
             });
           }
 
           await env.MUTATION_EXEC_QUEUE.send({ token, userId } satisfies MutationQueueMessage);
           return new Response(JSON.stringify({ success: true, queued: true }), {
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            headers: { "Content-Type": "application/json", ...corsHeaders(request, env) },
           });
         }
         
         // Handle DB Proxy query requests
         if (url.pathname === "/query") {
-          const secret = json.secret;
-          if (!secret || secret !== env.DB_PROXY_SECRET) {
-            return new Response("Unauthorized - Invalid secret", { status: 401 });
-          }
-          
           const { sql, params = [], method = "run", firstColumn, rawOptions } = json;
           if (!sql) return new Response("Missing sql query", { status: 400 });
           
@@ -138,24 +197,19 @@ export default {
           }
           
           return new Response(JSON.stringify(result), {
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            headers: { "Content-Type": "application/json", ...corsHeaders(request, env) }
           });
         }
 
         // Handle DB Proxy batch requests
         if (url.pathname === "/batch") {
-          const secret = json.secret;
-          if (!secret || secret !== env.DB_PROXY_SECRET) {
-            return new Response("Unauthorized - Invalid secret", { status: 401 });
-          }
-          
           const { queries = [] } = json;
           if (!Array.isArray(queries)) return new Response("Queries must be an array", { status: 400 });
           
           const stmts = queries.map((q: any) => env.DB.prepare(q.sql).bind(...(q.params || [])));
           const results = await env.DB.batch(stmts);
           return new Response(JSON.stringify(results), {
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            headers: { "Content-Type": "application/json", ...corsHeaders(request, env) }
           });
         }
 
@@ -181,14 +235,17 @@ export default {
         
         // Add CORS to DO response
         const newHeaders = new Headers(response.headers);
-        newHeaders.set("Access-Control-Allow-Origin", "*");
+        newHeaders.set("Access-Control-Allow-Origin", getAllowedOrigin(request, env));
         
         return new Response(response.body, {
           status: response.status,
           headers: newHeaders
         });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message || "Bad Request" }), { status: 400 });
+        return new Response(JSON.stringify({ error: err.message || "Bad Request" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders(request, env) },
+        });
       }
     }
 
