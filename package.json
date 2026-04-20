@@ -12,7 +12,7 @@
     "dev:cf": "bun run build:cf && bun run preview",
     "dev:do": "cd workers/agent-session && npx wrangler dev --port 8787",
     "deploy:do": "cd workers/agent-session && npx wrangler deploy",
-    "build": "bun run build:next",
+    "build": "bun run build:vinext",
     "build:cf": "npx @cloudflare/next-on-pages",
     "build:next": "next build",
     "preview": "npx wrangler pages dev .vercel/output/static",
