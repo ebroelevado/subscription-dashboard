@@ -16,6 +16,15 @@ function getCurrentPeriodEndDate(epochSeconds: number | null | undefined): strin
   return new Date(epochSeconds * 1000).toISOString();
 }
 
+function getSubscriptionCurrentPeriodEndDate(subscription: unknown): string | null {
+  const rawPeriodEnd = (subscription as { current_period_end?: unknown }).current_period_end;
+  if (typeof rawPeriodEnd !== "number") {
+    return null;
+  }
+
+  return getCurrentPeriodEndDate(rawPeriodEnd);
+}
+
 function getSubscriptionCustomerId(
   customer: string | { id?: string | null } | null,
 ): string | null {
@@ -84,7 +93,7 @@ export async function POST() {
             plan: "PREMIUM",
             stripeCustomerId: getSubscriptionCustomerId(currentSubscription.customer),
             stripePriceId: currentPriceId,
-            stripeCurrentPeriodEnd: getCurrentPeriodEndDate(currentSubscription.current_period_end),
+            stripeCurrentPeriodEnd: getSubscriptionCurrentPeriodEndDate(currentSubscription),
           }).where(eq(users.id, userId));
 
           return NextResponse.json({ ok: true, data: { mode: "already_premium" } });
@@ -104,7 +113,7 @@ export async function POST() {
           stripeSubscriptionId: updatedSubscription.id,
           stripeCustomerId: getSubscriptionCustomerId(updatedSubscription.customer),
           stripePriceId: updatedSubscription.items.data[0]?.price?.id ?? premiumPriceId,
-          stripeCurrentPeriodEnd: getCurrentPeriodEndDate(updatedSubscription.current_period_end),
+          stripeCurrentPeriodEnd: getSubscriptionCurrentPeriodEndDate(updatedSubscription),
         }).where(eq(users.id, userId));
 
         return NextResponse.json({ ok: true, data: { mode: "updated" } });
