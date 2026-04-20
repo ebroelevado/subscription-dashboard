@@ -3,9 +3,11 @@ import {
   integer,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { users } from "./users";
+import { mutationAuditLogs } from "./mutation-audit-logs";
 
 export const agentRunStatusValues = ["running", "completed", "failed", "aborted"] as const;
 export const agentMessageRoleValues = ["user", "assistant", "system"] as const;
@@ -65,9 +67,13 @@ export const agentToolCalls = sqliteTable(
     stepNumber: integer("step_number").notNull(),
     toolName: text("tool_name").notNull(),
     toolCallId: text("tool_call_id"),
+    dedupeHash: text("dedupe_hash"),
     status: text("status", { enum: agentToolCallStatusValues }).notNull(),
     input: text("input", { mode: "json" }).$type<unknown>(),
     output: text("output", { mode: "json" }).$type<unknown>(),
+    mutationAuditLogId: text("mutation_audit_log_id").references(() => mutationAuditLogs.id, {
+      onDelete: "set null",
+    }),
     errorMessage: text("error_message"),
     startedAt: text("started_at").notNull().$defaultFn(() => new Date().toISOString()),
     finishedAt: text("finished_at"),
@@ -77,6 +83,8 @@ export const agentToolCalls = sqliteTable(
     index("agent_tool_calls_run_id_index").on(table.runId),
     index("agent_tool_calls_run_step_index").on(table.runId, table.stepNumber),
     index("agent_tool_calls_run_tool_call_id_index").on(table.runId, table.toolCallId),
+    uniqueIndex("agent_tool_calls_run_dedupe_unique").on(table.runId, table.dedupeHash),
+    index("agent_tool_calls_audit_log_index").on(table.mutationAuditLogId),
   ],
 );
 

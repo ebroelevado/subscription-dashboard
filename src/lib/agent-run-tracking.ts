@@ -1,8 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   agentMessages,
   agentRuns,
   agentToolCalls,
+  mutationAuditLogs,
 } from "@/db/schema";
 import type { SchemaDatabase } from "@/db";
 
@@ -73,6 +74,66 @@ function normalizeToolResult(toolResult: any): unknown {
   if (toolResult?.result !== undefined) return toolResult.result;
   if (toolResult?.output !== undefined) return toolResult.output;
   return null;
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`);
+
+  return `{${entries.join(",")}}`;
+}
+
+function createDedupeHash(input: { toolCallId: string | null; toolName: string; toolInput: unknown; }): string {
+  if (input.toolCallId) {
+    return `tool-call-id:${input.toolCallId}`;
+  }
+  return `tool-name:${input.toolName}|tool-input:${stableStringify(input.toolInput)}`;
+}
+
+function findProposalToken(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const token = findProposalToken(item);
+      if (token) return token;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.__token === "string" && record.__token.length > 0) {
+    return record.__token;
+  }
+
+  for (const nestedValue of Object.values(record)) {
+    const token = findProposalToken(nestedValue);
+    if (token) return token;
+  }
+
+  return null;
+}
+
+async function resolveMutationAuditLogId(
+  db: SchemaDatabase,
+  toolOutput: unknown,
+): Promise<string | null> {
+  const token = findProposalToken(toolOutput);
+  if (!token) return null;
+
+  const auditRow = await db.query.mutationAuditLogs.findFirst({
+    where: eq(mutationAuditLogs.token, token),
+    columns: { id: true },
+  });
+
+  return auditRow?.id ?? null;
 }
 
 export async function startAgentRun(
@@ -159,21 +220,28 @@ export async function recordStepToolCalls(
     }
   }
 
-  await db.insert(agentToolCalls).values(
-    toolCalls.map((toolCall) => {
+  const candidateRows = await Promise.all(
+    toolCalls.map(async (toolCall) => {
       const toolCallId = normalizeCallId(toolCall);
+      const toolName = normalizeToolName(toolCall);
+      const toolInput = normalizeToolInput(toolCall);
+      const dedupeHash = createDedupeHash({ toolCallId, toolName, toolInput });
       const toolResult = toolCallId ? resultMap.get(toolCallId) : null;
+      const normalizedOutput = normalizeToolResult(toolResult);
       const errorMessage = getErrorMessage(toolResult?.error);
       const status: AgentToolCallStatus = errorMessage ? "error" : "success";
+      const mutationAuditLogId = await resolveMutationAuditLogId(db, normalizedOutput);
 
       return {
         runId: input.runId,
         stepNumber: input.stepNumber,
-        toolName: normalizeToolName(toolCall),
+        toolName,
         toolCallId,
+        dedupeHash,
         status,
-        input: normalizeToolInput(toolCall) as any,
-        output: normalizeToolResult(toolResult) as any,
+        input: toolInput as any,
+        output: normalizedOutput as any,
+        mutationAuditLogId,
         errorMessage,
         startedAt,
         finishedAt,
@@ -181,4 +249,23 @@ export async function recordStepToolCalls(
       };
     }),
   );
+
+  const dedupeHashes = candidateRows.map((row) => row.dedupeHash);
+  const existingRows = dedupeHashes.length
+    ? await db
+      .select({ dedupeHash: agentToolCalls.dedupeHash })
+      .from(agentToolCalls)
+      .where(
+        and(
+          eq(agentToolCalls.runId, input.runId),
+          inArray(agentToolCalls.dedupeHash, dedupeHashes),
+        ),
+      )
+    : [];
+
+  const existingHashSet = new Set(existingRows.map((row) => row.dedupeHash));
+  const rowsToInsert = candidateRows.filter((row) => !existingHashSet.has(row.dedupeHash));
+  if (!rowsToInsert.length) return;
+
+  await db.insert(agentToolCalls).values(rowsToInsert as any);
 }
