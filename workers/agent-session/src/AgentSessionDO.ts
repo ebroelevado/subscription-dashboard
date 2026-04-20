@@ -165,6 +165,12 @@ export class AgentSessionDO extends DurableObject {
   async fetch(request: Request) {
     let activeRunId: string | null = null;
     let runFinalized = false;
+    const toolCallMetrics = new Map<string, {
+      startedAt?: string;
+      finishedAt?: string;
+      durationMs?: number;
+      errorMessage?: string | null;
+    }>();
 
     try {
       const url = new URL(request.url);
@@ -276,6 +282,56 @@ export class AgentSessionDO extends DurableObject {
         onError: (error: unknown) => {
           console.error("[DO Chat Stream Error]:", error);
         },
+        experimental_onToolCallStart: (event) => {
+          const toolCallId = event?.toolCall?.toolCallId;
+          if (!toolCallId) return;
+
+          const startedAt = new Date().toISOString();
+          toolCallMetrics.set(toolCallId, {
+            ...(toolCallMetrics.get(toolCallId) ?? {}),
+            startedAt,
+          });
+
+          console.log(JSON.stringify({
+            event: "tool_call_start",
+            runId: activeRunId,
+            stepNumber: event.stepNumber ?? null,
+            toolName: event?.toolCall?.toolName ?? "unknown_tool",
+            toolCallId,
+            startedAt,
+          }));
+        },
+        experimental_onToolCallFinish: (event) => {
+          const toolCallId = event?.toolCall?.toolCallId;
+          if (!toolCallId) return;
+
+          const metric = toolCallMetrics.get(toolCallId) ?? {};
+          const finishedAt = new Date().toISOString();
+          const errorMessage = event.success ? null : (event.error instanceof Error
+            ? event.error.message
+            : typeof event.error === "string"
+              ? event.error
+              : "Tool call failed");
+
+          toolCallMetrics.set(toolCallId, {
+            ...metric,
+            finishedAt,
+            durationMs: event.durationMs,
+            errorMessage,
+          });
+
+          console.log(JSON.stringify({
+            event: "tool_call_finish",
+            runId: activeRunId,
+            stepNumber: event.stepNumber ?? null,
+            toolName: event?.toolCall?.toolName ?? "unknown_tool",
+            toolCallId,
+            durationMs: event.durationMs,
+            success: event.success,
+            finishedAt,
+            errorMessage,
+          }));
+        },
         onStepFinish: async (event) => {
           stepNumber += 1;
           if (activeRunId) {
@@ -285,6 +341,7 @@ export class AgentSessionDO extends DurableObject {
                 stepNumber,
                 toolCalls: (event as any).toolCalls,
                 toolResults: (event as any).toolResults,
+                toolMetrics: toolCallMetrics,
               });
             } catch (trackingError) {
               console.error("[DO Tracking Error: tool calls]", trackingError);

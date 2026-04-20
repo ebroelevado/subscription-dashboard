@@ -35,6 +35,12 @@ interface RecordStepToolCallsInput {
   stepNumber: number;
   toolCalls: unknown[];
   toolResults: unknown[];
+  toolMetrics?: Map<string, {
+    startedAt?: string;
+    finishedAt?: string;
+    durationMs?: number;
+    errorMessage?: string | null;
+  }>;
 }
 
 function nowIso(): string {
@@ -204,8 +210,8 @@ export async function recordStepToolCalls(
   db: SchemaDatabase,
   input: RecordStepToolCallsInput,
 ): Promise<void> {
-  const startedAt = nowIso();
-  const finishedAt = nowIso();
+  const fallbackStartedAt = nowIso();
+  const fallbackFinishedAt = nowIso();
 
   const toolCalls = asArray(input.toolCalls);
   if (!toolCalls.length) return;
@@ -228,7 +234,8 @@ export async function recordStepToolCalls(
       const dedupeHash = createDedupeHash({ toolCallId, toolName, toolInput });
       const toolResult = toolCallId ? resultMap.get(toolCallId) : null;
       const normalizedOutput = normalizeToolResult(toolResult);
-      const errorMessage = getErrorMessage(toolResult?.error);
+      const runtimeMetric = toolCallId ? input.toolMetrics?.get(toolCallId) : undefined;
+      const errorMessage = runtimeMetric?.errorMessage ?? getErrorMessage(toolResult?.error);
       const status: AgentToolCallStatus = errorMessage ? "error" : "success";
       const mutationAuditLogId = await resolveMutationAuditLogId(db, normalizedOutput);
 
@@ -243,9 +250,9 @@ export async function recordStepToolCalls(
         output: normalizedOutput as any,
         mutationAuditLogId,
         errorMessage,
-        startedAt,
-        finishedAt,
-        durationMs: 0,
+        startedAt: runtimeMetric?.startedAt ?? fallbackStartedAt,
+        finishedAt: runtimeMetric?.finishedAt ?? fallbackFinishedAt,
+        durationMs: typeof runtimeMetric?.durationMs === "number" ? runtimeMetric.durationMs : 0,
       };
     }),
   );
