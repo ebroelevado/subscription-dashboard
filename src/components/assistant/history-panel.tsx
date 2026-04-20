@@ -12,6 +12,7 @@ interface ConversationMeta {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  source?: "r2" | "agent-run";
 }
 
 interface HistoryPanelProps {
@@ -48,11 +49,29 @@ export default function HistoryPanel({ open, onClose, onLoad, onDelete, currentC
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/history");
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data);
-      }
+      const [historyRes, runsRes] = await Promise.all([
+        fetch("/api/history"),
+        fetch("/api/agent/runs?limit=50"),
+      ]);
+
+      const historyData: ConversationMeta[] = historyRes.ok ? await historyRes.json() : [];
+      const runsData = runsRes.ok ? await runsRes.json() : [];
+
+      const mappedRuns: ConversationMeta[] = Array.isArray(runsData)
+        ? runsData.map((run: any) => ({
+            id: `run:${run.id}`,
+            title: run.title || "Agent run",
+            createdAt: run.startedAt || run.updatedAt,
+            updatedAt: run.updatedAt || run.startedAt,
+            messageCount: run.messageCount || 0,
+            source: "agent-run",
+          }))
+        : [];
+
+      const merged = [...historyData, ...mappedRuns]
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+      setConversations(merged);
     } catch (err) {
       console.error("[History] Failed to fetch:", err);
     } finally {
@@ -68,7 +87,9 @@ export default function HistoryPanel({ open, onClose, onLoad, onDelete, currentC
     e.stopPropagation();
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/history/${id}`, { method: "DELETE" });
+      const isRun = id.startsWith("run:");
+      const endpoint = isRun ? `/api/agent/runs/${id.slice(4)}` : `/api/history/${id}`;
+      const res = await fetch(endpoint, { method: "DELETE" });
       if (res.ok) {
         setConversations((prev) => prev.filter((c) => c.id !== id));
         onDelete?.(id);

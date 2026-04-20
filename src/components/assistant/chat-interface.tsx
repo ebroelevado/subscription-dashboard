@@ -928,6 +928,28 @@ export function ChatInterface() {
   // Load a conversation from history
   const handleLoadConversation = async (loadId: string) => {
     try {
+      if (loadId.startsWith("run:")) {
+        const runId = loadId.slice(4);
+        const runRes = await fetch(`/api/agent/runs/${runId}`);
+        if (!runRes.ok) return;
+
+        const runData = await runRes.json();
+        const runMessages = Array.isArray(runData?.messages)
+          ? runData.messages
+              .map((message: any) => message?.content)
+              .filter(Boolean)
+          : [];
+
+        setMessages(runMessages);
+        // Start a fresh live conversation after loading a historical agent run.
+        setConversationId(null);
+        setConversationCreatedAt(null);
+        setExecutedMutations(new Map());
+        setAcceptedActionIds(new Set());
+        setRejectedActionIds(new Set());
+        return;
+      }
+
       const res = await fetch(`/api/history/${loadId}`);
       if (!res.ok) return;
       const data = await res.json();
