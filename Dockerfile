@@ -8,7 +8,18 @@ COPY package.json bun.lock ./
 # Install build dependencies for native modules (like better-sqlite3)
 RUN apk add --no-cache python3 make g++
 
-RUN bun install --frozen-lockfile
+RUN set -eux; \
+		rm -rf /root/.bun/install/cache /tmp/bun-cache || true; \
+		installed=0; \
+		for i in 1 2 3; do \
+			if bun install --frozen-lockfile; then \
+				installed=1; \
+				break; \
+			fi; \
+			echo "bun install failed (attempt ${i}), clearing cache and retrying"; \
+			rm -rf /root/.bun/install/cache /tmp/bun-cache || true; \
+		done; \
+		[ "$installed" -eq 1 ]
 
 # Copy the rest of the application
 COPY . .

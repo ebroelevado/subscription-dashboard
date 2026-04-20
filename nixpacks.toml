@@ -1,0 +1,6 @@
+# Railpack/Nixpacks override to make Bun installs resilient to transient cache corruption.
+[phases.install]
+cmds = [
+  "rm -rf /root/.bun/install/cache ~/.bun/install/cache /app/.bun-cache || true",
+  "sh -lc 'ok=0; for i in 1 2 3; do if bun install --frozen-lockfile; then ok=1; break; fi; echo \"bun install failed (attempt ${i}), clearing cache and retrying\"; rm -rf /root/.bun/install/cache ~/.bun/install/cache /app/.bun-cache || true; done; test \"$ok\" -eq 1'"
+]
