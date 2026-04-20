@@ -1,10 +1,24 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, getStripeEnv } from "@/lib/stripe";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+
+const HANDLED_EVENTS = new Set<string>([
+  "checkout.session.completed",
+  "invoice.payment_succeeded",
+  "customer.subscription.deleted",
+  "customer.subscription.updated",
+]);
+
+const DOWNGRADE_STATUSES = new Set<string>([
+  "canceled",
+  "unpaid",
+  "past_due",
+  "incomplete_expired",
+]);
 
 function getStripeCurrentPeriodEndDate(subscription: unknown): string | undefined {
   const currentPeriodEnd = (subscription as { current_period_end?: unknown }).current_period_end;
@@ -12,9 +26,24 @@ function getStripeCurrentPeriodEndDate(subscription: unknown): string | undefine
   return new Date(currentPeriodEnd * 1000).toISOString();
 }
 
+function getStripeEntityId(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === "string") {
+      return id;
+    }
+  }
+
+  return null;
+}
+
 function getInvoiceSubscriptionId(invoice: unknown): string | null {
-  const legacySubscription = (invoice as { subscription?: unknown }).subscription;
-  if (typeof legacySubscription === "string") return legacySubscription;
+  const legacySubscription = getStripeEntityId((invoice as { subscription?: unknown }).subscription);
+  if (legacySubscription) return legacySubscription;
 
   const parent = (invoice as { parent?: unknown }).parent;
   if (!parent || typeof parent !== "object") return null;
@@ -25,17 +54,24 @@ function getInvoiceSubscriptionId(invoice: unknown): string | null {
     }
   ).subscription_details?.subscription;
 
-  return typeof subscriptionFromParent === "string" ? subscriptionFromParent : null;
+  return getStripeEntityId(subscriptionFromParent);
 }
 
 export async function POST(req: Request) {
   const stripe = getStripe();
   const body = await req.text();
   const signature = (await headers()).get("Stripe-Signature");
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  let webhookSecret: string;
 
-  if (!signature || !webhookSecret) {
-    return new NextResponse("Webhook Error: Missing signature or webhook secret", { status: 400 });
+  try {
+    webhookSecret = getStripeEnv("STRIPE_WEBHOOK_SECRET");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Missing Stripe webhook configuration";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+
+  if (!signature) {
+    return NextResponse.json({ ok: false, error: "Missing Stripe-Signature header" }, { status: 400 });
   }
 
   let event: Stripe.Event;
@@ -44,7 +80,11 @@ export async function POST(req: Request) {
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown signature validation error";
-    return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
+    return NextResponse.json({ ok: false, error: `Webhook Error: ${message}` }, { status: 400 });
+  }
+
+  if (!HANDLED_EVENTS.has(event.type)) {
+    return new NextResponse(null, { status: 200 });
   }
 
   await db.execute(sql`
@@ -57,34 +97,60 @@ export async function POST(req: Request) {
     )
   `);
 
-  const insertResult = await db.execute(sql`
-    INSERT OR IGNORE INTO stripe_webhook_events (event_id, event_type)
-    VALUES (${event.id}, ${event.type})
+  const existingEventResult = await db.execute(sql`
+    SELECT processed_at AS processedAt, error_message AS errorMessage
+    FROM stripe_webhook_events
+    WHERE event_id = ${event.id}
+    LIMIT 1
   `);
 
-  if (insertResult.meta?.changes === 0) {
+  const existingEvent = (existingEventResult.rows?.[0] ?? null) as
+    | { processedAt?: string | null; errorMessage?: string | null }
+    | null;
+
+  if (existingEvent?.processedAt) {
     return new NextResponse(null, { status: 200 });
+  }
+
+  if (!existingEvent) {
+    await db.execute(sql`
+      INSERT OR IGNORE INTO stripe_webhook_events (event_id, event_type)
+      VALUES (${event.id}, ${event.type})
+    `);
   }
 
   try {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
-      const subscriptionId = typeof session.subscription === "string" ? session.subscription : null;
+      const subscriptionId = getStripeEntityId(session.subscription);
       if (!subscriptionId) {
         throw new Error("Checkout session missing subscription id");
       }
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
-      const userId = session.metadata?.userId;
+      let userId = session.metadata?.userId;
+      if (!userId) {
+        const sessionCustomerId = getStripeEntityId(session.customer);
+        if (sessionCustomerId) {
+          const userByCustomer = await db.query.users.findFirst({
+            where: eq(users.stripeCustomerId, sessionCustomerId),
+            columns: { id: true },
+          });
+          userId = userByCustomer?.id;
+        }
+      }
+
       if (!userId) {
         throw new Error("No userId in checkout session metadata");
       }
 
+      const subscriptionPriceId = subscription.items.data[0]?.price?.id ?? null;
+
       await db.update(users).set({
         stripeSubscriptionId: subscription.id,
-        stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : null,
-        stripePriceId: subscription.items.data[0]?.price.id,
+        stripeCustomerId: getStripeEntityId(subscription.customer),
+        stripePriceId: subscriptionPriceId,
         stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
         plan: "PREMIUM",
       }).where(eq(users.id, userId));
@@ -96,9 +162,10 @@ export async function POST(req: Request) {
 
       if (subscriptionId) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const subscriptionPriceId = subscription.items.data[0]?.price?.id ?? null;
 
         await db.update(users).set({
-          stripePriceId: subscription.items.data[0]?.price.id,
+          stripePriceId: subscriptionPriceId,
           stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
           plan: "PREMIUM",
         }).where(eq(users.stripeSubscriptionId, subscription.id));
@@ -110,17 +177,20 @@ export async function POST(req: Request) {
       event.type === "customer.subscription.updated"
     ) {
       const subscription = event.data.object as Stripe.Subscription;
-      const canceled = subscription.status === "canceled" || subscription.status === "unpaid";
+      const subscriptionPriceId = subscription.items.data[0]?.price?.id ?? null;
+      const downgraded = DOWNGRADE_STATUSES.has(subscription.status);
 
-      if (canceled) {
+      if (downgraded) {
         await db.update(users).set({
           plan: "FREE",
+          stripePriceId: null,
           stripeCurrentPeriodEnd: null,
         }).where(eq(users.stripeSubscriptionId, subscription.id));
       } else {
         await db.update(users).set({
           plan: "PREMIUM",
-          stripePriceId: subscription.items.data[0]?.price.id,
+          stripePriceId: subscriptionPriceId,
+          stripeCustomerId: getStripeEntityId(subscription.customer),
           stripeCurrentPeriodEnd: getStripeCurrentPeriodEndDate(subscription),
         }).where(eq(users.stripeSubscriptionId, subscription.id));
       }
@@ -135,12 +205,12 @@ export async function POST(req: Request) {
     const message = error instanceof Error ? error.message : "Unknown Stripe webhook error";
     await db.execute(sql`
       UPDATE stripe_webhook_events
-      SET error_message = ${message}
+      SET processed_at = NULL, error_message = ${message}
       WHERE event_id = ${event.id}
     `);
 
     console.error("[STRIPE_WEBHOOK_ERROR]", error);
-    return new NextResponse("Webhook processing error", { status: 500 });
+    return NextResponse.json({ ok: false, error: "Webhook processing error" }, { status: 500 });
   }
 
   return new NextResponse(null, { status: 200 });

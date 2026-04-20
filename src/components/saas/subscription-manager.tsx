@@ -6,10 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { SAAS_LIMITS } from "@/lib/saas-constants";
-import { cn } from "@/lib/utils";
-import { CalendarClock, CreditCard, Loader2, Sparkles, Settings, ShieldCheck, Bot, ChartColumnBig } from "lucide-react";
+import { Loader2, Sparkles, ShieldCheck, Bot, ChartColumnBig, Settings, CalendarClock } from "lucide-react";
 import { format } from "date-fns";
 import type { Locale } from "date-fns";
 import { es, enUS, zhCN } from "date-fns/locale";
@@ -18,7 +16,6 @@ const locales: Record<string, Locale> = { es, en: enUS, zh: zhCN };
 
 export function SubscriptionManager({ locale }: { locale: string }) {
   const t = useTranslations("saas");
-  const tc = useTranslations("common");
   const { data: status, isLoading } = useSaasStatus();
   const [isActionLoading, setIsActionLoading] = useState(false);
 
@@ -26,14 +23,47 @@ export function SubscriptionManager({ locale }: { locale: string }) {
     try {
       setIsActionLoading(true);
       const res = await fetch("/api/stripe/checkout", { method: "POST" });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error("Failed to get checkout URL");
+      const payload = await res.json();
+      if (!res.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Failed to get checkout URL");
       }
-    } catch (_error) {
-      toast.error(t("upgradeError"));
+
+      if (payload?.url) {
+        window.location.href = payload.url;
+        return;
+      }
+
+      toast.success(t("alreadyPremium", { fallback: "Your Premium plan is already active." }));
+      window.location.reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("upgradeError");
+      toast.error(message);
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleDowngrade = async () => {
+    const confirmed = window.confirm(
+      t("confirmDowngrade", { fallback: "Downgrade now to Free and apply proration immediately?" }),
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsActionLoading(true);
+      const res = await fetch("/api/stripe/subscription", { method: "DELETE" });
+      const payload = await res.json();
+      if (!res.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Failed to downgrade plan");
+      }
+
+      toast.success(t("downgradeSuccess", { fallback: "Your plan was downgraded to Free." }));
+      window.location.reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("downgradeError", { fallback: "Unable to downgrade plan." });
+      toast.error(message);
       setIsActionLoading(false);
     }
   };
@@ -42,14 +72,15 @@ export function SubscriptionManager({ locale }: { locale: string }) {
     try {
       setIsActionLoading(true);
       const res = await fetch("/api/stripe/portal", { method: "POST" });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error("Failed to get portal URL");
+      const payload = await res.json();
+      if (!res.ok || !payload?.ok || !payload?.url) {
+        throw new Error(payload?.error || "Failed to get portal URL");
       }
-    } catch (_error) {
-      toast.error(t("portalError"));
+
+      window.location.href = payload.url;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("portalError");
+      toast.error(message);
       setIsActionLoading(false);
     }
   };
@@ -71,6 +102,14 @@ export function SubscriptionManager({ locale }: { locale: string }) {
   const daysToBilling = nextBillingDate
     ? Math.max(0, Math.ceil((nextBillingDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
+
+  const usage = status?.usage || {
+    platforms: 0,
+    clients: 0,
+    activeSeats: 0,
+    plans: 0,
+    subscriptions: 0,
+  };
 
   const virtues = [
     {
@@ -102,6 +141,62 @@ export function SubscriptionManager({ locale }: { locale: string }) {
     },
   ];
 
+  if (!isPremium) {
+    return (
+      <Card className="overflow-hidden border-2 border-primary/20 bg-primary/5">
+        <CardHeader>
+          <CardTitle>{t("subscriptionTitle")}</CardTitle>
+          <CardDescription>
+            {t("upgradeDescription", { fallback: "Scale without friction. Upgrade only when you need more capacity." })}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-xl border bg-background/70 p-3">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.platforms")}</p>
+              <p className="text-sm font-semibold mt-1">
+                {usage.platforms} / {SAAS_LIMITS.FREE.PLATFORMS}
+              </p>
+            </div>
+            <div className="rounded-xl border bg-background/70 p-3">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.clients")}</p>
+              <p className="text-sm font-semibold mt-1">
+                {usage.clients} / {SAAS_LIMITS.FREE.CLIENTS}
+              </p>
+            </div>
+            <div className="rounded-xl border bg-background/70 p-3">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.activeSeats", { fallback: "Active seats" })}</p>
+              <p className="text-sm font-semibold mt-1">
+                {usage.activeSeats} / {SAAS_LIMITS.FREE.ACTIVE_SEATS}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {virtues.map(({ icon: Icon, title, description }) => (
+              <div key={title} className="rounded-xl border bg-background/80 p-3 flex items-start gap-3">
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{title}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-end">
+            <Button onClick={handleUpgrade} disabled={isActionLoading} className="gap-2">
+              {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {t("upgradeNow", { fallback: "Upgrade to Premium" })}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="overflow-hidden border-2 border-gold-gradient/30 bg-gold-gradient/5">
       <CardHeader className="relative">
@@ -111,37 +206,54 @@ export function SubscriptionManager({ locale }: { locale: string }) {
         </div>
         <CardTitle>{t("subscriptionTitle")}</CardTitle>
         <CardDescription>
-          {t("premiumActiveDescription", { fallback: "Your account has permanent unlimited access to all features." })}
+          {nextBillingDate
+            ? t("nextBillingDate", { fallback: `Next billing in ${daysToBilling ?? 0} days` })
+            : t("premiumActiveDescription", { fallback: "Your premium plan is active." })}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.plan")}</p>
-            <p className="text-sm font-semibold mt-1">LIFETIME PREMIUM</p>
+            <p className="text-sm font-semibold mt-1">PREMIUM</p>
           </div>
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.platforms")}</p>
-            <p className="text-sm font-semibold mt-1">∞ / ∞</p>
+            <p className="text-sm font-semibold mt-1">{usage.platforms}</p>
           </div>
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.plans")}</p>
-            <p className="text-sm font-semibold mt-1">∞ / ∞</p>
+            <p className="text-sm font-semibold mt-1">{usage.plans}</p>
           </div>
           <div className="rounded-xl border bg-background/70 p-3">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{t("labels.subscriptions")}</p>
-            <p className="text-sm font-semibold mt-1">∞ / ∞</p>
+            <p className="text-sm font-semibold mt-1">{usage.subscriptions}</p>
           </div>
         </div>
 
-        <div className="rounded-xl border border-gold-gradient/20 bg-background/80 p-4 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+        {nextBillingDate && (
+          <div className="rounded-xl border bg-background/80 p-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <CalendarClock className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">{t("nextBilling", { fallback: "Next billing" })}</p>
+              <p className="text-xs text-muted-foreground">
+                {format(nextBillingDate, "PPP", { locale: locales[locale] || enUS })}
+                {typeof daysToBilling === "number" ? ` (${daysToBilling}d)` : ""}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium">{t("unlimitedAccess", { fallback: "Unlimited Access" })}</p>
-            <p className="text-xs text-muted-foreground">{t("foreverPearfect", { fallback: "Your subscription is managed directly by Pearfect S.L." })}</p>
-          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" onClick={handleDowngrade} disabled={isActionLoading}>
+            {t("downgradeNow", { fallback: "Downgrade now" })}
+          </Button>
+          <Button variant="outline" onClick={handleManage} disabled={isActionLoading} className="gap-2">
+            {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />}
+            {t("manageBilling", { fallback: "Manage billing" })}
+          </Button>
         </div>
       </CardContent>
     </Card>

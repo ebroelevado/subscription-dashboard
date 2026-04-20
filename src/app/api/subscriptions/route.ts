@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const limitCheck = await checkSubscriptionLimit(userId);
     if (!limitCheck.canCreate) {
-      return error("Subscription limit reached", 403);
+      return error(limitCheck.reason || "Subscription limit reached", 403);
     }
 
     const activeUntil = data.isPaid ? addMonths(data.startDate, data.durationMonths) : data.startDate;

@@ -46,6 +46,7 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CurrencySelector } from "@/components/currency-selector";
 import { useSaasStatus } from "@/hooks/use-saas-status";
+import { PremiumPopup } from "@/components/saas/premium-popup";
 
 // ── Sidebar dimensions ──
 const SIDEBAR_EXPANDED = 260;
@@ -473,8 +474,15 @@ export function DashboardShell({
           <div className="flex-1" />
 
           <CommandPalette />
-          
-          {/* Upgrade button removed (all users are premium) */}
+
+          {saas?.plan === "FREE" && (
+            <PremiumPopup>
+              <Button size="sm" className="hidden sm:flex gap-2 rounded-full">
+                <Sparkles className="size-4" />
+                {ts("upgradeNow", { fallback: "Upgrade" })}
+              </Button>
+            </PremiumPopup>
+          )}
 
           <CurrencySelector variant="header" />
           <LanguageSwitcher />

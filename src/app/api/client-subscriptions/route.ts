@@ -66,10 +66,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createClientSubscriptionSchema.parse(body);
 
-    const { checkUserLimits } = await import("@/lib/saas-limits");
-    const limitCheck = await checkUserLimits(userId);
+    const { checkActiveSeatLimit } = await import("@/lib/saas-limits");
+    const limitCheck = await checkActiveSeatLimit(userId);
     if (!limitCheck.canCreate) {
-      throw new Error("Seat limit reached");
+      throw new Error(limitCheck.reason || "Seat limit reached");
     }
 
     // Verify subscription belongs to this user

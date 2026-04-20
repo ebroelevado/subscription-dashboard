@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, validateStripeRuntimeConfig } from "@/lib/stripe";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function POST() {
   try {
+    validateStripeRuntimeConfig();
     const stripe = getStripe();
     const { getAuthUserId } = await import("@/lib/auth-utils");
     const userId = await getAuthUserId();
@@ -16,7 +17,7 @@ export async function POST() {
     });
 
     if (!user || !user.stripeCustomerId) {
-      return new NextResponse("Stripe customer not found", { status: 404 });
+      return NextResponse.json({ ok: false, error: "Stripe customer not found" }, { status: 404 });
     }
 
     const origin = process.env.AUTH_URL || "http://localhost:3000";
@@ -26,9 +27,10 @@ export async function POST() {
       return_url: `${origin}/dashboard/settings`,
     });
 
-    return NextResponse.json({ url: portalSession.url });
+    return NextResponse.json({ ok: true, url: portalSession.url });
   } catch (error) {
     console.error("[STRIPE_PORTAL_ERROR]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    const message = error instanceof Error ? error.message : "Internal Error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

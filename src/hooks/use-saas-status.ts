@@ -18,18 +18,14 @@ export function useSaasStatus() {
   return useQuery<SaasStatus>({
     queryKey: ["saas-status"],
     queryFn: async () => {
-      // Mock response
-      return {
-        plan: "PREMIUM",
-        stripeCurrentPeriodEnd: null,
-        usage: {
-          platforms: 0,
-          clients: 0,
-          activeSeats: 0,
-          plans: 0,
-          subscriptions: 0,
-        }
-      };
-    }
+      const response = await fetch("/api/saas/status", { method: "GET" });
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Unable to load SaaS status");
+      }
+
+      return payload.data as SaasStatus;
+    },
   });
 }
