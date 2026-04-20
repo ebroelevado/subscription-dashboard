@@ -16,6 +16,7 @@ import {
   validateAndConsumeMutationToken,
 } from "@/lib/mutation-token";
 import { executeMutation as sharedExecuteMutation } from "@/lib/mutation-executor";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const EXTERNAL_EXECUTE_TIMEOUT_MS = 15_000;
 const EXTERNAL_ENQUEUE_TIMEOUT_MS = 5000;
@@ -83,6 +84,29 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
     const userId = session.user.id;
+
+    const rateLimit = checkRateLimit({
+      key: `mutation-execute:${userId}`,
+      limit: 20,
+      windowMs: 60_000,
+    });
+
+    if (!rateLimit.allowed) {
+      const retryAfterSeconds = Math.ceil(rateLimit.retryAfterMs / 1000);
+      return Response.json(
+        {
+          error: "Too Many Requests",
+          code: "RATE_LIMITED",
+          retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfterSeconds),
+          },
+        },
+      );
+    }
 
     const body = await req.json();
     const { token } = body;

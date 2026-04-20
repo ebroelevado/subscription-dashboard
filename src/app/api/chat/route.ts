@@ -6,6 +6,7 @@ import { users } from "@/db/schema";
 import { streamText, tool, stepCountIs, convertToModelMessages, wrapLanguageModel } from "ai";
 import { createAiGateway } from "ai-gateway-provider";
 import { createUnified } from "ai-gateway-provider/providers/unified";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 const CHAT_PROXY_TIMEOUT_MS = 120_000;
@@ -213,6 +214,30 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
     const session = await getAuthSession();
     if (!session?.user?.id) {
       return new Response("Unauthorized", { status: 401 });
+    }
+
+    const rateLimit = checkRateLimit({
+      key: `chat:${session.user.id}`,
+      limit: 30,
+      windowMs: 60_000,
+    });
+
+    if (!rateLimit.allowed) {
+      const retryAfterSeconds = Math.ceil(rateLimit.retryAfterMs / 1000);
+      return new Response(
+        JSON.stringify({
+          error: "Too Many Requests",
+          code: "RATE_LIMITED",
+          retryAfterSeconds,
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(retryAfterSeconds),
+          },
+        },
+      );
     }
 
     const json = await req.json();
