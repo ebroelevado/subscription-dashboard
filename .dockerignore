@@ -7,5 +7,17 @@ railpack-bundle
 .env*
 !*.example
 .DS_Store
+.git
+.wrangler
+.vscode
+.agent
+.agents
 .github
 *.sql
+export
+d1-export-*
+postgres-export-*
+local.db
+local.db-shm
+local.db-wal
+tmp_test

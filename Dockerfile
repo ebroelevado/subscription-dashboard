@@ -29,6 +29,11 @@ COPY . .
 # but usually Vinext builds standalone bundles purely from source.
 RUN bun run build:vinext
 
+# Prune to production dependencies so the runtime layer stays small.
+RUN set -eux; \
+	bun install --frozen-lockfile --production; \
+	rm -rf /root/.bun/install/cache /tmp/bun-cache /root/.cache || true
+
 # -------------------------
 # Stage 2: Runner
 # -------------------------
@@ -50,8 +55,7 @@ ENV SES_ALLOW_DYNAMIC_CODE="true"
 COPY --from=builder /app/package.json .
 COPY --from=builder /app/bun.lock .
 
-# Note: We must retain node_modules because `vinext start` relies on `vinext` and its dependencies
-# at runtime. In typical Next.js apps, `standalone` mode copies node_modules, but Vinext needs them.
+# Keep only production dependencies pruned in the builder stage.
 COPY --from=builder /app/node_modules ./node_modules
 
 # Copy build artifacts
