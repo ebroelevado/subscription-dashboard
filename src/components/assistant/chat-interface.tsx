@@ -39,6 +39,24 @@ type ExtendedUIMessagePart = {
   input?: unknown;
 };
 
+type PrimitiveCell = string | number | boolean | null;
+
+type PythonAnalysisReadyPayload = {
+  status: "python_analysis_ready";
+  analysisTemplateId: "revenue_trend" | "discipline_distribution" | "platform_revenue_breakdown";
+  title: string | null;
+  dataPayload: Array<Record<string, PrimitiveCell>>;
+  pythonCode: string;
+  safeMode?: boolean;
+  message?: string;
+};
+
+type PythonWorkerState =
+  | { status: "idle" }
+  | { status: "running"; progress: string }
+  | { status: "done"; imageDataUrl: string; runtimeMs: number; rowCount: number }
+  | { status: "error"; error: string };
+
 import { findStatusInOutput } from "@/lib/find-status";
 
 const FULL_CONTROL_WARNING_KEY = "assistant-full-control-warning-dismissed";
@@ -52,6 +70,12 @@ const MUTATION_TOOL_NAMES = new Set([
   "logPayment", "managePayments",
   "managePlatforms", "managePlans", "manageSubscriptions",
   "createSeat", "updateSeat", "pauseSeat", "resumeSeat", "cancelSeat",
+]);
+
+const PYTHON_ANALYSIS_TEMPLATE_IDS = new Set([
+  "revenue_trend",
+  "discipline_distribution",
+  "platform_revenue_breakdown",
 ]);
 
 function sleep(ms: number) {
@@ -231,6 +255,55 @@ function deepParseJson(val: unknown, depth = 0): unknown {
   return val;
 }
 
+function isPrimitiveCell(value: unknown): value is PrimitiveCell {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function findPythonAnalysisPayload(obj: unknown, depth = 0): PythonAnalysisReadyPayload | null {
+  if (!obj || typeof obj !== "object" || depth > 4) return null;
+
+  const candidate = obj as Record<string, unknown>;
+  const status = candidate.status;
+  const analysisTemplateId = candidate.analysisTemplateId;
+  const dataPayload = candidate.dataPayload;
+  const pythonCode = candidate.pythonCode;
+  const title = candidate.title;
+
+  if (
+    status === "python_analysis_ready" &&
+    typeof analysisTemplateId === "string" &&
+    PYTHON_ANALYSIS_TEMPLATE_IDS.has(analysisTemplateId) &&
+    Array.isArray(dataPayload) &&
+    dataPayload.length > 0 &&
+    dataPayload.length <= 2000 &&
+    typeof pythonCode === "string"
+  ) {
+    const rowsAreValid = dataPayload.every((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return false;
+      return Object.values(row as Record<string, unknown>).every((cell) => isPrimitiveCell(cell));
+    });
+
+    if (rowsAreValid) {
+      return {
+        status: "python_analysis_ready",
+        analysisTemplateId: analysisTemplateId as PythonAnalysisReadyPayload["analysisTemplateId"],
+        title: typeof title === "string" ? title : null,
+        dataPayload: dataPayload as Array<Record<string, PrimitiveCell>>,
+        pythonCode,
+        safeMode: candidate.safeMode === true,
+        message: typeof candidate.message === "string" ? candidate.message : undefined,
+      };
+    }
+  }
+
+  for (const value of Object.values(candidate)) {
+    const found = findPythonAnalysisPayload(value, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+}
+
 // ── Rotating phrase component — cycles through an array of phrases with a
 //    smooth slide-up-fade-out / slide-up-fade-in transition, like Gemini does.
 function RotatingPhrase({ phrases, intervalMs = 2500 }: { phrases: string[]; intervalMs?: number }) {
@@ -309,6 +382,123 @@ function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, execut
   // deepParseJson can be slow if output contains large metadata objects.
   const formattedArgs = useMemo(() => deepParseJson(args), [args]);
   const formattedOutput = useMemo(() => deepParseJson(output), [output]);
+  const pythonPayload = useMemo(
+    () => (isFinished && !isError ? findPythonAnalysisPayload(formattedOutput) : null),
+    [isFinished, isError, formattedOutput],
+  );
+  const [pythonWorkerState, setPythonWorkerState] = useState<PythonWorkerState>({ status: "idle" });
+  const pythonWorkerRef = useRef<Worker | null>(null);
+  const pythonRequestRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setPythonWorkerState({ status: "idle" });
+    if (pythonWorkerRef.current) {
+      pythonWorkerRef.current.terminate();
+      pythonWorkerRef.current = null;
+    }
+    pythonRequestRef.current = null;
+  }, [pythonPayload?.analysisTemplateId, pythonPayload?.title, pythonPayload?.dataPayload.length]);
+
+  useEffect(() => {
+    return () => {
+      if (pythonWorkerRef.current) {
+        pythonWorkerRef.current.terminate();
+        pythonWorkerRef.current = null;
+      }
+      pythonRequestRef.current = null;
+    };
+  }, []);
+
+  const runPythonAnalysis = useCallback(() => {
+    if (!pythonPayload || pythonWorkerState.status === "running") return;
+
+    const requestId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const worker = new Worker("/python-analysis.worker.js");
+    if (pythonWorkerRef.current) {
+      pythonWorkerRef.current.terminate();
+    }
+    pythonWorkerRef.current = worker;
+    pythonRequestRef.current = requestId;
+
+    setPythonWorkerState({ status: "running", progress: "Preparing Python sandbox..." });
+
+    const closeWorker = () => {
+      if (pythonWorkerRef.current === worker) {
+        pythonWorkerRef.current = null;
+      }
+      worker.terminate();
+      pythonRequestRef.current = null;
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      closeWorker();
+      setPythonWorkerState({
+        status: "error",
+        error: "Python analysis timed out. Try running it again.",
+      });
+    }, 120000);
+
+    worker.onmessage = (event: MessageEvent<any>) => {
+      const message = event.data as
+        | { type: "progress"; requestId: string; message: string }
+        | { type: "result"; requestId: string; imageDataUrl: string; runtimeMs: number; rowCount: number }
+        | { type: "error"; requestId: string; error: string };
+
+      if (!message || message.requestId !== requestId || pythonRequestRef.current !== requestId) return;
+
+      if (message.type === "progress") {
+        setPythonWorkerState({ status: "running", progress: message.message || "Running analysis..." });
+        return;
+      }
+
+      window.clearTimeout(timeoutId);
+
+      if (message.type === "result") {
+        setPythonWorkerState({
+          status: "done",
+          imageDataUrl: message.imageDataUrl,
+          runtimeMs: message.runtimeMs,
+          rowCount: message.rowCount,
+        });
+      } else {
+        setPythonWorkerState({
+          status: "error",
+          error: message.error || t("chat.unknownError"),
+        });
+      }
+
+      closeWorker();
+    };
+
+    worker.onerror = () => {
+      window.clearTimeout(timeoutId);
+      closeWorker();
+      setPythonWorkerState({
+        status: "error",
+        error: "Python worker crashed during execution.",
+      });
+    };
+
+    worker.postMessage({
+      requestId,
+      analysisTemplateId: pythonPayload.analysisTemplateId,
+      title: pythonPayload.title,
+      dataPayload: pythonPayload.dataPayload,
+      pythonCode: pythonPayload.pythonCode,
+    });
+  }, [pythonPayload, pythonWorkerState.status, t]);
+
+  const downloadPythonImage = useCallback(() => {
+    if (pythonWorkerState.status !== "done") return;
+    const link = document.createElement("a");
+    link.href = pythonWorkerState.imageDataUrl;
+    link.download = `${pythonPayload?.analysisTemplateId || "analysis"}-${new Date().toISOString().slice(0, 10)}.png`;
+    link.click();
+  }, [pythonWorkerState, pythonPayload?.analysisTemplateId]);
 
   // ── Loading state: tool call in-flight ──────────────────────────────────
   if (!isFinished) {
@@ -513,6 +703,98 @@ function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, execut
                      <Check className="size-4 mr-2" />
                      {t("chat.sendWhatsapp", { fallback: "Enviar WhatsApp" })}
                    </Button>
+                 </div>
+               </div>
+             );
+           }
+
+           if (pythonPayload) {
+             return (
+               <div className="px-3 pb-3 pt-1 animate-in fade-in slide-in-from-bottom-1 duration-500">
+                 <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 shadow-[0_0_20px_rgba(14,165,233,0.08)] p-4 flex flex-col gap-3">
+                   <div className="flex items-start gap-3">
+                     <div className="size-8 rounded-xl bg-sky-500/15 flex items-center justify-center shrink-0">
+                       <BrainCircuit className="size-4 text-sky-500" />
+                     </div>
+                     <div className="flex-1 min-w-0">
+                       <p className="text-[11px] font-bold text-sky-500 uppercase tracking-widest">Python Sandbox</p>
+                       <p className="text-sm text-foreground/90 mt-0.5 leading-snug">
+                         {pythonPayload.message || "Run this analysis template securely in the browser sandbox."}
+                       </p>
+                     </div>
+                   </div>
+
+                   <div className="rounded-xl bg-muted/40 border border-border/40 p-3 text-[12px] text-muted-foreground/90">
+                     <p className="font-semibold text-foreground/80">Template: <span className="font-mono text-[11px]">{pythonPayload.analysisTemplateId}</span></p>
+                     <p className="mt-1">Rows: {pythonPayload.dataPayload.length}</p>
+                     {pythonPayload.title ? <p className="mt-1 truncate">Title: {pythonPayload.title}</p> : null}
+                   </div>
+
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                     <Button
+                       onClick={runPythonAnalysis}
+                       disabled={pythonWorkerState.status === "running"}
+                       className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-xl text-sm shadow-sm transition-all active:scale-[0.97]"
+                     >
+                       {pythonWorkerState.status === "running" ? (
+                         <>
+                           <Loader2 className="size-4 mr-2 animate-spin" />
+                           Running...
+                         </>
+                       ) : (
+                         <>
+                           <BrainCircuit className="size-4 mr-2" />
+                           Run Analysis
+                         </>
+                       )}
+                     </Button>
+
+                     <Button
+                       variant="outline"
+                       onClick={downloadPythonImage}
+                       disabled={pythonWorkerState.status !== "done"}
+                       className="w-full border-sky-500/30 hover:bg-sky-500/10 text-sky-600 font-bold py-2.5 rounded-xl text-sm"
+                     >
+                       <Download className="size-4 mr-2" />
+                       Download Plot
+                     </Button>
+                   </div>
+
+                   {pythonWorkerState.status === "running" ? (
+                     <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-[12px] text-sky-700 dark:text-sky-300 flex items-center gap-2">
+                       <Loader2 className="size-3.5 animate-spin" />
+                       <span>{pythonWorkerState.progress}</span>
+                     </div>
+                   ) : null}
+
+                   {pythonWorkerState.status === "error" ? (
+                     <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[12px] text-red-500">
+                       {pythonWorkerState.error}
+                     </div>
+                   ) : null}
+
+                   {pythonWorkerState.status === "done" ? (
+                     <div className="rounded-xl border border-border/40 bg-background/60 p-3 flex flex-col gap-2">
+                       <img
+                         src={pythonWorkerState.imageDataUrl}
+                         alt={pythonPayload.title || "Python analysis plot"}
+                         className="w-full rounded-lg border border-border/40 bg-white"
+                         loading="lazy"
+                       />
+                       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                         <span>{pythonWorkerState.rowCount} rows processed</span>
+                         <span>{Math.max(1, Math.round(pythonWorkerState.runtimeMs / 100) / 10)}s</span>
+                       </div>
+                       <Button
+                         variant="outline"
+                         onClick={runPythonAnalysis}
+                         className="w-full border-border/40 hover:bg-muted/40 text-foreground font-semibold"
+                       >
+                         <RefreshCcw className="size-4 mr-2" />
+                         Re-run
+                       </Button>
+                     </div>
+                   ) : null}
                  </div>
                </div>
              );
