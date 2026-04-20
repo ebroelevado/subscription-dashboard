@@ -3,9 +3,15 @@ import { streamText, tool, stepCountIs, convertToModelMessages, wrapLanguageMode
 import { createAiGateway } from "ai-gateway-provider";
 import { createUnified } from "ai-gateway-provider/providers/unified";
 import { createUserScopedTools } from "@/lib/assistant-tools";
-import { initDb, getDb, getDirectDb } from "@/db";
+import { initDb, getDb } from "@/db";
 import { rollbackConsumedMutationToken, validateAndConsumeMutationToken } from "@/lib/mutation-token";
 import { executeMutation } from "@/lib/mutation-executor";
+import {
+  appendAgentMessage,
+  finalizeAgentRun,
+  recordStepToolCalls,
+  startAgentRun,
+} from "@/lib/agent-run-tracking";
 
 export interface Env {
   DB: any;
@@ -157,6 +163,9 @@ export class AgentSessionDO extends DurableObject {
   }
 
   async fetch(request: Request) {
+    let activeRunId: string | null = null;
+    let runFinalized = false;
+
     try {
       const url = new URL(request.url);
       if (request.method !== "POST") {
@@ -206,6 +215,24 @@ export class AgentSessionDO extends DurableObject {
         return new Response(JSON.stringify({ error: "No messages found" }), { status: 400 });
       }
 
+      const activeModel = typeof model === "string" && model.length ? model : "default";
+      const run = await startAgentRun(getDb(), {
+        userId,
+        model: activeModel,
+        source: "durable_object",
+        allowDestructive: !!allowDestructive,
+      });
+      activeRunId = run.id;
+
+      const latestUserMessage = [...messages].reverse().find((message: any) => message?.role === "user");
+      if (latestUserMessage) {
+        await appendAgentMessage(getDb(), {
+          runId: activeRunId,
+          role: "user",
+          content: latestUserMessage,
+        });
+      }
+
       // Build tools
       const builtTools: Record<string, ReturnType<typeof tool>> = {};
       const adaptedDefineTool = (
@@ -234,6 +261,7 @@ export class AgentSessionDO extends DurableObject {
       });
 
       // Execute Agent Loop (safely isolated within this DO instance)
+      let stepNumber = 0;
       const result = streamText({
         model: this.getModel(model),
         system: SYSTEM_PROMPT(!!allowDestructive),
@@ -248,17 +276,71 @@ export class AgentSessionDO extends DurableObject {
         onError: (error: unknown) => {
           console.error("[DO Chat Stream Error]:", error);
         },
-        onStepFinish: (event) => {
+        onStepFinish: async (event) => {
+          stepNumber += 1;
+          if (activeRunId) {
+            try {
+              await recordStepToolCalls(getDb(), {
+                runId: activeRunId,
+                stepNumber,
+                toolCalls: (event as any).toolCalls,
+                toolResults: (event as any).toolResults,
+              });
+            } catch (trackingError) {
+              console.error("[DO Tracking Error: tool calls]", trackingError);
+            }
+          }
           console.log("[DO Step Finish] reason:", event.finishReason);
         },
       });
 
       // Stream the raw stream to the requesting frontend
-      return result.toUIMessageStreamResponse();
+      return result.toUIMessageStreamResponse({
+        originalMessages: messages,
+        onFinish: async ({ responseMessage, isAborted }) => {
+          if (!activeRunId || runFinalized) return;
+
+          try {
+            if (responseMessage) {
+              await appendAgentMessage(getDb(), {
+                runId: activeRunId,
+                role: "assistant",
+                content: responseMessage,
+              });
+            }
+
+            await finalizeAgentRun(getDb(), {
+              runId: activeRunId,
+              status: isAborted ? "aborted" : "completed",
+            });
+            runFinalized = true;
+          } catch (trackingError) {
+            console.error("[DO Tracking Error: finish]", trackingError);
+          }
+        },
+        onError: (error: unknown) => {
+          console.error("[DO UI Stream Error]:", error);
+          return "An error occurred while streaming the response.";
+        },
+      });
 
     } catch (err: unknown) {
       const error = err as Error;
       console.error("[DO Session Error]:", error?.message || err);
+
+      if (activeRunId && !runFinalized) {
+        try {
+          await finalizeAgentRun(getDb(), {
+            runId: activeRunId,
+            status: "failed",
+            errorMessage: error?.message || "DO session error",
+          });
+          runFinalized = true;
+        } catch (trackingError) {
+          console.error("[DO Tracking Error: finalize failed run]", trackingError);
+        }
+      }
+
       return new Response(
         JSON.stringify({ error: error?.message || "DO Error" }),
         { status: 500, headers: { "Content-Type": "application/json" } }

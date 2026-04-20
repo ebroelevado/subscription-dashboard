@@ -14,6 +14,7 @@ import { plans } from "./plans";
 import { subscriptions } from "./subscriptions";
 import { clients } from "./clients";
 import { mutationAuditLogs } from "./mutation-audit-logs";
+import { agentRuns } from "./agent-runs";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -50,4 +51,5 @@ export const usersRelations = relations(users, ({ many }) => ({
   subscriptions: many(subscriptions),
   clients: many(clients),
   mutationAuditLogs: many(mutationAuditLogs),
+  agentRuns: many(agentRuns),
 }));
