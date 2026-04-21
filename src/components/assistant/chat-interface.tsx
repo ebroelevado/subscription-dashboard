@@ -169,7 +169,7 @@ export function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Vercel AI SDK — useChat
-  const { messages, sendMessage, status, setMessages, stop, error: chatError, regenerate } = useChat({
+  const { messages, append: sendMessage, reload, stop, status, setMessages, error: chatError } = useChat({
     onError: (err) => {
       console.error("AI SDK Chat Error:", err);
     },
@@ -754,9 +754,9 @@ export function ChatInterface() {
             const hasAssistantMessage = messages.some(m => m.role === "assistant");
             if (hasAssistantMessage) {
               console.log("[Chat] Attempting auto-recovery via regenerate...");
-              regenerate();
+              reload();
             } else {
-              console.warn("[Chat] No assistant message to regenerate from.");
+              console.warn("[Chat] No assistant message to reload from.");
             }
           }
         }, 1500);
@@ -764,7 +764,7 @@ export function ChatInterface() {
     }, STALLED_STREAM_TIMEOUT_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [status, messages, stop, regenerate]);
+  }, [status, messages, stop, reload]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -1100,11 +1100,24 @@ export function ChatInterface() {
                     : chatError.message || "La Inteligencia Artificial ha encontrado un problema al procesar tu solicitud."}
                 </span>
                 <button 
-                  onClick={() => stop()} 
-                  className="text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg w-fit mt-2 transition-colors border border-red-500/20 flex items-center gap-2"
+                  onClick={() => reload()} 
+                  className="text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors border border-red-500/20 flex items-center gap-2"
                 >
                   <RefreshCcw className="size-3" />
-                  {t("chat.retry") || "Detener ejecución e intentar de nuevo"}
+                  {t("chat.retry") || "Intentar de nuevo"}
+                </button>
+                <button 
+                  onClick={() => {
+                    const errorMsg = chatError.message || "Unknown error";
+                    sendMessage({ 
+                      role: 'user', 
+                      content: `[SYSTEM ERROR REPORT] Ha ocurrido un error en la ejecución: "${errorMsg}". Por favor, analiza qué ha fallado en el paso anterior y busca una solución alternativa o corrige el código/consulta para obtener el resultado esperado.` 
+                    });
+                  }} 
+                  className="text-xs font-semibold bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors border border-primary/20 flex items-center gap-2"
+                >
+                  <BrainCircuit className="size-3" />
+                  {t("chat.autoFix") || "Dejar que la IA lo resuelva"}
                 </button>
               </div>
             </div>

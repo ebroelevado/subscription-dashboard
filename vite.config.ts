@@ -7,9 +7,24 @@ export default defineConfig({
     vinext({
       appDir: "./src",
     }),
-    cloudflare({
-      viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-    }),
+    ...(process.env.NODE_ENV === "production"
+      ? [
+          cloudflare({
+            viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+            config: {
+              main: "virtual:vinext-rsc-entry",
+              assets: {
+                run_worker_first: true,
+              },
+            },
+            auxiliaryWorkers: [
+              {
+                configPath: "workers/agent-session/wrangler.toml",
+              },
+            ],
+          }),
+        ]
+      : []),
   ],
   ssr: {
     external: ["better-sqlite3", "pg"],

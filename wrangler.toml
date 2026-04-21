@@ -15,8 +15,10 @@ head_sampling_rate = 1
 enabled = true
 head_sampling_rate = 0.1
 
-# Cloudflare Pages build output
-pages_build_output_dir = ".vercel/output/static"
+# Cloudflare Assets configuration
+[assets]
+directory = "dist/client"
+run_worker_first = true
 
 [[durable_objects.bindings]]
 name = "AGENT_SESSION_DO"

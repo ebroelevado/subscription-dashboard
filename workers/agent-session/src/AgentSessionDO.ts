@@ -403,8 +403,9 @@ export class AgentSessionDO extends DurableObject {
           }
         },
         onError: (error: unknown) => {
-          console.error("[DO UI Stream Error]:", error);
-          return "An error occurred while streaming the response.";
+          const errMsg = error instanceof Error ? error.message : String(error);
+          console.error("[DO UI Stream Error]:", errMsg);
+          return `Stream Error: ${errMsg}`;
         },
       });
 
