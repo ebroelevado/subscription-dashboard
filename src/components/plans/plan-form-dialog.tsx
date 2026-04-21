@@ -7,7 +7,7 @@ import { z } from "zod";
 import { useCreatePlan, useUpdatePlan, type Plan } from "@/hooks/use-plans";
 import { usePlatforms } from "@/hooks/use-platforms";
 import { useSession } from "@/lib/auth-client";
-import { CURRENCIES, type Currency } from "@/lib/currency";
+import { CURRENCIES, centsToAmount, amountToCents, type Currency } from "@/lib/currency";
 import {
   Dialog,
   DialogContent,
@@ -102,7 +102,7 @@ export function PlanFormDialog({
         reset({
           platformId: plan.platformId,
           name: plan.name,
-          cost: Number(plan.cost),
+          cost: centsToAmount(Number(plan.cost)),
           maxSeats: plan.maxSeats ?? undefined,
           isActive: plan.isActive,
         });
@@ -121,6 +121,7 @@ export function PlanFormDialog({
   const onSubmit = async (values: FormValues) => {
     const payload = {
       ...values,
+      cost: amountToCents(values.cost),
       maxSeats: values.maxSeats ?? null,
     };
 

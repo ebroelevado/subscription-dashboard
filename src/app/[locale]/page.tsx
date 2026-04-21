@@ -307,7 +307,7 @@ export default function LandingPage() {
               variants={fadeUp}
               custom={0}
             >
-              Simple, transparent pricing
+              {t("pricingTitle")}
             </motion.h2>
             <motion.p
               className="mt-3 text-muted-foreground max-w-xl mx-auto"
@@ -316,7 +316,7 @@ export default function LandingPage() {
               variants={fadeUp}
               custom={1}
             >
-              Get full access to all features with our Premium plan. No hidden fees.
+              {t("pricingDescription")}
             </motion.p>
           </AnimatedSection>
           
@@ -334,38 +334,38 @@ export default function LandingPage() {
                  <div className="h-1.5 w-full bg-gradient-to-r from-primary via-primary/80 to-primary/60" />
                  
                  <div className="p-8 text-center sm:p-10">
-                    <h3 className="text-xl font-bold text-foreground">Premium</h3>
+                    <h3 className="text-xl font-bold text-foreground">{t("pricingPlanName")}</h3>
                     <div className="mt-4 flex items-baseline justify-center text-5xl font-extrabold tracking-tight text-foreground">
-                      $2.99
-                      <span className="ml-1 text-xl font-medium text-muted-foreground">/mo</span>
+                      {t("pricingPlanPrice")}
+                      <span className="ml-1 text-xl font-medium text-muted-foreground">{t("pricingPlanInterval")}</span>
                     </div>
                     <p className="mt-4 text-sm text-muted-foreground">
-                      Everything you need to manage your business.
+                      {t("pricingPlanDescription")}
                     </p>
                     
                     <ul className="mt-8 space-y-3 text-sm leading-6 text-foreground/80 text-left">
                       <li className="flex gap-x-3 items-center">
                         <Zap className="size-4 text-primary shrink-0" />
-                        Unlimited Platforms & Subscriptions
+                        {t("pricingFeature1")}
                       </li>
                       <li className="flex gap-x-3 items-center">
                         <BarChart3 className="size-4 text-primary shrink-0" />
-                        Advanced Analytics & Profitability
+                        {t("pricingFeature2")}
                       </li>
                       <li className="flex gap-x-3 items-center">
                         <Bot className="size-4 text-primary shrink-0" />
-                        Full AI Assistant Access
+                        {t("pricingFeature3")}
                       </li>
                       <li className="flex gap-x-3 items-center">
                         <Shield className="size-4 text-primary shrink-0" />
-                        Automated WhatsApp Reminders
+                        {t("pricingFeature4")}
                       </li>
                     </ul>
                     
                     <div className="mt-8">
                       <Button size="lg" className="w-full shadow-lg shadow-primary/20" asChild>
                         <Link href="/signup">
-                          Get Premium
+                          {t("pricingGetStarted")}
                         </Link>
                       </Button>
                     </div>

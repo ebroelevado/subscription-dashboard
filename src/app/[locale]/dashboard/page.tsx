@@ -282,12 +282,14 @@ export default function DashboardPage() {
                       <Badge variant="destructive" className="text-xs">
                         {tc("daysOverdue", { count: group.maxDaysOverdue })}
                       </Badge>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setSheetClientId(group.clientId)}
-                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all cursor-pointer disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 hover:bg-accent hover:text-accent-foreground size-8"
+                        className="size-8"
                       >
                         <ArrowRight className="size-3.5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -348,12 +350,14 @@ export default function DashboardPage() {
                           ? tc("today")
                           : tc("daysLeft", { count: group.minDaysLeft })}
                       </Badge>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setSheetClientId(group.clientId)}
-                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all cursor-pointer disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 hover:bg-accent hover:text-accent-foreground size-8"
+                        className="size-8"
                       >
                         <ArrowRight className="size-3.5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}

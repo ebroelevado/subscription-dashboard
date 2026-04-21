@@ -31,6 +31,10 @@ database_name = "pearfect"
 database_id = "62cd2aa1-e011-486b-9893-d81c0f7a2756"
 migrations_dir = "./drizzle"
 
+[[r2_buckets]]
+binding = "CHAT_BACKUPS"
+bucket_name = "chat-backups"
+
 # Environment variables (non-secrets)
 [vars]
 NEXT_PUBLIC_APP_URL = "https://subscription-dashboard.pages.dev"

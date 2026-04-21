@@ -27,7 +27,7 @@ import {
 import { differenceInDays, startOfDay, addMonths, subMonths, format } from "date-fns";
 import { toast } from "sonner";
 import { useSession } from "@/lib/auth-client";
-import { CURRENCIES, formatCurrency, type Currency } from "@/lib/currency";
+import { CURRENCIES, formatCurrency, centsToAmount, type Currency } from "@/lib/currency";
 import { useLocale, useTranslations } from "next-intl";
 import { AssignSubscriptionDialog } from "@/components/clients/assign-subscription-dialog";
 
@@ -519,7 +519,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
               />
               {renewMonths > 1 && renewSeat && (
                 <p className="text-xs text-muted-foreground">
-                  {tc("autoCalculated")}: {Number(renewSeat.customPrice).toFixed(2)} × {renewMonths} {t("renewMonths")}
+                  {tc("autoCalculated")}: {centsToAmount(Number(renewSeat.customPrice)).toFixed(2)} × {renewMonths} {t("renewMonths")}
                 </p>
               )}
             </div>

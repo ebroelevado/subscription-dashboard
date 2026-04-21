@@ -17,6 +17,7 @@ import {
 import { Pencil, Trash2, Eye, CreditCard, RefreshCw } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useTranslations } from "next-intl";
+import { useLocale } from "next-intl";
 import { differenceInDays, startOfDay } from "date-fns";
 import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
@@ -26,8 +27,8 @@ interface SubscriptionsTableProps {
   isLoading: boolean;
 }
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("es-ES");
+function formatDate(date: string, locale: string) {
+  return new Date(date).toLocaleDateString(locale);
 }
 
 type ExpiryStatus = "ok" | "expiring" | "expired";
@@ -49,6 +50,7 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
   const [deleteSub, setDeleteSub] = useState<Subscription | null>(null);
   const { data: session } = useSession();
   const currency = session?.user?.currency || "EUR";
+  const locale = useLocale();
   const t = useTranslations("subscriptions");
   const tc = useTranslations("common");
   const router = useRouter();
@@ -192,7 +194,7 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
                     </div>
                   </TableCell>
                   <TableCell className="text-center text-muted-foreground whitespace-nowrap">
-                    {formatDate(sub.activeUntil)}
+                    {formatDate(sub.activeUntil, locale)}
                   </TableCell>
                   <TableCell className="text-center font-medium whitespace-nowrap">
                     {formatCurrency(sub.plan?.cost ?? 0, currency)}

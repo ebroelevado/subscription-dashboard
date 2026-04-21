@@ -79,3 +79,6 @@ railpack-bundle/
 *.sql
 *-export-*/
 prod-backup-*/
+
+.qwen/
+gha-creds-*.json

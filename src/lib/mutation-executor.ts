@@ -69,6 +69,19 @@ export async function executeMutation(
   const pendingChanges = parseJsonField(auditLog.newValues);
 
   switch (toolName) {
+    case "executeSql": {
+      const query = pendingChanges.query as string;
+      const result = await runMutationInTransaction(db, async (tx) => {
+        // Warning: params binding with sql.raw is not standard, but we'll try to execute it
+        // using drizzle's standard mechanisms if possible, or just run the raw string.
+        let sqlQuery = sql.raw(query);
+        // Note: db.run works for sqlite driver in drizzle.
+        return await tx.run(sqlQuery);
+      });
+      await setAuditLogNewValues(auditLogId, { result });
+      return { message: `Raw SQL executed successfully.`, result };
+    }
+
     case "updateClient": {
       if (!targetId) throw new Error("Missing targetId for updateClient");
       const client = await db.query.clients.findFirst({
