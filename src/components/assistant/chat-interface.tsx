@@ -179,13 +179,13 @@ export function ChatInterface() {
     },
   });
 
-  const { messages, append, reload, stop, isLoading, setMessages, error: chatError } = chatProps;
+  const { messages, append, reload, stop, isLoading: isChatLoading, setMessages, error: chatError } = chatProps;
   
   // Explicitly ensure sendMessage is defined
   const sendMessage = append;
 
-  // Use isLoading as status surrogate for v3 compatibility
-  const status = isLoading ? "loading" : "ready";
+  // Use isChatLoading as status surrogate for v3 compatibility
+  const status = isChatLoading ? "streaming" : "ready";
 
   // Debugging log to confirm function existence
   useEffect(() => {
