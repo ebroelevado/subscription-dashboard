@@ -169,22 +169,29 @@ export function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Vercel AI SDK — useChat
-  const { messages, append: sendMessage, reload, stop, status, setMessages, error: chatError } = useChat({
+  const chatProps = useChat({
+    api: "/api/chat",
     onError: (err) => {
       console.error("AI SDK Chat Error:", err);
     },
-    onFinish: (options) => {
-      if (options.isAbort) {
-        console.warn("[Chat] Stream was aborted");
-      }
-      if (options.isDisconnect) {
-        console.warn("[Chat] Stream disconnected unexpectedly");
-      }
-      if (options.isError) {
-        console.error("[Chat] Stream finished with error");
-      }
+    onFinish: (options: any) => {
+      if (options?.isAbort) console.warn("[Chat] Stream aborted");
     },
   });
+
+  const { messages, append, reload, stop, isLoading, setMessages, error: chatError } = chatProps;
+  
+  // Explicitly ensure sendMessage is defined
+  const sendMessage = append;
+
+  // Use isLoading as status surrogate for v3 compatibility
+  const status = isLoading ? "loading" : "ready";
+
+  // Debugging log to confirm function existence
+  useEffect(() => {
+    console.log("[Chat Debug] append exists:", !!append, "type:", typeof append);
+    console.log("[Chat Debug] keys available:", Object.keys(chatProps));
+  }, [append, chatProps]);
   const statusRef = useRef(status);
   const activePollControllerRef = useRef<AbortController | null>(null);
   const confirmingTokensRef = useRef<Set<string>>(new Set());
