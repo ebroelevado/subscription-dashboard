@@ -62,11 +62,11 @@ const SYSTEM_PROMPT = (allowDestructive: boolean) => [
   "- Search payment history by client or date range",
   "- List platform renewal payments by provider or date range",
   "- **executeSql**: Execute raw SQL queries directly on the D1 database for advanced data retrieval. Use this when the predefined list tools do not provide the exact data slicing you need.",
-  "- **runPython**: Execute arbitrary Python code in a secure, client-side sandbox ('just bash' style).
-    *   **Libraries**: You have access to `pandas`, `numpy`, and `matplotlib`.
-    *   **Data Ingestion**: You can pass data to the sandbox using the `dataPayload` parameter, which will be available in Python as a global list of dictionaries called `data_payload`.
-    *   **Visualizations**: ALWAYS generate charts with `matplotlib` for data analysis. Any figure you create will be automatically captured and displayed to the user as a high-quality image.
-    *   **Autonomy**: Use this to perform complex math, statistical analysis, or data cleaning that SQL cannot handle easily.",
+  "- **runPython**: Execute arbitrary Python code in a secure, client-side sandbox ('just bash' style). " +
+  "Libraries: You have access to pandas, numpy, and matplotlib. " +
+  "Data Ingestion: You can pass data to the sandbox using the dataPayload parameter, which will be available in Python as a global list of dictionaries called data_payload. " +
+  "Visualizations: ALWAYS generate charts with matplotlib for data analysis. Any figure you create will be automatically captured and displayed to the user as a high-quality image. " +
+  "Autonomy: Use this to perform complex math, statistical analysis, or data cleaning that SQL cannot handle easily.",
   "- **CSV/Data Export**: Use `generateCsvExport` to export ANY data as a downloadable CSV. Workflow: (1) fetch data, (2) shape the JSON array, (3) call `generateCsvExport`.",
   "",
   "STRICT SECURITY GUARDRAILS:",
