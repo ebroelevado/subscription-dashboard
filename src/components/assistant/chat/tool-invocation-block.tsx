@@ -1,12 +1,13 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { AlertCircle, Check, ChevronDown, ChevronUp, Play, Download, ExternalLink, Loader2, RefreshCcw } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ChevronUp, Play, Download, ExternalLink, Loader2, RefreshCcw, Terminal, BrainCircuit, Clock, X, Undo2 } from "lucide-react";
 import { ExtendedUIMessagePart } from "@ai-sdk/react";
 import { Button } from "@/components/ui/button";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { PythonWorkerState, HitlPending } from "./chat-types";
 import { deepParseJson, findPythonAnalysisPayload, findDownloadData, getWhatsappData } from "./chat-utils";
 import { RotatingPhrase } from "./rotating-phrase";
+import { findStatusInOutput } from "@/lib/find-status";
 
 export function ToolInvocationBlock({ part, stableToolCallId, onConfirm, onUndo, onPythonResult, executedMutations, rejectedActionIds, acceptedActionIds }: {
   part: ExtendedUIMessagePart & { toolInvocation?: { toolName?: string; state: string; result?: unknown; args?: unknown; error?: string }; errorText?: string },
