@@ -103,12 +103,24 @@ function createWrappedD1Db(d1Binding: D1Database): SchemaDatabase {
           const bound = params.length
             ? prepared.bind(...params)
             : prepared;
-          const result = await bound.run();
-          return {
-            results: (result.results as any[]) ?? [],
-            rows: (result.results as any[]) ?? [],
-            meta: result.meta,
-          };
+
+          const isSelect = sqlStr.trim().toUpperCase().startsWith("SELECT") || sqlStr.trim().toUpperCase().startsWith("WITH");
+          
+          if (isSelect) {
+            const result = await bound.all();
+            return {
+              results: (result.results as any[]) ?? [],
+              rows: (result.results as any[]) ?? [],
+              meta: result.meta,
+            };
+          } else {
+            const result = await bound.run();
+            return {
+              results: (result.results as any[]) ?? [],
+              rows: (result.results as any[]) ?? [],
+              meta: result.meta,
+            };
+          }
         };
       }
       return (target as any)[prop];

@@ -129,7 +129,13 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
           // Use the 'execute' method from our proxy in src/db/index.ts
           // We need to use sql.raw() to wrap the string query.
           const result = await db.execute(sql.raw(query)); 
-          return result;
+          
+          // Deeply search and convert BigInts to strings to avoid JSON.stringify crashes in the AI SDK
+          const safeResult = JSON.parse(JSON.stringify(result, (_, v) => 
+            typeof v === 'bigint' ? v.toString() : v
+          ));
+
+          return safeResult;
         } catch (err: any) {
           return { error: `SQL Error: ${err.message}` };
         }

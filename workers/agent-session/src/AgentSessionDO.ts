@@ -132,12 +132,22 @@ export class AgentSessionDO extends DurableObject {
     Object.assign((globalThis as any).process.env, this.env);
   }
 
+  safeJsonStringify(obj: any): string {
+    return JSON.stringify(obj, (_, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    );
+  }
+
   getModel(mode?: string) {
-    const aigateway = createAiGateway({
-      accountId: this.env.CF_ACCOUNT_ID!,
-      gateway: this.env.CF_AI_GATEWAY_NAME || 'pearfect',
-      apiKey: this.env.CF_AIG_TOKEN!,
-    });
+    const hasGateway = this.env.CF_ACCOUNT_ID && this.env.CF_AIG_TOKEN;
+    
+    const aigateway = hasGateway 
+      ? createAiGateway({
+          accountId: this.env.CF_ACCOUNT_ID!,
+          gateway: this.env.CF_AI_GATEWAY_NAME || 'pearfect',
+          apiKey: this.env.CF_AIG_TOKEN!,
+        })
+      : (model: any) => model; // Bypass if no credentials
 
     if (mode === "ultra-fast") {
       const unified = createUnified({ apiKey: this.env.CEREBRAS_API_KEY });
