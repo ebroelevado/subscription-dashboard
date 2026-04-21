@@ -1,15 +1,15 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
-// import { cloudflare } from "@cloudflare/vite-plugin";
+import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig({
   plugins: [
     vinext({
       appDir: "./src",
     }),
-    // cloudflare({
-    //   viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-    // }),
+    cloudflare({
+      viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+    }),
   ],
   ssr: {
     // better-sqlite3 and pg use native bindings, must be external for SSR
