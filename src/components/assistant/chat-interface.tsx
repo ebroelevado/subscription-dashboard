@@ -524,8 +524,16 @@ export function ChatInterface() {
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
+    console.log("[Chat] handleSubmit triggered, input:", input.trim());
     e?.preventDefault();
-    if (!input.trim() || !sendMessage) return;
+    if (!input.trim()) {
+      console.warn("[Chat] Input is empty, ignoring.");
+      return;
+    }
+    if (!sendMessage) {
+      console.error("[Chat] sendMessage function is missing!");
+      return;
+    }
 
     // SaaS Usage Tracking: Increment points (ultra-fast costs 0.2, fast 0.3, default 0.5)
     const cost = selectedModel === "ultra-fast" ? 0.2 : selectedModel === "fast" ? 0.3 : 0.5;
@@ -535,11 +543,13 @@ export function ChatInterface() {
       body: JSON.stringify({ increment: cost })
     }).catch(err => console.error("Failed to update usage:", err));
 
+    console.log("[Chat] Calling sendMessage with content:", input);
     sendMessage(
-      { role: 'user', content: input },
+      { role: "user", content: input },
       { body: { model: selectedModel || undefined, allowDestructive } }
     );
     setInput("");
+    console.log("[Chat] Input cleared");
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
