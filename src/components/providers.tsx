@@ -7,30 +7,8 @@ import { Toaster } from "sonner";
 import { useState, type ReactNode, useEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-// Suppress noisy SES/lockdown warnings from AI SDK that don't affect functionality
-if (typeof window !== "undefined") {
-  const patchConsole = (method: keyof Console) => {
-    const orig = console[method];
-    (console[method] as any) = (...args: any[]) => {
-      const fullMsg = args.map(a => String(a)).join(" ");
-      if (
-        fullMsg.includes("lockdown-install.js") || 
-        fullMsg.includes("Removing intrinsics") || 
-        fullMsg.includes("SES") ||
-        fullMsg.includes("getOrInsert") ||
-        fullMsg.includes("lockdown") ||
-        fullMsg.includes("toTemporalInstant")
-      ) return;
-      if (typeof orig === "function") {
-        orig.apply(console, args);
-      }
-    };
-  };
-  patchConsole("warn");
-  patchConsole("log");
-  patchConsole("info");
-  patchConsole("error"); // Sometimes SES logs as error
-}
+// Console noise suppression is handled in RootLayout head for early execution
+
 
 interface ProvidersProps {
   children: ReactNode;

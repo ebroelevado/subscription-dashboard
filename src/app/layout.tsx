@@ -22,6 +22,29 @@ export default function RootLayout({
 }>) {
   return (
     <html suppressHydrationWarning className={cn("font-sans", geist.variable)}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            const patch = (m) => {
+              const orig = console[m];
+              console[m] = function(...args) {
+                const msg = args.map(a => String(a)).join(" ");
+                if (
+                  msg.includes("lockdown") || 
+                  msg.includes("SES") || 
+                  msg.includes("intrinsics") || 
+                  msg.includes("PHANTOM") || 
+                  msg.includes("Solana") ||
+                  msg.includes("getOrInsert") ||
+                  msg.includes("toTemporalInstant")
+                ) return;
+                if (typeof orig === "function") orig.apply(console, args);
+              };
+            };
+            patch("warn"); patch("log"); patch("info"); patch("error");
+          })();
+        ` }} />
+      </head>
       <body suppressHydrationWarning className={`${inter.variable} antialiased`}>
         {children}
       </body>
