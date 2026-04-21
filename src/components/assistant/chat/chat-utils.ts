@@ -98,10 +98,10 @@ export function findPythonAnalysisPayload(obj: unknown, depth = 0): PythonAnalys
   const candidate = obj as Record<string, unknown>;
   const status = candidate.status;
   const dataPayload = candidate.dataPayload;
-  const pythonCode = candidate.code;
+  const pythonCode = candidate.pythonCode || candidate.code;
 
   if (
-    status === "requires_python_execution" &&
+    (status === "requires_python_execution" || status === "python_analysis_ready") &&
     typeof pythonCode === "string"
   ) {
     const data = Array.isArray(dataPayload) ? dataPayload : [];

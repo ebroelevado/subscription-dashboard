@@ -188,20 +188,18 @@ export default function LandingPage() {
                 </AnimatedSection>
               </div>
 
-              <div className="relative lg:block">
+              <div className="relative lg:block group/hero">
                 <AnimatedSection delay={2} className="relative">
-                  <div className="relative rounded-3xl overflow-hidden border border-border/50 shadow-2xl">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-transparent pointer-events-none" />
+                  <div className="relative rounded-3xl overflow-hidden border border-border/50 shadow-2xl bg-muted/20 aspect-square sm:aspect-video lg:aspect-auto">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-transparent pointer-events-none z-10" />
                     <img
                       src="/images/hero-dashboard.png"
                       alt="Pearfect Dashboard"
-                      width={800}
-                      height={800}
-                      className="w-full h-auto object-cover transform hover:scale-[1.02] transition-transform duration-700"
+                      className="w-full h-full object-cover transform transition-transform duration-1000 group-hover/hero:scale-[1.03]"
                     />
                   </div>
                   {/* floating elements */}
-                  <div className="absolute -top-6 -right-6 bg-background/80 backdrop-blur-md p-4 rounded-2xl border shadow-xl animate-bounce duration-[3000ms]">
+                  <div className="absolute -top-6 -right-6 bg-background/80 backdrop-blur-xl p-4 rounded-2xl border border-primary/20 shadow-2xl animate-float z-20">
                     <div className="flex items-center gap-3">
                       <div className="bg-emerald-500/10 p-2 rounded-lg">
                         <TrendingUp className="size-5 text-emerald-500" />
