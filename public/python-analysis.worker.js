@@ -68,33 +68,60 @@ self.onmessage = async (event) => {
     // Set up stdout and stderr capturing
     let stdoutData = [];
     let stderrData = [];
-    pyodide.setStdout({ batched: (msg) => stdoutData.push(msg) });
-    pyodide.setStderr({ batched: (msg) => stderrData.push(msg) });
+    pyodide.setStdout({ batched: (msg) => {
+        console.log("[Python Stdout]:", msg);
+        stdoutData.push(msg);
+    }});
+    pyodide.setStderr({ batched: (msg) => {
+        console.warn("[Python Stderr]:", msg);
+        stderrData.push(msg);
+    }});
 
+    // Ensure matplotlib is set up correctly in the user space too
+    await pyodide.runPythonAsync(`
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+# Clear any existing plots from previous state (though worker is fresh)
+plt.clf()
+plt.close('all')
+    `);
+
+    // Run the user's code
     await pyodide.runPythonAsync(pythonCode);
 
     // Try to get plot
-    await pyodide.runPythonAsync(
-      "import io\n" +
-      "import base64\n" +
-      "import matplotlib.pyplot as plt\n" +
-      "_plot_buffer = io.BytesIO()\n" +
-      "plt.savefig(_plot_buffer, format='png', dpi=150, bbox_inches='tight')\n" +
-      "plt.close('all')\n" +
-      "_plot_png_base64 = base64.b64encode(_plot_buffer.getvalue()).decode('utf-8')\n"
-    );
+    await pyodide.runPythonAsync(`
+import io
+import base64
+import matplotlib.pyplot as plt
+
+# Check if there is anything to save
+fig_nums = plt.get_fignums()
+_plot_png_base64 = ""
+
+if len(fig_nums) > 0:
+    _plot_buffer = io.BytesIO()
+    # Save the current figure
+    plt.savefig(_plot_buffer, format='png', dpi=150, bbox_inches='tight')
+    plt.close('all')
+    _plot_png_base64 = base64.b64encode(_plot_buffer.getvalue()).decode('utf-8')
+else:
+    print("DEBUG: No figures found to save.")
+    `);
 
     const base64Proxy = pyodide.globals.get("_plot_png_base64");
     const base64Data = typeof base64Proxy === "string" ? base64Proxy : String(base64Proxy || "");
+    
     if (base64Proxy && typeof base64Proxy.destroy === "function") {
       base64Proxy.destroy();
     }
 
-    // Only set imageDataUrl if it's not empty, it might just be the empty plot representation
+    // Only set imageDataUrl if it's not empty
     let imageDataUrl = null;
-    // An empty plot usually has length < 200 or so, but let's just see if base64Data has content
-    // Actually, an empty matplotlib plot saves as ~1-2kb. We will just check if there is data.
-    if (base64Data && base64Data.length > 500) {
+    if (base64Data && base64Data.length > 100) {
         imageDataUrl = `data:image/png;base64,${base64Data}`;
     }
 

@@ -592,6 +592,16 @@ export function ChatInterface() {
     appendLocalAssistantNote(`${t("chat.undo")} ✅ ${toolName}`);
   };
 
+  const handlePythonResult = useCallback(async (resultText: string) => {
+    if (!sendMessage) return;
+    await waitForStreamToStop();
+
+    sendMessage(
+      { text: `<!-- [SYSTEM] Python analysis completed with result: ${resultText.slice(0, 500)}${resultText.length > 500 ? '...' : ''} -->` },
+      { body: { model: selectedModel || undefined, allowDestructive } }
+    );
+  }, [sendMessage, selectedModel, allowDestructive]);
+
   const handleConfirmTool = async (toolName: string, args: any, accepted: boolean, toolCallId?: string) => {
     await waitForStreamToStop();
     
@@ -1024,7 +1034,19 @@ export function ChatInterface() {
                       }
                       
                       if (part.type === 'tool-invocation' || part.type?.startsWith('tool-') || part.type === 'dynamic-tool' || part.type === 'tool-call') {
-                        return <ToolInvocationBlock key={i} part={part} stableToolCallId={`msg-${index}-part-${i}`} onConfirm={handleConfirmTool} onUndo={handleUndoTool} executedMutations={executedMutations} rejectedActionIds={rejectedActionIds} acceptedActionIds={acceptedActionIds} />;
+                        return (
+                          <ToolInvocationBlock 
+                            key={i} 
+                            part={part} 
+                            stableToolCallId={`msg-${index}-part-${i}`} 
+                            onConfirm={handleConfirmTool} 
+                            onUndo={handleUndoTool} 
+                            onPythonResult={handlePythonResult}
+                            executedMutations={executedMutations} 
+                            rejectedActionIds={rejectedActionIds} 
+                            acceptedActionIds={acceptedActionIds} 
+                          />
+                        );
                       }
                       return null;
                     })}

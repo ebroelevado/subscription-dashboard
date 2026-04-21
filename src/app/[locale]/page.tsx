@@ -48,7 +48,7 @@ function AnimatedSection({
   delay?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const isInView = useInView(ref, { once: true, margin: "0px" });
   return (
     <motion.div
       ref={ref}
@@ -110,16 +110,16 @@ export default function LandingPage() {
             ) : session?.user ? (
               <Button size="sm" asChild className="rounded-full px-5">
                 <Link href="/dashboard">
-                  {tc("dashboard")}
+                  {tc("dashboardShortcut")}
                 </Link>
               </Button>
             ) : (
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" asChild className="rounded-full">
-                  <Link href="/login">{tc("login")}</Link>
+                  <Link href="/login">{tc("signIn")}</Link>
                 </Button>
                 <Button size="sm" asChild className="rounded-full px-5 shadow-lg shadow-primary/20">
-                  <Link href="/signup">{tc("signup")}</Link>
+                  <Link href="/signup">{tc("signUp")}</Link>
                 </Button>
               </div>
             )}
@@ -396,7 +396,7 @@ export default function LandingPage() {
                        <Link href="/signup">{t("finalCTAButton")}</Link>
                     </Button>
                     <Button size="lg" variant="outline" className="rounded-full px-10 h-14 text-lg font-bold bg-transparent border-white/20 text-white hover:bg-white/10" asChild>
-                       <Link href="/login">{tc("login")}</Link>
+                       <Link href="/login">{tc("signIn")}</Link>
                     </Button>
                  </div>
               </div>

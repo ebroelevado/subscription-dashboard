@@ -126,16 +126,9 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
         }
 
         try {
-          // Use sql.raw for arbitrary strings, but carefully since this is internal tool
-          const result = await db.run(sql.raw(query)); 
-          // Note: for SELECT queries in Drizzle with D1, we usually use db.all()
-          // but db.run() works for generic execution.
-          
-          if (query.trim().toLowerCase().startsWith('select')) {
-             const rows = await db.all(sql.raw(query));
-             return { rows, meta: result.meta };
-          }
-
+          // Use the 'execute' method from our proxy in src/db/index.ts
+          // We need to use sql.raw() to wrap the string query.
+          const result = await db.execute(sql.raw(query)); 
           return result;
         } catch (err: any) {
           return { error: `SQL Error: ${err.message}` };
