@@ -536,7 +536,7 @@ export function ChatInterface() {
     }).catch(err => console.error("Failed to update usage:", err));
 
     sendMessage(
-      { text: input },
+      { role: 'user', content: input },
       { body: { model: selectedModel || undefined, allowDestructive } }
     );
     setInput("");
@@ -563,7 +563,7 @@ export function ChatInterface() {
     const sendNotification = async (retries = 3, delay = 1000): Promise<boolean> => {
       try {
         sendMessage(
-          { text: `${t("chat.accept")} <!-- [SYSTEM] Mutation ${toolName} executed successfully. AuditLogId: ${auditLogId}. Continue with the next required step if any. -->` },
+          { role: 'user', content: `${t("chat.accept")} <!-- [SYSTEM] Mutation ${toolName} executed successfully. AuditLogId: ${auditLogId}. Continue with the next required step if any. -->` },
           { body: { model: selectedModel || undefined, allowDestructive } }
         );
         return true;
@@ -597,7 +597,7 @@ export function ChatInterface() {
     await waitForStreamToStop();
 
     sendMessage(
-      { text: `<!-- [SYSTEM] Python analysis completed with result: ${resultText.slice(0, 500)}${resultText.length > 500 ? '...' : ''} -->` },
+      { role: 'user', content: `<!-- [SYSTEM] Python analysis completed with result: ${resultText.slice(0, 500)}${resultText.length > 500 ? '...' : ''} -->` },
       { body: { model: selectedModel || undefined, allowDestructive } }
     );
   }, [sendMessage, selectedModel, allowDestructive]);
@@ -706,7 +706,7 @@ export function ChatInterface() {
       
       if (sendMessage) {
         sendMessage(
-          { text: `<!-- [SYSTEM] Mutation ${toolName} failed with error: ${message}. Please analyze the error, fix the issue, and try again. -->` },
+          { role: 'user', content: `<!-- [SYSTEM] Mutation ${toolName} failed with error: ${message}. Please analyze the error, fix the issue, and try again. -->` },
           { body: { model: selectedModel || undefined, allowDestructive } }
         );
       }
