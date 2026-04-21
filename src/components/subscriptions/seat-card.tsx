@@ -10,7 +10,7 @@ import { UserCircle, Pause, Play, X, RefreshCw, Copy, Eye, EyeOff, Pencil } from
 import { useState } from "react";
 import { toast } from "sonner";
 import { differenceInDays, startOfDay } from "date-fns";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 
 import { formatCurrency } from "@/lib/currency";
 import { useSession } from "@/lib/auth-client";
@@ -97,6 +97,7 @@ interface SeatCardProps {
 export function SeatCard({ seat, onPause, onResume, onCancel, onRenew, onEdit }: SeatCardProps) {
   const t = useTranslations("subscriptions");
   const tc = useTranslations("common");
+  const locale = useLocale();
   const { data: session } = useSession();
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
   const [showPassword, setShowPassword] = useState(false);
@@ -247,7 +248,7 @@ export function SeatCard({ seat, onPause, onResume, onCancel, onRenew, onEdit }:
         </span>
         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
           <span className="text-xs text-muted-foreground truncate">
-            {new Date(seat.activeUntil).toLocaleDateString("es-ES")}
+            {new Date(seat.activeUntil).toLocaleDateString(locale)}
           </span>
           <Badge variant={isPaused ? "secondary" : "outline"} className={`text-xs shrink-0 whitespace-nowrap border-0 ${isPaused ? "" : expiryBadgeVariant[expiry.status]}`}>
             {isPaused ? tc("paused") : expiry.daysText}

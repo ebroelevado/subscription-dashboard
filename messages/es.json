@@ -103,7 +103,9 @@
     "dashboardShortcut": "Panel",
     "newChat": "Nuevo Chat",
     "autopayable": "Auto-pagable",
-    "totalPayments": "Pagos totales"
+    "totalPayments": "Pagos totales",
+    "overdue": "Atrasado",
+    "expiring": "Venciendo"
   },
   "nav": {
     "dashboard": "Panel",
@@ -246,7 +248,7 @@
     "selectPlatform": "Selecciona una plataforma",
     "selectPlan": "Selecciona un plan",
     "selectPlatformFirst": "Selecciona primero una plataforma",
-    "startDate": "Start Date",
+    "startDate": "Fecha de Inicio",
     "durationMonths": "Duración (meses)",
     "activeUntil": "Activo hasta: {date}",
     "statusLabel": "Estado",
@@ -298,7 +300,12 @@
     "owner": "Propietario (Cliente)",
     "noOwner": "Sin propietario",
     "paymentDueImmediately": "Pago pendiente inmediatamente",
-    "averageRevenuePerSeat": "Ingreso medio/asiento"
+    "averageRevenuePerSeat": "Ingreso medio/asiento",
+    "defaultPaymentNote": "Nota de pago por defecto",
+    "firstPaymentMade": "¿Primer pago ya realizado?",
+    "firstPaymentHint": "Si se marca, se creará automáticamente el primer registro de renovación.",
+    "paymentNoteLabel": "Nota de pago (Opcional)",
+    "defaultPaymentNotePlaceholder": "ej. transferencia bancaria"
   },
   "clients": {
     "title": "Clientes",
@@ -396,7 +403,15 @@
     "healthStatusLate": "Retrasado",
     "healthStatusOverdue": "Vencido",
     "healthStatusCritical": "Crítico",
-    "healthStatusNew": "Nuevo"
+    "healthStatusNew": "Nuevo",
+    "clientNotFound": "Cliente no encontrado",
+    "backToClients": "Volver a clientes",
+    "noPhone": "Sin teléfono",
+    "assignSubscription": "Asignar Suscripción",
+    "totalMonthlyCost": "Coste Mensual Total",
+    "noServicesDescription": "Este cliente aún no ha sido asignado a ninguna suscripción.",
+    "customPrice": "Precio Personalizado",
+    "joined": "Fecha de Unión"
   },
   "history": {
     "title": "Historial de Renovaciones",
@@ -584,7 +599,9 @@
     "labelRequired": "La etiqueta es obligatoria",
     "startDateRequired": "La fecha de inicio es obligatoria",
     "costMin": "El coste debe ser ≥ 0",
-    "atLeast1Month": "Debe ser al menos 1 mes"
+    "atLeast1Month": "Debe ser al menos 1 mes",
+    "platformRequired": "La plataforma es obligatoria",
+    "planRequired": "El plan es obligatorio"
   },
   "time": {
     "now": "ahora",
@@ -741,5 +758,18 @@
       }
     },
     "billingManagedByStripe": "La facturación está gestionada de forma segura por Stripe."
+  },
+  "landing": {
+    "pricingTitle": "Precios simples y transparentes",
+    "pricingDescription": "Obtén acceso completo a todas las funciones con nuestro plan Premium. Sin cargos ocultos.",
+    "pricingPlanName": "Premium",
+    "pricingPlanPrice": "2.99€",
+    "pricingPlanInterval": "/mes",
+    "pricingPlanDescription": "Todo lo que necesitas para gestionar tu negocio.",
+    "pricingFeature1": "Plataformas y suscripciones ilimitadas",
+    "pricingFeature2": "Analítica avanzada y rentabilidad",
+    "pricingFeature3": "Acceso total al Asistente IA",
+    "pricingFeature4": "Recordatorios de WhatsApp automatizados",
+    "pricingGetStarted": "Obtener Premium"
   }
 }

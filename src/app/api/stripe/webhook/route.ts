@@ -105,7 +105,7 @@ export async function POST(req: Request) {
   `);
 
   const existingEvent = (existingEventResult.rows?.[0] ?? null) as
-    | { processedAt?: string | null; errorMessage?: string | null }
+    { processedAt?: string | null; errorMessage?: string | null }
     | null;
 
   if (existingEvent?.processedAt) {

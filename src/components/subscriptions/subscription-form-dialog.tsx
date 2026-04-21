@@ -5,7 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useSession } from "@/lib/auth-client";
-import { CURRENCIES, type Currency } from "@/lib/currency";
+import { CURRENCIES, formatCurrency, type Currency } from "@/lib/currency";
 import {
   useCreateSubscription, useUpdateSubscription, type Subscription,
 } from "@/hooks/use-subscriptions";
@@ -62,6 +62,7 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
   const tc = useTranslations("common");
   const tv = useTranslations("validation");
   const { data: session } = useSession();
+  const currency = (session?.user as { currency?: string })?.currency as Currency || "EUR";
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -270,7 +271,7 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
                     {plans?.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         <span className="text-xs text-muted-foreground mr-2 group-hover:text-primary-foreground/70 transition-colors">
-                          {p.platform.name} — {p.name} ({CURRENCIES[(session?.user as { currency?: string })?.currency as Currency || "EUR"].symbol}{Number(p.cost).toFixed(2)})
+                          {p.platform.name} — {p.name} ({formatCurrency(Number(p.cost), currency)})
                         </span>
                       </SelectItem>
                     ))}
@@ -389,10 +390,10 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="default-payment-note">Default Payment Note</Label>
+            <Label htmlFor="default-payment-note">{t("defaultPaymentNote")}</Label>
             <Input
               id="default-payment-note"
-              placeholder="e.g. como pago"
+              placeholder={t("defaultPaymentNotePlaceholder")}
               {...register("defaultPaymentNote")}
             />
             {errors.defaultPaymentNote && <p className="text-sm text-destructive">{getErrorMessage(errors.defaultPaymentNote.message)}</p>}
@@ -402,9 +403,9 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
             <>
               <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm pt-3 mt-4">
                 <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">First payment already made?</Label>
+                  <Label className="text-sm font-medium">{t("firstPaymentMade")}</Label>
                   <p className="text-[12px] text-muted-foreground">
-                    If marked, the first renewal log will be created automatically.
+                    {t("firstPaymentHint")}
                   </p>
                 </div>
                 <Controller
@@ -421,10 +422,10 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
 
               {watch("isPaid") && (
                 <div className="space-y-2">
-                  <Label htmlFor="payment-note">Payment Note (Optional)</Label>
+                  <Label htmlFor="payment-note">{t("paymentNoteLabel")}</Label>
                   <Input
                     id="payment-note"
-                    placeholder={watch("defaultPaymentNote") || "como pago"}
+                    placeholder={watch("defaultPaymentNote") || t("defaultPaymentNotePlaceholder")}
                     {...register("paymentNote")}
                   />
                   {errors.paymentNote && <p className="text-sm text-destructive">{getErrorMessage(errors.paymentNote.message)}</p>}

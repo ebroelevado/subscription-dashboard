@@ -16,9 +16,16 @@ import { useState } from "react";
 import { useSession } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/currency";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useTranslations, useLocale } from "next-intl";
 
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive"> = {
@@ -34,6 +41,10 @@ export default function ClientDetailPage() {
   const cancelMutation = useCancelSeat();
   const { data: session } = useSession();
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
+  const t = useTranslations("clients");
+  const ts = useTranslations("subscriptions");
+  const tc = useTranslations("common");
+  const locale = useLocale();
 
   if (isLoading) {
     return (
@@ -48,9 +59,9 @@ export default function ClientDetailPage() {
   if (!client) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <h2 className="text-xl font-semibold">Client not found</h2>
+        <h2 className="text-xl font-semibold">{t("clientNotFound")}</h2>
         <Button variant="link" asChild>
-          <Link href="/dashboard/clients">← Back to clients</Link>
+          <Link href="/dashboard/clients">← {t("backToClients")}</Link>
         </Button>
       </div>
     );
@@ -75,24 +86,24 @@ export default function ClientDetailPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{client.name}</h1>
             <p className="text-muted-foreground text-sm">
-              {client.phone ?? "No phone"} · {client.notes ?? "No notes"}
+              {client.phone ?? t("noPhone")} · {client.notes ?? tc("none")}
             </p>
           </div>
         </div>
         <Button onClick={() => setAssignOpen(true)}>
           <Plus className="mr-2 size-4" />
-          Assign Subscription
+          {t("assignSubscription")}
         </Button>
       </div>
 
       {/* Summary */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border p-4">
-          <p className="text-sm text-muted-foreground">Active Seats</p>
+          <p className="text-sm text-muted-foreground">{ts("activeSeats")}</p>
           <p className="text-2xl font-bold">{activeSeats.length}</p>
         </div>
         <div className="rounded-lg border p-4">
-          <p className="text-sm text-muted-foreground">Total Monthly Cost</p>
+          <p className="text-sm text-muted-foreground">{t("totalMonthlyCost")}</p>
           <p className="text-2xl font-bold">{formatCurrency(totalMonthly, currency)}</p>
         </div>
       </div>
@@ -100,9 +111,9 @@ export default function ClientDetailPage() {
       {/* Seats Table */}
       {client.clientSubscriptions.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
-          <h3 className="text-lg font-semibold">No services</h3>
+          <h3 className="text-lg font-semibold">{ts("noActiveSeats")}</h3>
           <p className="text-muted-foreground text-sm mt-1">
-            This client hasn&apos;t been assigned to any subscriptions yet.
+            {t("noServicesDescription")}
           </p>
         </div>
       ) : (
@@ -110,13 +121,13 @@ export default function ClientDetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Platform</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Subscription</TableHead>
-                <TableHead className="text-right">Custom Price</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{tc("platform")}</TableHead>
+                <TableHead>{tc("plan")}</TableHead>
+                <TableHead>{tc("subscription")}</TableHead>
+                <TableHead className="text-right">{t("customPrice")}</TableHead>
+                <TableHead className="text-center">{tc("status")}</TableHead>
+                <TableHead>{t("joined")}</TableHead>
+                <TableHead className="text-right">{tc("actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -143,7 +154,7 @@ export default function ClientDetailPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(cs.joinedAt).toLocaleDateString("es-ES")}
+                    {new Date(cs.joinedAt).toLocaleDateString(locale)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -178,14 +189,13 @@ export default function ClientDetailPage() {
       <AlertDialog open={!!cancelSeatId} onOpenChange={(o) => { if (!o) setCancelSeatId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove Subscription?</AlertDialogTitle>
+            <AlertDialogTitle>{ts("removeSeatConfirmationTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the client from this subscription.
-              This action cannot be undone.
+              {ts("removeSeatConfirmationDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
@@ -196,7 +206,7 @@ export default function ClientDetailPage() {
                 }
               }}
             >
-              {cancelMutation.isPending ? "Removing…" : "Remove"}
+              {cancelMutation.isPending ? tc("deleting") : tc("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -19,7 +19,7 @@ import { addMonths, startOfDay, format, differenceInDays } from "date-fns";
 import { useRenewBulkClients } from "@/hooks/use-renewals";
 import { useTranslations } from "next-intl";
 import { useSession } from "@/lib/auth-client";
-import { formatCurrency, centsToAmount } from "@/lib/currency";
+import { CURRENCIES, centsToAmount, type Currency } from "@/lib/currency";
 
 export interface BulkRenewSeat {
   id: string;
@@ -66,7 +66,8 @@ export function BulkRenewDialog({
   const t = useTranslations("clients");
   const tc = useTranslations("common");
   const { data: session } = useSession();
-  const currency = (session?.user as { currency?: string })?.currency || "EUR";
+  const currency = ((session?.user as { currency?: string })?.currency || "EUR") as Currency;
+  const currencySymbol = CURRENCIES[currency]?.symbol ?? "€";
   const bulkMut = useRenewBulkClients();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -334,7 +335,7 @@ export function BulkRenewDialog({
                       )}
                     </div>
                     <span className="text-sm font-mono font-semibold">
-                      {formatCurrency(amount, currency)}
+                      {currencySymbol}{amount.toFixed(2)}
                     </span>
                   </div>
 
@@ -455,7 +456,7 @@ export function BulkRenewDialog({
             {tc("totalCount", { count: selectedCount })}
           </span>
           <span className="text-lg font-bold font-mono">
-            {formatCurrency(selectedTotal, currency)}
+            {currencySymbol}{selectedTotal.toFixed(2)}
           </span>
         </div>
 

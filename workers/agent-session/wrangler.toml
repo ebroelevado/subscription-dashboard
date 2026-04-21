@@ -34,6 +34,10 @@ database_name = "pearfect"
 database_id = "62cd2aa1-e011-486b-9893-d81c0f7a2756"
 # we don't strictly need migrations_dir here if we don't run migrations from the worker
 
+[[r2_buckets]]
+binding = "CHAT_BACKUPS"
+bucket_name = "chat-backups"
+
 [vars]
 # Ensure env vars needed by AI Gateway and Groq/Together are passed via wrangler secret put or here
 CF_AI_GATEWAY_NAME = "default"

@@ -104,7 +104,10 @@
     "recordPayment": "Record Payment",
     "dashboardShortcut": "Dashboard",
     "newChat": "New Chat",
-    "totalPayments": "Total payments"
+    "totalPayments": "Total payments",
+    "subscription": "Subscription",
+    "overdue": "Overdue",
+    "expiring": "Expiring"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -304,7 +307,12 @@
     "owner": "Owner (Client)",
     "noOwner": "No owner",
     "paymentDueImmediately": "Payment due immediately",
-    "averageRevenuePerSeat": "Avg. Revenue/Seat"
+    "averageRevenuePerSeat": "Avg. Revenue/Seat",
+    "defaultPaymentNote": "Default Payment Note",
+    "firstPaymentMade": "First payment already made?",
+    "firstPaymentHint": "If marked, the first renewal log will be created automatically.",
+    "paymentNoteLabel": "Payment Note (Optional)",
+    "defaultPaymentNotePlaceholder": "e.g. bank transfer"
   },
   "clients": {
     "title": "Clients",
@@ -402,7 +410,15 @@
     "healthStatusLate": "Late",
     "healthStatusOverdue": "Overdue",
     "healthStatusCritical": "Critical",
-    "healthStatusNew": "New"
+    "healthStatusNew": "New",
+    "clientNotFound": "Client not found",
+    "backToClients": "Back to clients",
+    "noPhone": "No phone",
+    "assignSubscription": "Assign Subscription",
+    "totalMonthlyCost": "Total Monthly Cost",
+    "noServicesDescription": "This client hasn't been assigned to any subscriptions yet.",
+    "customPrice": "Custom Price",
+    "joined": "Joined"
   },
   "history": {
     "title": "Renewal History",
@@ -746,5 +762,18 @@
       }
     },
     "billingManagedByStripe": "Billing is securely managed by Stripe."
+  },
+  "landing": {
+    "pricingTitle": "Simple, transparent pricing",
+    "pricingDescription": "Get full access to all features with our Premium plan. No hidden fees.",
+    "pricingPlanName": "Premium",
+    "pricingPlanPrice": "$2.99",
+    "pricingPlanInterval": "/mo",
+    "pricingPlanDescription": "Everything you need to manage your business.",
+    "pricingFeature1": "Unlimited Platforms & Subscriptions",
+    "pricingFeature2": "Advanced Analytics & Profitability",
+    "pricingFeature3": "Full AI Assistant Access",
+    "pricingFeature4": "Automated WhatsApp Reminders",
+    "pricingGetStarted": "Get Premium"
   }
 }
