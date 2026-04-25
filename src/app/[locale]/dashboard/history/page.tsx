@@ -1,28 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  useAnalyticsHistory,
-  useUpdateHistoryEntry,
-  undoHistoryMutation,
-  type HistoryFilters,
-  type HistoryRow,
-} from "@/hooks/use-analytics";
-import { usePlatforms } from "@/hooks/use-platforms";
-import { usePlans } from "@/hooks/use-plans";
-import { useSubscriptions } from "@/hooks/use-subscriptions";
-import { useClients } from "@/hooks/use-clients";
-import { useQueryClient } from "@tanstack/react-query";
-import { downloadCSV } from "@/lib/csv-export";
-import { invalidateAll } from "@/lib/invalidate-helpers";
+import { useState, useMemo } from "react";
 import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useSession } from "@/lib/auth-client";
-import { formatCurrency } from "@/lib/currency";
+import {
+  useAnalyticsHistory,
+  useUpdateHistoryEntry,
+  useDeleteHistoryEntry,
+  undoHistoryMutation,
+  type HistoryRow,
+  type HistoryFilters,
+} from "@/hooks/use-analytics";
+import { usePlatforms } from "@/hooks/use-platforms";
+import { usePlans } from "@/hooks/use-plans";
+import { useSubscriptions } from "@/hooks/use-subscriptions";
+import { useClients } from "@/hooks/use-clients";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -40,398 +36,58 @@ import {
   ArrowDownCircle,
   Pencil,
   Loader2,
+  Trash2,
+  AlertTriangle,
+  ChevronDown,
+  XCircle,
+  Search,
+  Calendar,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { EditEntrySheet, type EditDraft } from "@/components/history/edit-entry-sheet";
+import { formatCurrency, centsToAmount } from "@/lib/currency";
+import { useSession } from "@/lib/auth-client";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAll } from "@/lib/invalidate-helpers";
+import { downloadCSV } from "@/lib/csv-export";
+// We use a native checkbox if the UI component is missing
+const Checkbox = ({ checked, onCheckedChange, className }: any) => (
+  <input
+    type="checkbox"
+    checked={checked}
+    onChange={(e) => onCheckedChange(e.target.checked)}
+    className={cn("size-4 rounded border-gray-300 text-primary focus:ring-primary", className)}
+  />
+);
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const columnHelper = createColumnHelper<HistoryRow>();
 
-type EditableHistoryDraft = {
-  type: "income" | "cost";
-  amountPaid: string;
-  paidOn: string;
-  periodStart: string;
-  periodEnd: string;
-  notes: string;
-  platformId: string;
-  planId: string;
-  subscriptionId: string;
-  clientId: string;
-  clientSubscriptionId: string | null;
-};
-
-type SelectOption = {
-  id: string;
-  label: string;
-};
-
-type SubscriptionOption = {
-  id: string;
-  label: string;
-  ownerId: string | null;
-};
-
-type SeatOption = {
-  clientId: string;
-  clientName: string;
-  clientSubscriptionId: string;
-};
-
-type HistoryColumnsOptions = {
-  editable: boolean;
-  drafts: Record<string, EditableHistoryDraft>;
-  onDraftChange: (id: string, field: keyof EditableHistoryDraft, value: string) => void;
-  onTypeChange: (row: HistoryRow, value: "income" | "cost") => void;
-  onRelationChange: (
-    row: HistoryRow,
-    field: "platformId" | "planId" | "subscriptionId" | "clientId",
-    value: string,
-  ) => void;
-  platformOptions: SelectOption[];
-  planOptionsByPlatform: Record<string, SelectOption[]>;
-  subscriptionOptionsByPlan: Record<string, SubscriptionOption[]>;
-  seatOptionsBySubscription: Record<string, SeatOption[]>;
-  ownerOptionsByPlan: Record<string, SelectOption[]>;
-};
-
-const AUTO_EDIT_REASON = "Bulk edit from history table";
-const NONE_OPTION = "__none__";
-
-function notesForDraft(notes: string | null): string {
-  return notes === "platform_payment" ? "" : (notes ?? "");
-}
-
-function useHistoryColumns({
-  editable,
-  drafts,
-  onDraftChange,
-  onTypeChange,
-  onRelationChange,
-  platformOptions,
-  planOptionsByPlatform,
-  subscriptionOptionsByPlan,
-  seatOptionsBySubscription,
-  ownerOptionsByPlan,
-}: HistoryColumnsOptions) {
-  const t = useTranslations("history");
-
-  return [
-    columnHelper.accessor("paidOn", {
-      header: t("date"),
-      cell: (info) => {
-        if (!editable) {
-          return <span className="font-medium tabular-nums">{info.getValue()}</span>;
-        }
-        const draft = drafts[info.row.original.id];
-        return (
-          <Input
-            type="date"
-            value={draft?.paidOn ?? info.getValue()}
-            onChange={(e) => onDraftChange(info.row.original.id, "paidOn", e.target.value)}
-            className="h-8 min-w-36"
-          />
-        );
-      },
-    }),
-    columnHelper.accessor("type", {
-      header: t("type"),
-      cell: (info) => {
-        const draft = drafts[info.row.original.id];
-        const type = info.getValue();
-
-        if (editable && draft) {
-          return (
-            <Select
-              value={draft.type}
-              onValueChange={(value) => onTypeChange(info.row.original, value as "income" | "cost")}
-            >
-              <SelectTrigger className="h-8 min-w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="income">{t("income")}</SelectItem>
-                <SelectItem value="cost">{t("expense")}</SelectItem>
-              </SelectContent>
-            </Select>
-          );
-        }
-
-        return (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-              type === "income"
-                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
-            )}
-          >
-            {type === "income" ? (
-              <ArrowUpCircle className="size-3" />
-            ) : (
-              <ArrowDownCircle className="size-3" />
-            )}
-            {type === "income" ? t("income") : t("expense")}
-          </span>
-        );
-      },
-    }),
-    columnHelper.accessor("amount", {
-      header: () => <span className="text-right block">{t("amount")}</span>,
-      cell: ({ row }) => {
-        if (!editable) {
-          return (
-            <AmountCell
-              amount={Number(row.getValue("amount"))}
-              type={row.original.type}
-            />
-          );
-        }
-
-        const draft = drafts[row.original.id];
-        return (
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={draft?.amountPaid ?? String(Number(row.getValue("amount")))}
-            onChange={(e) => onDraftChange(row.original.id, "amountPaid", e.target.value)}
-            className="h-8 min-w-28 text-right"
-          />
-        );
-      },
-    }),
-    columnHelper.accessor("platform", {
-      header: t("platform"),
-      cell: (info) => {
-        if (!editable) return info.getValue();
-
-        const row = info.row.original;
-        const draft = drafts[row.id];
-        if (!draft) return row.platform;
-
-        const value = draft.platformId || NONE_OPTION;
-        const options = platformOptions.some((p) => p.id === draft.platformId)
-          ? platformOptions
-          : draft.platformId
-            ? [...platformOptions, { id: draft.platformId, label: row.platform }]
-            : platformOptions;
-
-        return (
-          <Select
-            value={value}
-            onValueChange={(v) => {
-              if (v !== NONE_OPTION) onRelationChange(row, "platformId", v);
-            }}
-          >
-            <SelectTrigger className="h-8 min-w-40">
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_OPTION}>—</SelectItem>
-              {options.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      },
-    }),
-    columnHelper.accessor("plan", {
-      header: t("plan"),
-      cell: (info) => {
-        if (!editable) return info.getValue();
-
-        const row = info.row.original;
-        const draft = drafts[row.id];
-        if (!draft) return row.plan;
-
-        const options = planOptionsByPlatform[draft.platformId] ?? [];
-        const value = draft.planId || NONE_OPTION;
-        const optionsWithFallback = options.some((p) => p.id === draft.planId)
-          ? options
-          : draft.planId
-            ? [...options, { id: draft.planId, label: row.plan }]
-            : options;
-
-        return (
-          <Select
-            value={value}
-            onValueChange={(v) => {
-              if (v !== NONE_OPTION) onRelationChange(row, "planId", v);
-            }}
-          >
-            <SelectTrigger className="h-8 min-w-40">
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_OPTION}>—</SelectItem>
-              {optionsWithFallback.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      },
-    }),
-    columnHelper.accessor("subscriptionLabel", {
-      header: t("subscription"),
-      cell: (info) => {
-        if (!editable) return info.getValue();
-
-        const row = info.row.original;
-        const draft = drafts[row.id];
-        if (!draft) return row.subscriptionLabel;
-
-        const options = subscriptionOptionsByPlan[draft.planId] ?? [];
-        const value = draft.subscriptionId || NONE_OPTION;
-        const optionsWithFallback = options.some((s) => s.id === draft.subscriptionId)
-          ? options
-          : draft.subscriptionId
-            ? [...options, { id: draft.subscriptionId, label: row.subscriptionLabel, ownerId: row.clientId }]
-            : options;
-
-        return (
-          <Select
-            value={value}
-            onValueChange={(v) => {
-              if (v !== NONE_OPTION) onRelationChange(row, "subscriptionId", v);
-            }}
-          >
-            <SelectTrigger className="h-8 min-w-40">
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_OPTION}>—</SelectItem>
-              {optionsWithFallback.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      },
-    }),
-    columnHelper.accessor("clientName", {
-      header: t("client"),
-      cell: (info) => {
-        if (!editable) return info.getValue() ?? "—";
-
-        const row = info.row.original;
-        const draft = drafts[row.id];
-        if (!draft) return row.clientName ?? "—";
-
-        const options = draft.type === "income"
-          ? (seatOptionsBySubscription[draft.subscriptionId] ?? []).map((seat) => ({
-              id: seat.clientId,
-              label: seat.clientName,
-            }))
-          : (ownerOptionsByPlan[draft.planId] ?? []);
-
-        const value = draft.clientId || NONE_OPTION;
-        const optionsWithFallback = options.some((option) => option.id === draft.clientId)
-          ? options
-          : draft.clientId
-            ? [...options, { id: draft.clientId, label: row.clientName ?? "Deleted Client" }]
-            : options;
-
-        return (
-          <Select
-            value={value}
-            onValueChange={(v) => {
-              if (v !== NONE_OPTION) onRelationChange(row, "clientId", v);
-            }}
-          >
-            <SelectTrigger className="h-8 min-w-44">
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_OPTION}>—</SelectItem>
-              {optionsWithFallback.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      },
-    }),
-    columnHelper.accessor("periodStart", {
-      header: t("period"),
-      cell: (info) => {
-        if (!editable) {
-          return (
-            <span className="tabular-nums text-muted-foreground text-xs">
-              {info.getValue()} → {info.row.original.periodEnd}
-            </span>
-          );
-        }
-
-        const draft = drafts[info.row.original.id];
-        return (
-          <div className="flex flex-col gap-1">
-            <Input
-              type="date"
-              value={draft?.periodStart ?? info.row.original.periodStart}
-              onChange={(e) => onDraftChange(info.row.original.id, "periodStart", e.target.value)}
-              className="h-8 min-w-36"
-            />
-            <Input
-              type="date"
-              value={draft?.periodEnd ?? info.row.original.periodEnd}
-              onChange={(e) => onDraftChange(info.row.original.id, "periodEnd", e.target.value)}
-              className="h-8 min-w-36"
-            />
-          </div>
-        );
-      },
-    }),
-    columnHelper.accessor("notes", {
-      header: t("notes"),
-      cell: (info) => {
-        if (editable) {
-          const draft = drafts[info.row.original.id];
-          return (
-            <Input
-              value={draft?.notes ?? notesForDraft(info.row.original.notes)}
-              onChange={(e) => onDraftChange(info.row.original.id, "notes", e.target.value)}
-              className="h-8 min-w-44"
-              placeholder={t("optionalNotes")}
-            />
-          );
-        }
-
-        const val = info.getValue();
-        if (!val) return <span className="text-muted-foreground">—</span>;
-        const displayVal = val === "platform_payment" ? t("platformPayment") : val;
-        return (
-          <span className="max-w-[200px] truncate block text-xs" title={displayVal}>
-            {displayVal}
-          </span>
-        );
-      },
-    }),
-  ];
-}
+const AUTO_EDIT_REASON = "Refactorización History";
 
 function AmountCell({ amount, type }: { amount: number; type: string }) {
   const { data: session } = useSession();
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
   const isIncome = type === "income";
-  
   return (
     <span
       className={cn(
         "block text-right font-semibold tabular-nums",
         isIncome
           ? "text-emerald-600 dark:text-emerald-400"
-          : "text-red-600 dark:text-red-400"
+          : "text-red-600 dark:text-red-400",
       )}
     >
       {isIncome ? "+" : "−"}
@@ -450,85 +106,84 @@ export default function HistoryPage() {
     pageSize: 20,
     type: "all",
   });
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [isSavingEdits, setIsSavingEdits] = useState(false);
-  const [draftRows, setDraftRows] = useState<Record<string, EditableHistoryDraft>>({});
+
+  // Edit sheet state
+  const [editingRow, setEditingRow] = useState<HistoryRow | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkFixing, setIsBulkFixing] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const { data, isLoading } = useAnalyticsHistory(filters);
   const { data: platforms } = usePlatforms();
   const { data: plans } = usePlans();
   const { data: subscriptions } = useSubscriptions();
   const { data: clients } = useClients();
+
   const updateHistoryEntry = useUpdateHistoryEntry();
+  const deleteHistoryEntry = useDeleteHistoryEntry();
 
-  const platformOptions = useMemo<SelectOption[]>(
-    () => (platforms ?? []).map((platform) => ({ id: platform.id, label: platform.name })),
-    [platforms],
-  );
+  // Memoized options for the edit sheet
+  const platformOptions = useMemo(() => {
+    return (platforms ?? []).map((p) => ({ id: p.id, label: p.name }));
+  }, [platforms]);
 
-  const planOptionsByPlatform = useMemo<Record<string, SelectOption[]>>(() => {
-    const grouped: Record<string, SelectOption[]> = {};
-    for (const plan of plans ?? []) {
-      if (!grouped[plan.platformId]) grouped[plan.platformId] = [];
-      grouped[plan.platformId].push({ id: plan.id, label: plan.name });
+  const planOptionsByPlatform = useMemo(() => {
+    const grouped: Record<string, { id: string; label: string }[]> = {};
+    for (const p of plans ?? []) {
+      if (!grouped[p.platformId]) grouped[p.platformId] = [];
+      grouped[p.platformId].push({ id: p.id, label: p.name });
     }
     return grouped;
   }, [plans]);
 
-  const subscriptionOptionsByPlan = useMemo<Record<string, SubscriptionOption[]>>(() => {
-    const grouped: Record<string, SubscriptionOption[]> = {};
-    for (const subscription of subscriptions ?? []) {
-      if (!grouped[subscription.planId]) grouped[subscription.planId] = [];
-      grouped[subscription.planId].push({
-        id: subscription.id,
-        label: subscription.label,
-        ownerId: subscription.ownerId ?? null,
-      });
+  const subscriptionOptionsByPlan = useMemo(() => {
+    const grouped: Record<string, { id: string; label: string; ownerId: string | null }[]> = {};
+    for (const s of subscriptions ?? []) {
+      if (!grouped[s.planId]) grouped[s.planId] = [];
+      grouped[s.planId].push({ id: s.id, label: s.label, ownerId: s.ownerId ?? null });
     }
     return grouped;
   }, [subscriptions]);
 
-  const subscriptionsById = useMemo(
-    () => Object.fromEntries((subscriptions ?? []).map((subscription) => [subscription.id, subscription])),
-    [subscriptions],
-  );
+  const subscriptionsById = useMemo(() => {
+    const map: Record<string, { ownerId: string | null }> = {};
+    for (const s of subscriptions ?? []) {
+      map[s.id] = { ownerId: s.ownerId ?? null };
+    }
+    return map;
+  }, [subscriptions]);
 
-  const seatOptionsBySubscription = useMemo<Record<string, SeatOption[]>>(() => {
-    const grouped: Record<string, SeatOption[]> = {};
-
-    for (const client of clients ?? []) {
-      for (const seat of client.clientSubscriptions) {
-        const subscriptionId = seat.subscription.id;
-        if (!grouped[subscriptionId]) grouped[subscriptionId] = [];
-
-        grouped[subscriptionId].push({
-          clientId: client.id,
-          clientName: client.name,
-          clientSubscriptionId: seat.id,
-        });
+  const seatOptionsBySubscription = useMemo(() => {
+    const grouped: Record<string, { clientId: string; clientName: string; clientSubscriptionId: string }[]> = {};
+    for (const row of data?.rows ?? []) {
+      if (row.type === "income" && row.clientId && row.clientName && row.clientSubscriptionId) {
+        if (!grouped[row.subscriptionId]) grouped[row.subscriptionId] = [];
+        if (!grouped[row.subscriptionId].some((s) => s.clientId === row.clientId)) {
+          grouped[row.subscriptionId].push({
+            clientId: row.clientId,
+            clientName: row.clientName,
+            clientSubscriptionId: row.clientSubscriptionId,
+          });
+        }
       }
     }
-
     return grouped;
-  }, [clients]);
+  }, [data?.rows]);
 
-  const ownerOptionsByPlan = useMemo<Record<string, SelectOption[]>>(() => {
-    const clientNameById = new Map((clients ?? []).map((client) => [client.id, client.name]));
-    const grouped: Record<string, SelectOption[]> = {};
-
-    for (const subscription of subscriptions ?? []) {
-      if (!subscription.ownerId) continue;
-      if (!grouped[subscription.planId]) grouped[subscription.planId] = [];
-
-      const ownerLabel = clientNameById.get(subscription.ownerId) ?? "Deleted Client";
-      if (!grouped[subscription.planId].some((option) => option.id === subscription.ownerId)) {
-        grouped[subscription.planId].push({
-          id: subscription.ownerId,
-          label: ownerLabel,
-        });
+  const ownerOptionsByPlan = useMemo(() => {
+    const nameById = new Map((clients ?? []).map((c) => [c.id, c.name]));
+    const grouped: Record<string, { id: string; label: string }[]> = {};
+    for (const sub of subscriptions ?? []) {
+      if (!sub.ownerId) continue;
+      if (!grouped[sub.planId]) grouped[sub.planId] = [];
+      if (!grouped[sub.planId].some((o) => o.id === sub.ownerId)) {
+        grouped[sub.planId].push({ id: sub.ownerId, label: nameById.get(sub.ownerId) ?? "Deleted Client" });
       }
     }
-
     return grouped;
   }, [clients, subscriptions]);
 
@@ -547,189 +202,198 @@ export default function HistoryPage() {
     }
   };
 
-  const startEditMode = () => {
-    const nextDrafts = Object.fromEntries(
-      (data?.rows ?? []).map((row) => [
-        row.id,
-        {
-          type: row.type,
-          amountPaid: String(row.amount),
-          paidOn: row.paidOn,
-          periodStart: row.periodStart,
-          periodEnd: row.periodEnd,
-          notes: notesForDraft(row.notes),
-          platformId: row.platformId ?? "",
-          planId: row.planId ?? "",
-          subscriptionId: row.subscriptionId,
-          clientId: row.clientId ?? "",
-          clientSubscriptionId: row.clientSubscriptionId,
-        } satisfies EditableHistoryDraft,
-      ]),
-    );
+  const handleSave = async (row: HistoryRow, draft: EditDraft) => {
+    const amountPaid = parseFloat(draft.amountPaid);
+    if (!Number.isFinite(amountPaid) || amountPaid < 0) {
+      toast.error(t("editError"));
+      return;
+    }
 
-    setDraftRows(nextDrafts);
-    setIsEditMode(true);
-  };
+    if (draft.type === "income" && !draft.clientSubscriptionId) {
+      toast.error(t("editError"));
+      return;
+    }
 
-  const cancelEditMode = () => {
-    setIsEditMode(false);
-    setDraftRows({});
-  };
+    if (draft.type === "cost" && !draft.subscriptionId) {
+      toast.error(t("editError"));
+      return;
+    }
 
-  const updateDraftField = (id: string, field: keyof EditableHistoryDraft, value: string) => {
-    setDraftRows((prev) => {
-      const existing = prev[id];
-      if (!existing) return prev;
-      return {
-        ...prev,
-        [id]: {
-          ...existing,
-          [field]: value,
+    setIsSaving(true);
+    try {
+      const response = await updateHistoryEntry.mutateAsync({
+        id: row.id,
+        type: row.type,
+        nextType: draft.type !== row.type ? draft.type : undefined,
+        reason: AUTO_EDIT_REASON,
+        amountPaid,
+        paidOn: draft.paidOn,
+        periodStart: draft.periodStart,
+        periodEnd: draft.periodEnd,
+        notes: draft.notes.trim() ? draft.notes.trim() : null,
+        subscriptionId: draft.subscriptionId || undefined,
+        clientSubscriptionId:
+          draft.type === "income" ? (draft.clientSubscriptionId ?? undefined) : undefined,
+      });
+
+      setEditingRow(null);
+      toast.success(t("editSuccess"), {
+        action: {
+          label: t("undo"),
+          onClick: () => void handleUndo(response.auditLogId),
         },
-      };
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("editError"));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   };
 
-  const updateRelationField = (
-    row: HistoryRow,
-    field: "platformId" | "planId" | "subscriptionId" | "clientId",
-    value: string,
-  ) => {
-    setDraftRows((prev) => {
-      const existing = prev[row.id];
-      if (!existing) return prev;
-
-      const nextDraft: EditableHistoryDraft = {
-        ...existing,
-        [field]: value,
-      };
-
-      const syncFromSubscription = () => {
-        if (nextDraft.type === "income") {
-          const seats = seatOptionsBySubscription[nextDraft.subscriptionId] ?? [];
-          const matchedSeat = seats.find((seat) => seat.clientId === nextDraft.clientId);
-          const selectedSeat = matchedSeat ?? seats[0];
-          nextDraft.clientId = selectedSeat?.clientId ?? "";
-          nextDraft.clientSubscriptionId = selectedSeat?.clientSubscriptionId ?? null;
-          return;
-        }
-
-        const selectedSubscription = subscriptionsById[nextDraft.subscriptionId];
-        nextDraft.clientId = selectedSubscription?.ownerId ?? "";
-        nextDraft.clientSubscriptionId = null;
-      };
-
-      if (field === "platformId") {
-        const plansForPlatform = planOptionsByPlatform[value] ?? [];
-        if (!plansForPlatform.some((plan) => plan.id === nextDraft.planId)) {
-          nextDraft.planId = plansForPlatform[0]?.id ?? "";
-        }
-
-        const subscriptionsForPlan = subscriptionOptionsByPlan[nextDraft.planId] ?? [];
-        if (!subscriptionsForPlan.some((subscription) => subscription.id === nextDraft.subscriptionId)) {
-          nextDraft.subscriptionId = subscriptionsForPlan[0]?.id ?? "";
-        }
-
-        syncFromSubscription();
-      }
-
-      if (field === "planId") {
-        const subscriptionsForPlan = subscriptionOptionsByPlan[value] ?? [];
-        if (!subscriptionsForPlan.some((subscription) => subscription.id === nextDraft.subscriptionId)) {
-          nextDraft.subscriptionId = subscriptionsForPlan[0]?.id ?? "";
-        }
-
-        syncFromSubscription();
-      }
-
-      if (field === "subscriptionId") {
-        syncFromSubscription();
-      }
-
-      if (field === "clientId") {
-        if (nextDraft.type === "income") {
-          const seats = seatOptionsBySubscription[nextDraft.subscriptionId] ?? [];
-          const selectedSeat = seats.find((seat) => seat.clientId === value);
-          nextDraft.clientId = selectedSeat?.clientId ?? value;
-          nextDraft.clientSubscriptionId = selectedSeat?.clientSubscriptionId ?? null;
-        } else {
-          nextDraft.clientId = value;
-          nextDraft.clientSubscriptionId = null;
-          const subscriptionsForPlan = subscriptionOptionsByPlan[nextDraft.planId] ?? [];
-          const matchingSubscription = subscriptionsForPlan.find((subscription) => subscription.ownerId === value);
-          if (matchingSubscription) {
-            nextDraft.subscriptionId = matchingSubscription.id;
-          }
-        }
-      }
-
-      return {
-        ...prev,
-        [row.id]: nextDraft,
-      };
-    });
+  const toggleAll = () => {
+    if (selectedIds.size === (data?.rows.length ?? 0) && selectedIds.size > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data?.rows.map((r) => r.id) ?? []));
+    }
   };
 
-  const updateDraftType = (row: HistoryRow, value: "income" | "cost") => {
-    setDraftRows((prev) => {
-      const existing = prev[row.id];
-      if (!existing) return prev;
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedIds);
+      let successCount = 0;
 
-      const nextDraft: EditableHistoryDraft = {
-        ...existing,
-        type: value,
-      };
-
-      if (value === "income") {
-        const seats = seatOptionsBySubscription[nextDraft.subscriptionId] ?? [];
-        const selectedSeat = seats.find((seat) => seat.clientId === nextDraft.clientId) ?? seats[0];
-        nextDraft.clientId = selectedSeat?.clientId ?? "";
-        nextDraft.clientSubscriptionId = selectedSeat?.clientSubscriptionId ?? null;
-      } else {
-        const selectedSubscription = subscriptionsById[nextDraft.subscriptionId];
-        nextDraft.clientId = selectedSubscription?.ownerId ?? "";
-        nextDraft.clientSubscriptionId = null;
+      for (const id of idsToDelete) {
+        const row = data?.rows.find((r) => r.id === id);
+        if (!row) continue;
+        
+        try {
+          await deleteHistoryEntry.mutateAsync({
+            id: row.id,
+            type: row.type,
+            reason: "Bulk delete from history table",
+          });
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to delete ${id}:`, err);
+        }
       }
 
-      return {
-        ...prev,
-        [row.id]: nextDraft,
-      };
-    });
+      toast.success(t("deleteSuccessCount", { count: successCount }));
+      setSelectedIds(new Set());
+      setShowDeleteDialog(false);
+    } catch (err) {
+      toast.error(t("deleteError"));
+    } finally {
+      setIsBulkDeleting(false);
+    }
   };
 
-  const changedRows = (data?.rows ?? []).filter((row) => {
-    const draft = draftRows[row.id];
-    if (!draft) return false;
 
-    return (
-      draft.type !== row.type
-      ||
-      Number(draft.amountPaid) !== row.amount
-      || draft.paidOn !== row.paidOn
-      || draft.periodStart !== row.periodStart
-      || draft.periodEnd !== row.periodEnd
-      || draft.notes.trim() !== notesForDraft(row.notes).trim()
-      || draft.platformId !== (row.platformId ?? "")
-      || draft.planId !== (row.planId ?? "")
-      || draft.subscriptionId !== row.subscriptionId
-      || draft.clientId !== (row.clientId ?? "")
-      || (draft.clientSubscriptionId ?? "") !== (row.clientSubscriptionId ?? "")
-    );
-  });
-
-  const columns = useHistoryColumns({
-    editable: isEditMode,
-    drafts: draftRows,
-    onDraftChange: updateDraftField,
-    onTypeChange: updateDraftType,
-    onRelationChange: updateRelationField,
-    platformOptions,
-    planOptionsByPlatform,
-    subscriptionOptionsByPlan,
-    seatOptionsBySubscription,
-    ownerOptionsByPlan,
-  });
+  const columns = useMemo(
+    () => [
+      columnHelper.display({
+        id: "select",
+        header: () => (
+          <Checkbox
+            checked={selectedIds.size === (data?.rows.length ?? 0) && (data?.rows.length ?? 0) > 0}
+            onCheckedChange={toggleAll}
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={selectedIds.has(row.original.id)}
+            onCheckedChange={() => toggleSelection(row.original.id)}
+            aria-label="Select row"
+          />
+        ),
+      }),
+      columnHelper.accessor("clientName", {
+        header: t("client"),
+        cell: (info) => info.getValue() ?? "—",
+      }),
+      columnHelper.accessor("type", {
+        header: t("type"),
+        cell: (info) => {
+          const type = info.getValue();
+          return (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                type === "income"
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                  : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
+              )}
+            >
+              {type === "income" ? (
+                <ArrowUpCircle className="size-3" />
+              ) : (
+                <ArrowDownCircle className="size-3" />
+              )}
+              {type === "income" ? t("income") : t("expense")}
+            </span>
+          );
+        },
+      }),
+      columnHelper.accessor("amount", {
+        header: () => <span className="text-right block">{t("amount")}</span>,
+        cell: ({ row }) => (
+          <AmountCell amount={Number(row.getValue("amount"))} type={row.original.type} />
+        ),
+      }),
+      columnHelper.accessor("platform", {
+        header: t("platform"),
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("plan", {
+        header: t("plan"),
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("subscriptionLabel", {
+        header: t("subscription"),
+        cell: (info) => info.getValue(),
+      }),
+      columnHelper.accessor("paidOn", {
+        header: t("date"),
+        cell: (info) => (
+          <span className="font-medium tabular-nums">{info.getValue()}</span>
+        ),
+      }),
+      columnHelper.accessor("periodStart", {
+        header: t("period"),
+        cell: (info) => (
+          <span className="tabular-nums text-muted-foreground text-xs">
+            {info.getValue()} → {info.row.original.periodEnd}
+          </span>
+        ),
+      }),
+      columnHelper.accessor("notes", {
+        header: t("notes"),
+        cell: (info) => {
+          const val = info.getValue();
+          if (!val) return <span className="text-muted-foreground">—</span>;
+          const displayVal = val === "platform_payment" ? t("platformPayment") : val;
+          return (
+            <span className="max-w-[200px] truncate block text-xs" title={displayVal}>
+              {displayVal}
+            </span>
+          );
+        },
+      }),
+    ],
+    [t, selectedIds, data],
+  );
 
   const table = useReactTable({
     data: data?.rows ?? [],
@@ -745,78 +409,13 @@ export default function HistoryPage() {
     }));
   };
 
-  const submitEdit = async () => {
-    if (changedRows.length === 0) {
-      toast.error(t("editError"));
-      return;
-    }
-
-    setIsSavingEdits(true);
-    try {
-      const successfulAuditLogIds: string[] = [];
-
-      for (const row of changedRows) {
-        const draft = draftRows[row.id];
-        if (!draft) continue;
-
-        const amountPaid = Number(draft.amountPaid);
-        if (!Number.isFinite(amountPaid) || amountPaid < 0) {
-          throw new Error(t("editError"));
-        }
-
-        if (draft.type === "income" && !draft.clientSubscriptionId) {
-          throw new Error(t("editError"));
-        }
-
-        if (draft.type === "cost" && !draft.subscriptionId) {
-          throw new Error(t("editError"));
-        }
-
-        const response = await updateHistoryEntry.mutateAsync({
-          id: row.id,
-          type: row.type,
-          nextType: draft.type,
-          reason: AUTO_EDIT_REASON,
-          amountPaid,
-          paidOn: draft.paidOn,
-          periodStart: draft.periodStart,
-          periodEnd: draft.periodEnd,
-          notes: draft.notes.trim() ? draft.notes.trim() : null,
-          subscriptionId: draft.subscriptionId || undefined,
-          clientSubscriptionId: draft.type === "income" ? (draft.clientSubscriptionId ?? undefined) : undefined,
-        });
-
-        successfulAuditLogIds.push(response.auditLogId);
-      }
-
-      if (successfulAuditLogIds.length === 1) {
-        toast.success(t("editSuccess"), {
-          action: {
-            label: t("undo"),
-            onClick: () => {
-              void handleUndo(successfulAuditLogIds[0]);
-            },
-          },
-        });
-      } else {
-        toast.success(t("editSuccess"));
-      }
-
-      cancelEditMode();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("editError"));
-    } finally {
-      setIsSavingEdits(false);
-    }
-  };
-
   const handleExport = () => {
     if (!data?.rows.length) return;
     downloadCSV(
       data.rows.map((r) => ({
         Date: r.paidOn,
         Type: r.type,
-        Amount: r.amount,
+        Amount: r.amount / 100,
         Platform: r.platform,
         Plan: r.plan,
         Subscription: r.subscriptionLabel,
@@ -825,7 +424,7 @@ export default function HistoryPage() {
         PeriodEnd: r.periodEnd,
         Notes: r.notes === "platform_payment" ? t("platformPayment") : (r.notes ?? ""),
       })),
-      `pearfect-ledger-${new Date().toISOString().split("T")[0]}`
+      `ledger-${new Date().toISOString().split("T")[0]}`,
     );
   };
 
@@ -834,49 +433,29 @@ export default function HistoryPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
-            {t("title")}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {t("description")}
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">{t("title")}</h1>
+          <p className="text-muted-foreground mt-1">{t("description")}</p>
         </div>
         <div className="flex items-center gap-2">
-          {isEditMode ? (
-            <>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-lg border animate-in fade-in slide-in-from-right-4">
+              <span className="text-xs font-medium mr-2 text-muted-foreground">{selectedIds.size} {tc("selected") || "seleccionados"}</span>
               <Button
                 variant="outline"
-                onClick={cancelEditMode}
-                disabled={isSavingEdits || updateHistoryEntry.isPending}
+                size="sm"
+                className="h-8 text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={isBulkDeleting}
               >
-                {tc("cancel")}
+                {isBulkDeleting ? <Loader2 className="size-3 animate-spin mr-1" /> : <Trash2 className="size-3 mr-1" />}
+                {tc("delete")}
               </Button>
-              <Button
-                onClick={submitEdit}
-                disabled={
-                  isSavingEdits
-                  || updateHistoryEntry.isPending
-                  || changedRows.length === 0
-                }
-              >
-                {isSavingEdits ? t("saving") : t("saveChanges")}
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={startEditMode}
-              disabled={!data?.rows.length || isLoading}
-            >
-              <Pencil className="size-4" />
-              {t("editEntry")}
-            </Button>
+            </div>
           )}
-
           <Button
             variant="outline"
             onClick={handleExport}
-            disabled={!data?.rows.length || isSavingEdits}
+            disabled={!data?.rows.length}
           >
             <Download className="size-4" />
             {t("exportCsv")}
@@ -885,95 +464,159 @@ export default function HistoryPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">{t("type")}</label>
-          <Select
-            value={filters.type ?? "all"}
-            onValueChange={(v) => updateFilter("type", v)}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("allTypes")}</SelectItem>
-              <SelectItem value="income">{t("income")}</SelectItem>
-              <SelectItem value="cost">{t("expense")}</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Search bar */}
+          <div className="relative flex-1 min-w-[280px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder={tc("searchPlaceholder")}
+              className="pl-9"
+              value={filters.search ?? ""}
+              onChange={(e) => updateFilter("search", e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            {(filters.platformId ||
+              filters.planId ||
+              filters.dateFrom ||
+              filters.dateTo ||
+              filters.search ||
+              filters.type !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => setFilters({ page: 1, pageSize: 20, type: "all" })}
+              >
+                <XCircle className="mr-2 size-4" />
+                {tc("clearSearch")}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={handleExport}
+              disabled={!data?.rows.length}
+            >
+              <Download className="mr-2 size-4" />
+              {t("exportCsv")}
+            </Button>
+          </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">{t("platform")}</label>
-          <Select
-            value={filters.platformId ?? "all"}
-            onValueChange={(v) => updateFilter("platformId", v === "all" ? "" : v)}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder={tc("allPlatforms")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{tc("allPlatforms")}</SelectItem>
-              {platforms?.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-muted/50">
+          <div className="flex items-center gap-2">
+            <Filter className="size-4 text-muted-foreground" />
+            <Select value={filters.type ?? "all"} onValueChange={(v) => updateFilter("type", v)}>
+              <SelectTrigger className="w-32 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("allTypes")}</SelectItem>
+                <SelectItem value="income">{t("income")}</SelectItem>
+                <SelectItem value="cost">{t("expense")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">{t("plan")}</label>
-          <Select
-            value={filters.planId ?? "all"}
-            onValueChange={(v) => updateFilter("planId", v === "all" ? "" : v)}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder={tc("allPlans")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{tc("allPlans")}</SelectItem>
-              {plans?.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="h-4 w-px bg-muted mx-1" />
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">{t("date")}</label>
-          <Input
-            type="date"
-            className="w-40"
-            value={filters.dateFrom ?? ""}
-            onChange={(e) => updateFilter("dateFrom", e.target.value)}
-          />
-        </div>
+          <div className="flex items-center gap-3">
+            <Select
+              value={filters.platformId ?? "all"}
+              onValueChange={(v) => updateFilter("platformId", v === "all" ? "" : v)}
+            >
+              <SelectTrigger className="w-36 h-8 text-xs">
+                <SelectValue placeholder={tc("allPlatforms")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tc("allPlatforms")}</SelectItem>
+                {platforms?.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">{t("to")}</label>
-          <Input
-            type="date"
-            className="w-40"
-            value={filters.dateTo ?? ""}
-            onChange={(e) => updateFilter("dateTo", e.target.value)}
-          />
-        </div>
+            <Select
+              value={filters.planId ?? "all"}
+              onValueChange={(v) => updateFilter("planId", v === "all" ? "" : v)}
+            >
+              <SelectTrigger className="w-36 h-8 text-xs">
+                <SelectValue placeholder={tc("allPlans")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tc("allPlans")}</SelectItem>
+                {plans?.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        {(filters.platformId || filters.planId || filters.dateFrom || filters.dateTo || filters.type !== "all") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setFilters({ page: 1, pageSize: 20, type: "all" })
-            }
-          >
-            {tc("clearSearch")}
-          </Button>
-        )}
+          <div className="h-4 w-px bg-muted mx-1" />
+
+          <div className="flex items-center gap-2">
+            <Calendar className="size-4 text-muted-foreground" />
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="date"
+                className="w-32 h-8 text-xs p-1"
+                value={filters.dateFrom ?? ""}
+                onChange={(e) => updateFilter("dateFrom", e.target.value)}
+              />
+              <span className="text-muted-foreground">→</span>
+              <Input
+                type="date"
+                className="w-32 h-8 text-xs p-1"
+                value={filters.dateTo ?? ""}
+                onChange={(e) => updateFilter("dateTo", e.target.value)}
+              />
+            </div>
+
+            <Select 
+              onValueChange={(v) => {
+                const now = new Date();
+                let from = "";
+                let to = now.toISOString().split("T")[0];
+                
+                if (v === "today") {
+                  from = to;
+                } else if (v === "yesterday") {
+                  const yesterday = new Date(now);
+                  yesterday.setDate(now.getDate() - 1);
+                  from = yesterday.toISOString().split("T")[0];
+                  to = from;
+                } else if (v === "last7") {
+                  const last7 = new Date(now);
+                  last7.setDate(now.getDate() - 7);
+                  from = last7.toISOString().split("T")[0];
+                } else if (v === "thisMonth") {
+                  from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+                } else if (v === "lastMonth") {
+                  from = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
+                  to = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split("T")[0];
+                }
+                
+                setFilters(prev => ({ ...prev, dateFrom: from, dateTo: to, page: 1 }));
+              }}
+            >
+              <SelectTrigger className="w-8 h-8 p-0 border-none bg-muted/30 hover:bg-muted/50 transition-colors">
+                <span className="sr-only">Quick range</span>
+                <ChevronDown className="size-3 text-muted-foreground mx-auto" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="today">{tc("today")}</SelectItem>
+                <SelectItem value="yesterday">{tc("yesterday")}</SelectItem>
+                <SelectItem value="last7">{tc("last7Days")}</SelectItem>
+                <SelectItem value="thisMonth">{tc("thisMonth")}</SelectItem>
+                <SelectItem value="lastMonth">{tc("lastMonth")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </div>
 
       {/* Table */}
@@ -990,10 +633,7 @@ export default function HistoryPage() {
                     >
                       {header.isPlaceholder
                         ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                        : flexRender(header.column.columnDef.header, header.getContext())}
                     </th>
                   ))}
                 </tr>
@@ -1019,14 +659,23 @@ export default function HistoryPage() {
                 table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                    onClick={() => setEditingRow(row.original)}
+                    className={cn(
+                      "border-b last:border-0 transition-colors cursor-pointer",
+                      selectedIds.has(row.original.id) ? "bg-muted/50" : "hover:bg-muted/30"
+                    )}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
+                      <td 
+                        key={cell.id} 
+                        className="px-4 py-3"
+                        onClick={(e) => {
+                          if (cell.column.id === "select") {
+                            e.stopPropagation();
+                          }
+                        }}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
                   </tr>
@@ -1046,9 +695,7 @@ export default function HistoryPage() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() =>
-                  setFilters((f) => ({ ...f, page: Math.max(1, (f.page ?? 1) - 1) }))
-                }
+                onClick={() => setFilters((f) => ({ ...f, page: Math.max(1, (f.page ?? 1) - 1) }))}
                 disabled={(filters.page ?? 1) <= 1}
               >
                 <ChevronLeft className="size-4" />
@@ -1071,6 +718,49 @@ export default function HistoryPage() {
         )}
       </div>
 
+      {/* Edit Sheet */}
+      <EditEntrySheet
+        row={editingRow}
+        open={editingRow !== null}
+        onOpenChange={(open) => { if (!open) setEditingRow(null); }}
+        onSave={handleSave}
+        isSaving={isSaving}
+        platformOptions={platformOptions}
+        planOptionsByPlatform={planOptionsByPlatform}
+        subscriptionOptionsByPlan={subscriptionOptionsByPlan}
+        seatOptionsBySubscription={seatOptionsBySubscription}
+        ownerOptionsByPlan={ownerOptionsByPlan}
+        subscriptionsById={subscriptionsById}
+      />
+
+      {/* Delete Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-red-600" />
+              {tc("confirmDelete")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar {selectedIds.size} registros? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkDeleting}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault();
+                handleBulkDelete();
+              }}
+              disabled={isBulkDeleting}
+            >
+              {isBulkDeleting ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+              {tc("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

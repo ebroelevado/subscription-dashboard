@@ -159,7 +159,7 @@ async function executeHistoryTypeSwitch(input: {
     throw new Error("History entry not found or access denied.");
   }
 
-  const nextAmountPaid = amountPaid ?? sourceCommon.amountPaid;
+  const nextAmountPaid = amountPaid !== undefined ? amountToCents(amountPaid) : sourceCommon.amountPaid;
   const nextPaidOn = paidOn ?? sourceCommon.paidOn;
   const nextPeriodStart = periodStart ?? sourceCommon.periodStart;
   const nextPeriodEnd = periodEnd ?? sourceCommon.periodEnd;
@@ -261,8 +261,8 @@ async function executeHistoryTypeSwitch(input: {
         await tx.insert(renewalLogs).values({
           id,
           clientSubscriptionId: targetClientSubscriptionId ?? null,
-          amountPaid: amountToCents(nextAmountPaid),
-          expectedAmount: amountToCents(targetExpectedAmount),
+          amountPaid: nextAmountPaid,
+          expectedAmount: targetExpectedAmount,
           periodStart: nextPeriodStart,
           periodEnd: nextPeriodEnd,
           paidOn: nextPaidOn,
@@ -274,7 +274,7 @@ async function executeHistoryTypeSwitch(input: {
         await tx.insert(platformRenewals).values({
           id,
           subscriptionId: targetSubscriptionId as string,
-          amountPaid: amountToCents(nextAmountPaid),
+          amountPaid: nextAmountPaid,
           periodStart: nextPeriodStart,
           periodEnd: nextPeriodEnd,
           paidOn: nextPaidOn,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useActionState } from "react";
 import { useSession, authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 import {
@@ -12,15 +12,14 @@ import {
   Loader2,
   Settings,
   Palette,
-  BrainCircuit,
-  Github,
-  LogOut,
   CreditCard,
+  Globe,
+  Lock,
+  Shield,
+  Database,
+  KeyRound,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { PremiumPopup } from "@/components/saas/premium-popup";
-import { Sparkles } from "lucide-react";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CurrencySelector } from "@/components/currency-selector";
@@ -54,23 +53,20 @@ import {
   useImportData,
   useClearAccountData,
   useDeleteAccount,
-  useUpdateSettings,
 } from "@/hooks/use-account";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
-import { Slider } from "@/components/ui/slider";
 import { useTranslations } from "next-intl";
-import { useEffect } from "react";
+
 import { SubscriptionManager } from "@/components/saas/subscription-manager";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSaasStatus } from "@/hooks/use-saas-status";
 
-
-// ── Profile Tab ──
-function ProfileTab() {
+// ── Profile Section ──
+function ProfileSection() {
   const { data: session } = useSession();
   const user = session?.user;
   const updateProfile = useUpdateProfile();
@@ -78,74 +74,13 @@ function ProfileTab() {
 
   const [name, setName] = useState(user?.name ?? "");
   const [image, setImage] = useState(user?.image ?? "");
-  const [companyName, setCompanyName] = useState((user as any)?.companyName ?? "");
-  const [whatsappSignatureMode, setWhatsappSignatureMode] = useState<string>((user as any)?.whatsappSignatureMode ?? "name");
-  const hasPassword = (user as any)?.hasPassword;
 
-  // Sync state if session user changes (needed when first loading the page)
   useEffect(() => {
     if (user) {
       if (!name && user.name) setName(user.name);
       if (!image && user.image) setImage(user.image);
-      if (!companyName && (user as any).companyName) setCompanyName((user as any).companyName);
-      if ((user as any).whatsappSignatureMode) setWhatsappSignatureMode((user as any).whatsappSignatureMode);
     }
   }, [user]);
-
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
-
-  const handlePasswordSubmit = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      toast.error(t("passwordTooShort", { fallback: "Password must be at least 6 characters" }));
-      return;
-    }
-
-    if (hasPassword && !currentPassword) {
-      toast.error(t("currentPasswordRequired", { fallback: "Current password is required" }));
-      return;
-    }
-    
-    setIsUpdatingPassword(true);
-    try {
-      const formData = new FormData();
-      if (hasPassword) formData.append("currentPassword", currentPassword);
-      formData.append("newPassword", newPassword);
-
-      // Using dynamic import of Server Action to avoid module issues if needed,
-      // but assuming it's imported at the top. Let's assume fetch/api or action.
-      // Wait, we need to import updatePasswordAction, I will add it top of file.
-      
-      const result = await updatePasswordAction(null, formData);
-      
-      if (!result.success) {
-        throw new Error(result.error || "Failed to update password");
-      }
-      
-      toast.success(
-        hasPassword
-          ? t("passwordUpdated", { fallback: "Password updated successfully!" })
-          : t("passwordSetSuccess", { fallback: "Password set! You can now log in with email." })
-      );
-      
-      setCurrentPassword("");
-      setNewPassword("");
-      
-      // Update session to reflect hasPassword
-      if (!hasPassword) {
-        // We can just locally simulate the state change for Next.js, or trust the db refresh.
-        // authClient.updateUser doesn't support hasPassword, but forcing a network refresh updates the UI safely.
-        window.location.reload();
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsUpdatingPassword(false);
-    }
-  };
-
-  const updateSettings = useUpdateSettings();
 
   const handleSave = () => {
     updateProfile.mutate(
@@ -154,29 +89,9 @@ function ProfileTab() {
         image: image || null,
       },
       {
-        onSuccess: () => {
-          // Only update settings if critical values actually changed
-          if (
-            companyName !== ((user as any)?.companyName ?? "") || 
-            whatsappSignatureMode !== ((user as any)?.whatsappSignatureMode ?? "name")
-          ) {
-            updateSettings.mutate({ 
-              companyName: companyName || null,
-              whatsappSignatureMode,
-            }, {
-              onSuccess: async () => {
-                toast.success(t("profileUpdated"));
-                await authClient.updateUser({ name, image, companyName, whatsappSignatureMode });
-              },
-              onError: (err: any) => toast.error(err.message),
-            });
-          } else {
-            const updateLocal = async () => {
-              toast.success(t("profileUpdated"));
-              await authClient.updateUser({ name, image });
-            };
-            updateLocal();
-          }
+        onSuccess: async () => {
+          toast.success(t("profileUpdated"));
+          await authClient.updateUser({ name, image });
         },
         onError: (err: any) => toast.error(err.message),
       },
@@ -234,60 +149,6 @@ function ProfileTab() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="companyName">{t("companyName", { fallback: "Company Name" })}</Label>
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full">
-            <div className="flex-1 space-y-1 w-full">
-              <Input
-                id="companyName"
-                placeholder={t("companyNamePlaceholder", { fallback: "e.g. Acme Corp" })}
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                maxLength={100}
-              />
-              <p className="text-[0.8rem] text-muted-foreground pt-1">
-                {t("companyNameDescription", { fallback: "Used in automated WhatsApp messages." })}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6 pt-6 border-t">
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <Label className="text-base font-medium">{t("signatureMode", { fallback: "WhatsApp Signature Mode" })}</Label>
-              {!companyName && (
-                <span className="text-[0.65rem] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">
-                  {t("companyMissing", { fallback: "Setup Company for more options" })}
-                </span>
-              )}
-            </div>
-            
-            <div className="px-2 py-4">
-              <Slider
-                min={0}
-                max={companyName ? 2 : 1}
-                step={1}
-                value={[
-                  whatsappSignatureMode === "none" ? 0 : 
-                  whatsappSignatureMode === "name" ? 1 : 
-                  2
-                ]}
-                onValueChange={(val) => {
-                  const mode = val[0] === 0 ? "none" : val[0] === 1 ? "name" : "company";
-                  setWhatsappSignatureMode(mode);
-                }}
-                className="w-full"
-              />
-              <div className="flex justify-between w-full px-1 pt-2 text-[0.65rem] text-muted-foreground uppercase font-bold tracking-tighter">
-                <span>{t("signatureNone")}</span>
-                <span>{t("signatureName")}</span>
-                {companyName && <span>{t("signatureCompany")}</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
           <Label htmlFor="email">{t("email")}</Label>
           <Input
             id="email"
@@ -299,19 +160,147 @@ function ProfileTab() {
             {t("emailDescription")}
           </p>
         </div>
+      </CardContent>
+      <CardFooter className="bg-muted/50 px-6 py-4 border-t flex justify-end">
+        <Button onClick={handleSave} disabled={updateProfile.isPending}>
+          {updateProfile.isPending && (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          )}
+          {t("saveChanges")}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
 
-        <div className="space-y-4 pt-4 border-t">
-          <div>
-            <h3 className="text-lg font-medium">
-              {hasPassword ? t("changePassword", { fallback: "Change Password" }) : t("setupPassword", { fallback: "Set up Password" })}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {hasPassword
-                ? t("changePasswordDescription", { fallback: "Update your current password." })
-                : t("setupPasswordDescription", { fallback: "Set a password to log in without Google." })}
+// ── Preferences Section ──
+function PreferencesSection() {
+  const t = useTranslations("settings");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Palette className="size-5" />
+          {t("preferences", { fallback: "Preferences" })}
+        </CardTitle>
+        <CardDescription>
+          {t("preferencesDescription", { fallback: "Customize the look, language, and currency of your dashboard." })}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="space-y-0.5">
+            <h4 className="text-sm font-medium">{t("appearance")}</h4>
+            <p className="text-xs text-muted-foreground">
+              {t("appearanceDescription")}
             </p>
           </div>
-          
+          <ThemeToggle />
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="space-y-0.5">
+            <h4 className="text-sm font-medium">{t("language")}</h4>
+            <p className="text-xs text-muted-foreground">
+              {t("language")}
+            </p>
+          </div>
+          <LanguageSwitcher />
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="space-y-0.5">
+            <h4 className="text-sm font-medium">{t("currency")}</h4>
+            <p className="text-xs text-muted-foreground">
+              {t("currencyDescription")}
+            </p>
+          </div>
+          <CurrencySelector />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Security Section ──
+function SecuritySection() {
+  const { data: session } = useSession();
+  const user = session?.user;
+  const hasPassword = (user as any)?.hasPassword;
+  const t = useTranslations("settings");
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const handlePasswordSubmit = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      toast.error(t("passwordTooShort", { fallback: "Password must be at least 6 characters" }));
+      return;
+    }
+
+    if (hasPassword && !currentPassword) {
+      toast.error(t("currentPasswordRequired", { fallback: "Current password is required" }));
+      return;
+    }
+    
+    setIsUpdatingPassword(true);
+    try {
+      const formData = new FormData();
+      if (hasPassword) formData.append("currentPassword", currentPassword);
+      formData.append("newPassword", newPassword);
+
+      const result = await updatePasswordAction(null, formData);
+      
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update password");
+      }
+      
+      toast.success(
+        hasPassword
+          ? t("passwordUpdated", { fallback: "Password updated successfully!" })
+          : t("passwordSetSuccess", { fallback: "Password set! You can now log in with email." })
+      );
+      
+      setCurrentPassword("");
+      setNewPassword("");
+      
+      if (!hasPassword) {
+        window.location.reload();
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "An error occurred");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="size-5" />
+          {t("security", { fallback: "Security" })}
+        </CardTitle>
+        <CardDescription>
+          {t("securityDescription", { fallback: "Manage your password and account security." })}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="rounded-lg border p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <KeyRound className="size-4 text-muted-foreground" />
+            <h4 className="text-sm font-medium">
+              {hasPassword ? t("changePassword", { fallback: "Change Password" }) : t("setupPassword", { fallback: "Set up Password" })}
+            </h4>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {hasPassword
+              ? t("changePasswordDescription", { fallback: "Update your current password." })
+              : t("setupPasswordDescription", { fallback: "Set a password to log in without Google." })}
+          </p>
+
           <div className="grid gap-4 sm:grid-cols-2">
             {hasPassword && (
               <div className="space-y-2">
@@ -348,133 +337,12 @@ function ProfileTab() {
           </Button>
         </div>
       </CardContent>
-      <CardFooter className="bg-muted/50 px-6 py-4 border-t flex justify-end">
-        <Button onClick={handleSave} disabled={updateProfile.isPending}>
-          {updateProfile.isPending && (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          )}
-          {t("saveChanges")}
-        </Button>
-      </CardFooter>
     </Card>
   );
 }
 
-// ── Appearance Tab ──
-function AppearanceTab() {
-  const t = useTranslations("settings");
-  const { data: session } = useSession();
-  const updateSettings = useUpdateSettings();
-  
-  const initialPenalty = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty ?? 0.5;
-  const [penalty, setPenalty] = useState(initialPenalty);
-
-  // Sync state if session changes initially
-  useEffect(() => {
-    const sessionPenalty = (session?.user as { disciplinePenalty?: number })?.disciplinePenalty;
-    // Only sync if penalty is at default and session has a different value
-    if (sessionPenalty !== undefined && penalty !== sessionPenalty) {
-      setPenalty(sessionPenalty);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user]);
-
-  // Handle explicitly saving the appearance settings
-  const handleSave = () => {
-    if (penalty !== initialPenalty) {
-      updateSettings.mutate(
-        { disciplinePenalty: penalty },
-        {
-          onSuccess: async () => {
-            await authClient.updateUser({ disciplinePenalty: penalty });
-            toast.success(t("penaltyUpdated", { fallback: "Penalty updated successfully" }));
-          },
-          onError: (err: any) => toast.error(err.message),
-        }
-      );
-    } else {
-      toast.success(t("noChanges", { fallback: "No changes to save" }));
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Palette className="size-5" />
-          {t("appearance")}
-        </CardTitle>
-        <CardDescription>
-          {t("appearanceDescription")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="space-y-0.5">
-            <h4 className="text-sm font-medium">{t("appearance")}</h4>
-            <p className="text-xs text-muted-foreground">
-              {t("appearanceDescription")}
-            </p>
-          </div>
-          <ThemeToggle />
-        </div>
-
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="space-y-0.5">
-            <h4 className="text-sm font-medium">{t("language")}</h4>
-            <p className="text-xs text-muted-foreground">
-              {t("language")}
-            </p>
-          </div>
-          <LanguageSwitcher />
-        </div>
-
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="space-y-0.5">
-            <h4 className="text-sm font-medium">{t("currency")}</h4>
-            <p className="text-xs text-muted-foreground">
-              {t("currencyDescription")}
-            </p>
-          </div>
-          <CurrencySelector />
-        </div>
-
-        <div className="rounded-lg border p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <h4 className="text-sm font-medium">{t("disciplineStrictness", { fallback: "Discipline Strictness" })}</h4>
-              <p className="text-xs text-muted-foreground">
-                {t("disciplineStrictnessDesc", { fallback: "Adjust the score deduction applied per late day (-0.5 by default)." })}
-              </p>
-            </div>
-            <div className="font-mono font-bold text-sm bg-muted px-2 py-1 rounded">
-              -{penalty.toFixed(1)} / {t("day", { fallback: "day" })}
-            </div>
-          </div>
-          <Slider
-            value={[penalty]}
-            onValueChange={(vals: number[]) => setPenalty(vals[0])}
-            max={5}
-            min={0}
-            step={0.1}
-            disabled={updateSettings.isPending}
-          />
-        </div>
-      </CardContent>
-      <CardFooter className="bg-muted/50 px-6 py-4 border-t flex justify-end">
-        <Button onClick={handleSave} disabled={updateSettings.isPending || penalty === initialPenalty}>
-          {updateSettings.isPending && (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          )}
-          {t("saveChanges")}
-        </Button>
-      </CardFooter>
-    </Card>
-  );
-}
-
-// ── Data Tab ──
-function DataTab() {
+// ── Data & Privacy Section ──
+function DataSection() {
   const exportData = useExportData();
   const importData = useImportData();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -510,8 +378,6 @@ function DataTab() {
       }
     };
     reader.readAsText(file);
-
-    // Reset file input so the same file can be picked again
     e.target.value = "";
   };
 
@@ -519,7 +385,7 @@ function DataTab() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Download className="size-5" />
+          <Database className="size-5" />
           {t("data")}
         </CardTitle>
         <CardDescription>
@@ -529,12 +395,13 @@ function DataTab() {
       <CardContent className="space-y-6">
         {/* Export */}
         <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-          <div>
+          <div className="flex items-center gap-2">
+            <Download className="size-4 text-muted-foreground" />
             <h4 className="text-sm font-medium">{t("exportData")}</h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("exportDescription")}
-            </p>
           </div>
+          <p className="text-xs text-muted-foreground">
+            {t("exportDescription")}
+          </p>
           <Button
             variant="outline"
             onClick={handleExport}
@@ -551,12 +418,13 @@ function DataTab() {
 
         {/* Import */}
         <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-          <div>
+          <div className="flex items-center gap-2">
+            <Upload className="size-4 text-muted-foreground" />
             <h4 className="text-sm font-medium">{t("importData")}</h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("importDescription")}
-            </p>
           </div>
+          <p className="text-xs text-muted-foreground">
+            {t("importDescription")}
+          </p>
           <input
             ref={fileRef}
             type="file"
@@ -578,7 +446,7 @@ function DataTab() {
           </Button>
         </div>
 
-        {/* Danger Zone moved here */}
+        {/* Danger Zone */}
         <div className="pt-6 border-t mt-6">
           <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-4">
             <div className="flex items-center gap-2 text-destructive font-semibold">
@@ -759,10 +627,6 @@ function DeleteAccountButton() {
   );
 }
 
-
-// ── Assistant Tab ──
-// AssistantTab removed (integration deprecated)
-
 // ── Page ──
 export default function SettingsPage() {
   const t = useTranslations("settings");
@@ -770,15 +634,22 @@ export default function SettingsPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const locale = pathname.split("/")[1] || "en";
-  const isPremiumUser = saasStatus?.plan === "PREMIUM";
   const requestedTab = searchParams.get("tab");
-  const validTabs = new Set(["profile", "appearance", "assistant", "data", "subscription"]);
-  const defaultTab = requestedTab && validTabs.has(requestedTab) ? requestedTab : "profile";
+  const validTabs = new Set(["general", "preferences", "security", "data", "subscription"]);
+  const defaultTab = requestedTab && validTabs.has(requestedTab) ? requestedTab : "general";
   const [activeTab, setActiveTab] = useState(defaultTab);
 
   useEffect(() => {
     setActiveTab(defaultTab);
   }, [defaultTab]);
+
+  const tabs = [
+    { value: "general", label: t("general", { fallback: "General" }), icon: Settings },
+    { value: "preferences", label: t("preferences", { fallback: "Preferences" }), icon: Palette },
+    { value: "security", label: t("security", { fallback: "Security" }), icon: Shield },
+    { value: "data", label: t("data"), icon: Database },
+    { value: "subscription", label: t("subscription"), icon: CreditCard },
+  ];
 
   return (
     <div className="space-y-6 pb-16">
@@ -795,12 +666,7 @@ export default function SettingsPage() {
       {/* Top Bar Navigation */}
       <div className="space-y-4">
         <div className="grid grid-cols-5 gap-1.5 rounded-xl border border-border/60 bg-muted/20 p-1.5">
-        {[
-          { value: "profile", label: t("profile"), icon: User },
-          { value: "appearance", label: t("appearance"), icon: Palette },
-          { value: "data", label: t("data"), icon: Download },
-          { value: "subscription", label: t("subscription"), icon: CreditCard },
-        ].map((tab) => {
+        {tabs.map((tab) => {
           return (
             <button
               key={tab.value}
@@ -823,9 +689,10 @@ export default function SettingsPage() {
 
       {/* Content */}
       <div className="w-full">
-        {activeTab === "profile" && <ProfileTab />}
-        {activeTab === "appearance" && <AppearanceTab />}
-        {activeTab === "data" && <DataTab />}
+        {activeTab === "general" && <ProfileSection />}
+        {activeTab === "preferences" && <PreferencesSection />}
+        {activeTab === "security" && <SecuritySection />}
+        {activeTab === "data" && <DataSection />}
         {activeTab === "subscription" && <SubscriptionManager locale={locale} />}
       </div>
     </div>

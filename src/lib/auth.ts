@@ -3,6 +3,7 @@ import "./patches/drizzle-boolean-fix";
 
 // @ts-ignore: better-auth export is not correctly typed under bundler moduleResolution
 import { betterAuth } from "better-auth";
+import { customSession } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getDirectDb } from "@/db";
 import * as schema from "@/db/schema";
@@ -30,10 +31,7 @@ function createAuth(): AuthInstance {
     user: {
       additionalFields: {
         currency: { type: "string", defaultValue: "EUR" },
-        disciplinePenalty: { type: "number", defaultValue: 0.5 },
         usageCredits: { type: "number", defaultValue: 0 },
-        companyName: { type: "string", required: false },
-        whatsappSignatureMode: { type: "string", defaultValue: "name" },
         plan: { type: "string", defaultValue: "FREE" },
         stripeCustomerId: { type: "string", required: false },
         stripeSubscriptionId: { type: "string", required: false },
@@ -62,6 +60,10 @@ function createAuth(): AuthInstance {
       // In local dev with mixed runtimes (vinext/next/worker proxy), keeping OAuth state
       // in encrypted cookie is more robust than DB-backed state rows.
       storeStateStrategy: "cookie",
+      accountLinking: {
+        enabled: true,
+        trustedProviders: ["google"],
+      },
     },
     session: {
       expiresIn: 30 * 24 * 60 * 60, // 30 days
@@ -69,7 +71,17 @@ function createAuth(): AuthInstance {
     },
     // Note: nextCookies() removed — it relies on Next.js internals that are
     // shimmed under vinext and may silently drop session cookies after login.
-    plugins: [],
+    plugins: [
+      customSession(async ({ user, session }) => {
+        return {
+          user: {
+            ...user,
+            hasPassword: !!(user as any).password,
+          },
+          session,
+        };
+      }),
+    ],
   });
 }
 

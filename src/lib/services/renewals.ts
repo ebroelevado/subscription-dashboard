@@ -145,7 +145,8 @@ export async function renewBulkClientSubscriptions({
       const periodEnd = newExpiry;
 
       // 4. Amount collected
-      const paid = item.amountPaid ?? customPrice * seatMonths;
+      // customPrice is already in cents; item.amountPaid from user is in decimal euros
+      const paid = item.amountPaid !== undefined ? amountToCents(item.amountPaid) : (customPrice * seatMonths);
 
       // 5. Notes
       const finalNotes = item.notes ?? `[BULK] Renewed ${seatMonths} month(s)`;
@@ -153,7 +154,7 @@ export async function renewBulkClientSubscriptions({
       // 6. INSERT append-only renewal_log (one per seat)
       const [log] = await tx.insert(renewalLogs).values({
         clientSubscriptionId: item.clientSubscriptionId,
-        amountPaid: amountToCents(paid),
+        amountPaid: paid,
         expectedAmount: customPrice * seatMonths,
         periodStart: periodStart.toISOString().split("T")[0],
         periodEnd: periodEnd.toISOString().split("T")[0],

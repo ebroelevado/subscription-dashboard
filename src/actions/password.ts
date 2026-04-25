@@ -31,8 +31,8 @@ export async function updatePasswordAction(
       return { error: "Not authenticated", success: false };
     }
 
-    const currentPassword = formData.get("currentPassword") as string | null;
-    const newPassword = formData.get("newPassword") as string;
+    const currentPassword = (formData.get("currentPassword") as string) || undefined;
+    const newPassword = (formData.get("newPassword") as string) || "";
 
     const parsed = updatePasswordSchema.safeParse({ currentPassword, newPassword });
     if (!parsed.success) {

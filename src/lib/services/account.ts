@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   platforms,
@@ -119,69 +119,93 @@ async function clearUserDataInTransaction(tx: DatabaseContext, userId: string) {
 // ──────────────────────────────────────────
 
 export async function exportUserData(userId: string) {
-  const [
-    userRow,
-    platformsList,
-    plansList,
-    subscriptionsList,
-    clientsList,
-    clientSubscriptionsList,
-    renewalLogsList,
-    platformRenewalsList,
-    auditLogsList,
-  ] = await Promise.all([
-    db.query.users.findFirst({ where: eq(users.id, userId) }),
-    db.select().from(platforms).where(eq(platforms.userId, userId)),
-    db.select().from(plans).where(eq(plans.userId, userId)),
-    db.select().from(subscriptions).where(eq(subscriptions.userId, userId)),
-    db.select().from(clients).where(eq(clients.userId, userId)),
-    db.select().from(clientSubscriptions)
-      .innerJoin(clients, eq(clientSubscriptions.clientId, clients.id))
-      .where(eq(clients.userId, userId)),
-    db
+    const [
+      userRow,
+      platformsList,
+      plansList,
+      subscriptionsList,
+      clientsList,
+      auditLogsList,
+    ] = await Promise.all([
+      db.query.users.findFirst({ where: eq(users.id, userId) }),
+      db.select().from(platforms).where(eq(platforms.userId, userId)),
+      db.select().from(plans).where(eq(plans.userId, userId)),
+      db.select().from(subscriptions).where(eq(subscriptions.userId, userId)),
+      db.select().from(clients).where(eq(clients.userId, userId)),
+      db.select().from(mutationAuditLogs).where(eq(mutationAuditLogs.userId, userId)),
+    ]);
+
+    // 2. Collect ClientSubscriptions that belong to either our clients OR our subscriptions
+    const clientIds = clientsList.map(c => c.id);
+    const subIds = subscriptionsList.map(s => s.id);
+
+    const clientSubscriptionsRows = await db
       .select({
-        renewalLog: renewalLogs,
-        legacyClientId: clientSubscriptions.clientId,
-        legacySubscriptionId: clientSubscriptions.subscriptionId,
+        clientSubscription: clientSubscriptions,
       })
-      .from(renewalLogs)
-      .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
-      .innerJoin(clients, eq(clientSubscriptions.clientId, clients.id))
-      .where(eq(clients.userId, userId)),
-    db.select({ platformRenewals: platformRenewals })
-      .from(platformRenewals)
-      .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
-      .where(eq(subscriptions.userId, userId)),
-    db.select().from(mutationAuditLogs).where(eq(mutationAuditLogs.userId, userId)),
-  ]);
+      .from(clientSubscriptions)
+      .where(
+        clientIds.length > 0 || subIds.length > 0
+          ? or(
+            clientIds.length > 0 ? inArray(clientSubscriptions.clientId, clientIds) : undefined,
+            subIds.length > 0 ? inArray(clientSubscriptions.subscriptionId, subIds) : undefined,
+          )
+          : eq(clientSubscriptions.id, "none"),
+      );
+
+    const exportedClientSubscriptions = clientSubscriptionsRows.map(r => r.clientSubscription);
+    const exportedClientSubIds = exportedClientSubscriptions.map(cs => cs.id);
+
+    // 3. Collect RenewalLogs for the exported ClientSubscriptions
+    let exportedRenewalLogs: any[] = [];
+    if (exportedClientSubIds.length > 0) {
+      const logsRows = await db
+        .select({
+          renewalLog: renewalLogs,
+          legacyClientId: clientSubscriptions.clientId,
+          legacySubscriptionId: clientSubscriptions.subscriptionId,
+        })
+        .from(renewalLogs)
+        .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+        .where(inArray(renewalLogs.clientSubscriptionId, exportedClientSubIds));
+
+      exportedRenewalLogs = logsRows.map(r => ({
+        ...r.renewalLog,
+        clientId: r.legacyClientId,
+        subscriptionId: r.legacySubscriptionId,
+      }));
+    }
+
+    // 4. Collect PlatformRenewals for the exported Subscriptions
+    let exportedPlatformRenewals: any[] = [];
+    if (subIds.length > 0) {
+      const prRows = await db
+        .select({ platformRenewals })
+        .from(platformRenewals)
+        .where(inArray(platformRenewals.subscriptionId, subIds));
+      exportedPlatformRenewals = prRows.map(r => r.platformRenewals);
+    }
 
   // Strip userId from all records — the importing user gets their own
   const stripUser = <T extends Record<string, unknown>>(rows: T[]) =>
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     rows.map(({ userId: _uid, ...rest }) => rest);
 
-  return {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    userSettings: userRow ? {
-      currency: userRow.currency,
-      disciplinePenalty: userRow.disciplinePenalty,
-      companyName: userRow.companyName,
-      whatsappSignatureMode: userRow.whatsappSignatureMode,
-    } : undefined,
-    platforms: stripUser(platformsList),
-    plans: stripUser(plansList),
-    subscriptions: stripUser(subscriptionsList),
-    clients: stripUser(clientsList),
-    clientSubscriptions: clientSubscriptionsList.map(r => r.client_subscriptions),
-    renewalLogs: renewalLogsList.map((r) => ({
-      ...r.renewalLog,
-      clientId: r.legacyClientId,
-      subscriptionId: r.legacySubscriptionId,
-    })),
-    platformRenewals: platformRenewalsList.map(r => r.platformRenewals),
-    mutationAuditLogs: stripUser(auditLogsList),
-  };
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      userSettings: userRow ? {
+        currency: userRow.currency,
+      } : undefined,
+      platforms: stripUser(platformsList),
+      plans: stripUser(plansList),
+      subscriptions: stripUser(subscriptionsList),
+      clients: stripUser(clientsList),
+      clientSubscriptions: exportedClientSubscriptions,
+      renewalLogs: exportedRenewalLogs,
+      platformRenewals: exportedPlatformRenewals,
+      mutationAuditLogs: stripUser(auditLogsList),
+    };
 }
 
 function ensureImportReferentialIntegrity(data: ImportDataInput) {
@@ -283,9 +307,6 @@ export async function importUserData(
     if (data.userSettings) {
       const settings: Record<string, unknown> = {};
       if (data.userSettings.currency) settings.currency = data.userSettings.currency;
-      if (data.userSettings.disciplinePenalty !== undefined) settings.disciplinePenalty = data.userSettings.disciplinePenalty;
-      if (data.userSettings.companyName !== undefined) settings.companyName = data.userSettings.companyName;
-      if (data.userSettings.whatsappSignatureMode) settings.whatsappSignatureMode = data.userSettings.whatsappSignatureMode;
       if (Object.keys(settings).length > 0) {
         await tx.update(users).set(settings).where(eq(users.id, userId));
       }
@@ -324,7 +345,7 @@ export async function importUserData(
         userId,
         platformId,
         name: p.name,
-        cost: amountToCents(p.cost),
+        cost: p.cost,
         maxSeats: p.maxSeats ?? null,
         isActive: p.isActive ?? true,
         ...(p.createdAt && { createdAt: new Date(p.createdAt).toISOString() }),
@@ -391,7 +412,7 @@ export async function importUserData(
         id: newId,
         clientId,
         subscriptionId,
-        customPrice: amountToCents(cs.customPrice),
+        customPrice: cs.customPrice,
         activeUntil: new Date(cs.activeUntil).toISOString().split("T")[0],
         joinedAt: new Date(cs.joinedAt).toISOString().split("T")[0],
         leftAt: cs.leftAt ? new Date(cs.leftAt).toISOString().split("T")[0] : null,
@@ -424,8 +445,8 @@ export async function importUserData(
       await tx.insert(renewalLogs).values({
         id: crypto.randomUUID(),
         clientSubscriptionId,
-        amountPaid: amountToCents(rl.amountPaid),
-        expectedAmount: amountToCents(rl.expectedAmount),
+        amountPaid: rl.amountPaid,
+        expectedAmount: rl.expectedAmount,
         periodStart: new Date(rl.periodStart).toISOString().split("T")[0],
         periodEnd: new Date(rl.periodEnd).toISOString().split("T")[0],
         paidOn: new Date(rl.paidOn).toISOString().split("T")[0],
@@ -445,7 +466,7 @@ export async function importUserData(
       await tx.insert(platformRenewals).values({
         id: crypto.randomUUID(),
         subscriptionId,
-        amountPaid: amountToCents(pr.amountPaid),
+        amountPaid: pr.amountPaid,
         periodStart: new Date(pr.periodStart).toISOString().split("T")[0],
         periodEnd: new Date(pr.periodEnd).toISOString().split("T")[0],
         paidOn: new Date(pr.paidOn).toISOString().split("T")[0],

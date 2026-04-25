@@ -29,6 +29,13 @@
       "when": 1776710011509,
       "tag": "0003_fuzzy_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777127649377,
+      "tag": "0004_fancy_switch",
+      "breakpoints": true
     }
   ]
 }

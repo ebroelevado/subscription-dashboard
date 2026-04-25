@@ -134,6 +134,7 @@ export interface HistoryFilters {
   clientId?: string;
   dateFrom?: string;
   dateTo?: string;
+  search?: string;
 }
 
 export interface UpdateHistoryEntryInput {
@@ -172,6 +173,7 @@ export function useAnalyticsHistory(filters: HistoryFilters = {}) {
   if (filters.clientId) params.set("clientId", filters.clientId);
   if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) params.set("dateTo", filters.dateTo);
+  if (filters.search) params.set("search", filters.search);
 
   return useQuery<HistoryResponse>({
     queryKey: queryKeys.analyticsHistory(filters),

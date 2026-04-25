@@ -61,7 +61,6 @@ const navItems = [
   { key: "history" as const, href: "/dashboard/history", icon: ScrollText },
   { key: "analytics" as const, href: "/dashboard/analytics", icon: BarChart3 },
   { key: "assistant" as const, href: "/dashboard/assistant", icon: Bot },
-  { key: "settings" as const, href: "/dashboard/settings", icon: Settings },
 ];
 
 // ── Cookie helpers ──
@@ -195,6 +194,7 @@ function MobileNavLinks({ onNavigate, mounted }: { onNavigate?: () => void; moun
 // ── User Menu ──
 function UserMenu({ collapsed }: { collapsed: boolean }) {
   const tc = useTranslations("common");
+  const tn = useTranslations("nav");
   const { data: session } = useSession();
   const user = session?.user;
   const router = useRouter();
@@ -247,6 +247,13 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
         <DropdownMenuLabel>{user?.name || tc("account")}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          onClick={() => router.push("/dashboard/settings")}
+        >
+          <Settings className="size-4" />
+          {tn("settings")}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
           onClick={() => signOut({ fetchOptions: { onSuccess: () => router.push("/") } })}
           className="text-destructive focus:text-destructive"
         >
@@ -274,6 +281,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
 // Full-feature mobile user menu (always expanded look)
 function MobileUserMenu() {
   const tc = useTranslations("common");
+  const tn = useTranslations("nav");
   const { data: session } = useSession();
   const user = session?.user;
   const router = useRouter();
@@ -309,6 +317,13 @@ function MobileUserMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuLabel>{tc("myAccount")}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => router.push("/dashboard/settings")}
+        >
+          <Settings className="size-4" />
+          {tn("settings")}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => signOut({ fetchOptions: { onSuccess: () => router.push("/") } })}

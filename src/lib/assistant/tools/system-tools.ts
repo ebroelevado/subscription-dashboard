@@ -51,7 +51,7 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
 
   tools.push(
     defineTool("getAccountDetails", {
-      description: "Get the authenticated user's own account details, including their usage credits, discipline penalty settings, currency, email, and total counts of clients/subscriptions. Use this if the user asks about their own account, credits, or settings.",
+      description: "Get the authenticated user's own account details, including their usage credits, currency, email, and total counts of clients/subscriptions. Use this if the user asks about their own account, credits, or settings.",
       parameters: z.object({}),
       handler: async () => {
         const user = await db.query.users.findFirst({
@@ -61,9 +61,6 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
             email: true,
             createdAt: true,
             currency: true,
-            disciplinePenalty: true,
-            companyName: true,
-            whatsappSignatureMode: true,
             usageCredits: true,
           },
           with: {
@@ -83,9 +80,6 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
           },
           settings: {
             currency: user.currency,
-            dailyDisciplinePenalty: Number(user.disciplinePenalty),
-            companyName: user.companyName,
-            whatsappSignatureMode: user.whatsappSignatureMode,
           },
           usage: {
             availableCredits: Number(user.usageCredits),
@@ -154,24 +148,18 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
     );
     tools.push(
       defineTool("updateUserConfig", {
-            description: "Propose an update to the authenticated user's account settings, including currency, discipline penalty, company name, and WhatsApp signature mode.",
+            description: "Propose an update to the authenticated user's account settings (currently only currency).",
             parameters: z.object({
               currency: z.enum(["EUR", "USD", "GBP", "CNY"]).optional().describe("The base currency for all monetary displays."),
-              disciplinePenalty: z.number().min(0).max(5).optional().describe("Daily score deduction applied for each late day."),
-              companyName: z.string().max(100).optional().describe("The name of the user's company or business, used in WhatsApp messages."),
-              whatsappSignatureMode: z.enum(["none", "name", "company"]).optional(),
             }),
-            handler: async ({ disciplinePenalty, currency, companyName, whatsappSignatureMode }: any) => {
+            handler: async ({ currency }: any) => {
               const user = await db.query.users.findFirst({
                 where: eq(users.id, userId),
-                columns: { name: true, currency: true, disciplinePenalty: true, companyName: true, whatsappSignatureMode: true }
+                columns: { name: true, currency: true }
               });
               if (!user) return { error: "User not found." };
               const pendingChanges = { 
-                ...(disciplinePenalty !== undefined ? { disciplinePenalty } : {}), 
                 ...(currency ? { currency } : {}),
-                ...(companyName !== undefined ? { companyName } : {}),
-                ...(whatsappSignatureMode !== undefined ? { whatsappSignatureMode } : {})
               };
               const { token, expiresAt } = await createMutationToken(userId, { 
                 toolName: "updateUserConfig", 
@@ -179,10 +167,7 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
                 action: "update", 
                 changes: pendingChanges, 
                 previousValues: { 
-                  disciplinePenalty: user.disciplinePenalty, 
                   currency: user.currency, 
-                  companyName: user.companyName, 
-                  whatsappSignatureMode: user.whatsappSignatureMode 
                 } 
               });
               await db.update(mutationAuditLogs).set({ newValues: pendingChanges as any }).where(eq(mutationAuditLogs.token, token));

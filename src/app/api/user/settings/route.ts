@@ -10,7 +10,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { currency, disciplinePenalty, companyName, whatsappSignatureMode } = await req.json();
+  const { currency } = await req.json();
 
   const data: Record<string, unknown> = {};
 
@@ -21,25 +21,8 @@ export async function PATCH(req: Request) {
     data.currency = currency;
   }
 
-  if (typeof disciplinePenalty === 'number') {
-    if (!Number.isFinite(disciplinePenalty) || disciplinePenalty < 0 || disciplinePenalty > 5) {
-       return NextResponse.json({ error: "Invalid discipline penalty range" }, { status: 400 });
-    }
-    data.disciplinePenalty = disciplinePenalty;
-  }
-
-  if (companyName !== undefined) {
-    if (companyName && companyName.length > 100) {
-      return NextResponse.json({ error: "Company name too long" }, { status: 400 });
-    }
-    data.companyName = companyName || null;
-  }
-
-  if (whatsappSignatureMode !== undefined) {
-    if (!['none', 'name', 'company'].includes(whatsappSignatureMode)) {
-      return NextResponse.json({ error: "Invalid WhatsApp signature mode" }, { status: 400 });
-    }
-    data.whatsappSignatureMode = whatsappSignatureMode;
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
   try {
@@ -50,9 +33,6 @@ export async function PATCH(req: Request) {
       data: {
         success: true, 
         currency: user.currency,
-        disciplinePenalty: user.disciplinePenalty,
-        companyName: user.companyName,
-        whatsappSignatureMode: user.whatsappSignatureMode
       }
     });
   } catch (error) {

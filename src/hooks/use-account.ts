@@ -25,9 +25,6 @@ export function useUpdateSettings() {
   return useMutation({
     mutationFn: (data: { 
       currency?: string; 
-      disciplinePenalty?: number; 
-      companyName?: string;
-      whatsappSignatureMode?: string;
     }) =>
       fetchApi("/api/user/settings", {
         method: "PATCH",

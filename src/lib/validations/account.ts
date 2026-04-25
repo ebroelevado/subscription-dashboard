@@ -6,7 +6,7 @@ import { z } from "zod";
 
 export const updateProfileSchema = z.object({
   name: z.string().min(1, "Name is required").max(100).optional(),
-  image: z.string().url("Must be a valid URL").nullable().optional(),
+  image: z.union([z.string().url("Must be a valid URL"), z.literal("")]).nullable().optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
@@ -116,9 +116,6 @@ const mutationAuditLogImportSchema = z.object({
 
 const userSettingsImportSchema = z.object({
   currency: z.string().optional(),
-  disciplinePenalty: z.number().min(0).optional(),
-  companyName: z.string().nullable().optional(),
-  whatsappSignatureMode: z.string().optional(),
 });
 
 export const importDataSchema = z.object({

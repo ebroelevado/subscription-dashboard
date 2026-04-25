@@ -1,4 +1,5 @@
 import { createAuthClient } from "better-auth/react";
+import { customSessionClient } from "better-auth/client/plugins";
 import type { auth } from "./auth";
 
 export const authClient = createAuthClient<typeof auth>({
@@ -13,6 +14,7 @@ export const authClient = createAuthClient<typeof auth>({
   fetchOptions: {
     retry: 0,
   },
+  plugins: [customSessionClient<typeof auth>()],
 });
 
 export const { useSession, signIn, signUp, signOut } = authClient;

@@ -287,26 +287,20 @@ export function getExportTools(defineTool: DefineToolFn, userId: string, allowDe
     
             const me = await db.query.users.findFirst({
               where: eq(users.id, userId),
-              columns: { companyName: true, name: true, whatsappSignatureMode: true }
+              columns: { name: true }
             });
-            const sigMode = me?.whatsappSignatureMode ?? "name";
-            let senderName = "";
-            if (sigMode === "company") {
-              senderName = me?.companyName || me?.name || "";
-            } else if (sigMode === "name") {
-              senderName = me?.name || "";
-            }
+            const senderName = me?.name || "";
             
             const introPhrase = senderName 
-              ? (sigMode === "company" ? `Hola, somos ${senderName}. ` : `Hola, soy ${senderName}. `) 
+              ? `Hola, soy ${senderName}. ` 
               : "Hola. ";
     
             // Normalize phone: strip spaces, dashes; if not starting with +, add +34 (Spain default)
             const rawPhone = client.phone.replace(/[\s\-()]/g, "");
             const phone = rawPhone.startsWith("+") ? rawPhone.replace("+", "") : `34${rawPhone}`;
     
-            const signature = (sigMode !== "none" && senderName) 
-              ? (sigMode === "company" ? `Gracias de parte del equipo de ${senderName}.` : `Gracias de parte de ${senderName}.`) 
+            const signature = senderName 
+              ? `Gracias de parte de ${senderName}.` 
               : "Gracias.";
       
             let messageBody = "";

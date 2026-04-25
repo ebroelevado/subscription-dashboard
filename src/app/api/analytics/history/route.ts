@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     const clientId = params.get("clientId") ?? undefined;
     const dateFrom = params.get("dateFrom") ?? undefined;
     const dateTo = params.get("dateTo") ?? undefined;
+    const search = params.get("search") ?? undefined;
 
     // --- Income rows ---
     let incomeRows: UnifiedRow[] = [];
@@ -62,6 +63,9 @@ export async function GET(request: NextRequest) {
       if (clientId) conditions.push(eq(clientSubscriptions.clientId, clientId));
       if (dateFrom) conditions.push(gte(renewalLogs.paidOn, dateFrom));
       if (dateTo) conditions.push(lte(renewalLogs.paidOn, dateTo));
+      if (search) {
+        conditions.push(sql`(${clients.name} LIKE ${"%" + search + "%"} OR ${renewalLogs.notes} LIKE ${"%" + search + "%"})`);
+      }
 
       const [logs, cnt] = await Promise.all([
         db
@@ -132,6 +136,9 @@ export async function GET(request: NextRequest) {
       if (platformId) conditions.push(eq(plans.platformId, platformId));
       if (dateFrom) conditions.push(gte(platformRenewals.paidOn, dateFrom));
       if (dateTo) conditions.push(lte(platformRenewals.paidOn, dateTo));
+      if (search) {
+        conditions.push(sql`(${platformRenewals.notes} LIKE ${"%" + search + "%"} OR ${clients.name} LIKE ${"%" + search + "%"})`);
+      }
 
       const [renewals, cnt] = await Promise.all([
         db

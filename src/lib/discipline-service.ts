@@ -14,19 +14,8 @@ function diffCalendarDays(later: Date, earlier: Date) {
 }
 
 export async function getDisciplineAnalytics(userId: string, filters?: { clientId?: string; subscriptionId?: string; planId?: string }) {
-  // 1. User-configured daily score deduction for late payments
-  let dailyPenalty = 0.5;
-  try {
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { disciplinePenalty: true }
-    });
-    if (user?.disciplinePenalty !== undefined) {
-      dailyPenalty = user.disciplinePenalty;
-    }
-  } catch (e) {
-    console.error("[DisciplineService] Failed to fetch dailyPenalty:", e);
-  }
+  // Fixed daily score deduction for late payments
+  const dailyPenalty = 0.5;
 
   // 2. Fetch clients with dynamic filters
   const csConditions = [];

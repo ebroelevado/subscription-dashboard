@@ -236,7 +236,7 @@ async function undoMutation(
             id: item.id as string,
             clientId: item.clientId as string,
             subscriptionId: item.subscriptionId as string,
-            customPrice: amountToCents(item.customPrice as number),
+            customPrice: item.customPrice as number,
             activeUntil: toDateStr(item.activeUntil),
             joinedAt: toDateStr(item.joinedAt),
             leftAt: item.leftAt ? toDateStr(item.leftAt) : null,
@@ -272,7 +272,7 @@ async function undoMutation(
             notes: c.notes,
             createdAt: typeof c.createdAt === "string" ? c.createdAt : (c.createdAt as Date).toISOString(),
             disciplineScore: c.disciplineScore,
-            dailyPenalty: c.dailyPenalty !== null ? amountToCents(c.dailyPenalty) : null,
+            dailyPenalty: c.dailyPenalty,
             daysOverdue: c.daysOverdue,
             healthStatus: c.healthStatus,
           }).onConflictDoNothing();
@@ -284,7 +284,7 @@ async function undoMutation(
             id: cs.id,
             clientId: cs.clientId,
             subscriptionId: cs.subscriptionId,
-            customPrice: amountToCents(cs.customPrice),
+            customPrice: cs.customPrice,
             activeUntil: toDateStr(cs.activeUntil),
             joinedAt: toDateStr(cs.joinedAt),
             leftAt: cs.leftAt ? toDateStr(cs.leftAt) : null,
@@ -300,8 +300,8 @@ async function undoMutation(
           await tx.insert(renewalLogs).values({
             id: rl.id,
             clientSubscriptionId: rl.clientSubscriptionId,
-            amountPaid: amountToCents(rl.amountPaid),
-            expectedAmount: amountToCents(rl.expectedAmount),
+            amountPaid: rl.amountPaid,
+            expectedAmount: rl.expectedAmount,
             periodStart: toDateStr(rl.periodStart),
             periodEnd: toDateStr(rl.periodEnd),
             paidOn: toDateStr(rl.paidOn),
@@ -312,8 +312,8 @@ async function undoMutation(
             target: [renewalLogs.id],
             set: {
               clientSubscriptionId: rl.clientSubscriptionId,
-              amountPaid: amountToCents(rl.amountPaid),
-              expectedAmount: amountToCents(rl.expectedAmount),
+              amountPaid: rl.amountPaid,
+              expectedAmount: rl.expectedAmount,
               periodStart: toDateStr(rl.periodStart),
               periodEnd: toDateStr(rl.periodEnd),
               paidOn: toDateStr(rl.paidOn),
@@ -367,7 +367,7 @@ async function undoMutation(
               id: item.id as string,
               platformId: item.platformId as string,
               name: item.name as string,
-              cost: amountToCents(item.cost as number),
+              cost: item.cost as number,
               maxSeats: item.maxSeats as number | null,
               isActive: item.isActive as boolean,
               userId,
@@ -379,7 +379,7 @@ async function undoMutation(
         if (items && items[0]) {
           await db.update(plans).set({
             name: items[0].name as string,
-            cost: amountToCents(items[0].cost as number),
+            cost: items[0].cost as number,
             maxSeats: items[0].maxSeats as number | null,
             isActive: items[0].isActive as boolean,
           }).where(eq(plans.id, items[0].id as string));
@@ -415,7 +415,7 @@ async function undoMutation(
                   id: cs.id as string,
                   clientId: cs.clientId as string,
                   subscriptionId: cs.subscriptionId as string,
-                  customPrice: amountToCents(cs.customPrice as number),
+                  customPrice: cs.customPrice as number,
                   activeUntil: toDateStr(cs.activeUntil),
                   joinedAt: toDateStr(cs.joinedAt),
                   leftAt: cs.leftAt ? toDateStr(cs.leftAt) : null,
@@ -437,7 +437,7 @@ async function undoMutation(
                 await tx.insert(platformRenewals).values({
                   id: pr.id as string,
                   subscriptionId: pr.subscriptionId as string,
-                  amountPaid: amountToCents(pr.amountPaid as number),
+                  amountPaid: pr.amountPaid as number,
                   periodStart: toDateStr(pr.periodStart),
                   periodEnd: toDateStr(pr.periodEnd),
                   paidOn: toDateStr(pr.paidOn),
@@ -489,8 +489,8 @@ async function undoMutation(
             await tx.insert(renewalLogs).values({
               id: prev.id,
               clientSubscriptionId: prev.clientSubscriptionId,
-              amountPaid: amountToCents(prev.amountPaid),
-              expectedAmount: amountToCents(prev.expectedAmount),
+              amountPaid: prev.amountPaid,
+              expectedAmount: prev.expectedAmount,
               paidOn: toDateStr(prev.paidOn),
               periodStart: toDateStr(prev.periodStart),
               periodEnd: toDateStr(prev.periodEnd),
@@ -519,8 +519,8 @@ async function undoMutation(
 
         await runUndoInTransaction(async (tx) => {
           await tx.update(renewalLogs).set({
-            amountPaid: amountToCents(prev.amountPaid),
-            expectedAmount: amountToCents(prev.expectedAmount),
+            amountPaid: prev.amountPaid,
+            expectedAmount: prev.expectedAmount,
             clientSubscriptionId: prev.clientSubscriptionId,
             paidOn: toDateStr(prev.paidOn),
             periodStart: toDateStr(prev.periodStart),
@@ -563,7 +563,7 @@ async function undoMutation(
             await tx.insert(platformRenewals).values({
               id: prev.id,
               subscriptionId: prev.subscriptionId,
-              amountPaid: amountToCents(prev.amountPaid),
+              amountPaid: prev.amountPaid,
               periodStart: toDateStr(prev.periodStart),
               periodEnd: toDateStr(prev.periodEnd),
               paidOn: toDateStr(prev.paidOn),
@@ -587,7 +587,7 @@ async function undoMutation(
         await runUndoInTransaction(async (tx) => {
           await tx.update(platformRenewals).set({
             subscriptionId: prev.subscriptionId,
-            amountPaid: amountToCents(prev.amountPaid),
+            amountPaid: prev.amountPaid,
             paidOn: toDateStr(prev.paidOn),
             periodStart: toDateStr(prev.periodStart),
             periodEnd: toDateStr(prev.periodEnd),
@@ -653,8 +653,8 @@ async function undoMutation(
           await tx.insert(renewalLogs).values({
             id: prev.id,
             clientSubscriptionId: (source.clientSubscriptionId as string | null) ?? null,
-            amountPaid: amountToCents(Number(source.amountPaid)),
-            expectedAmount: amountToCents(Number(source.expectedAmount)),
+            amountPaid: Number(source.amountPaid),
+            expectedAmount: Number(source.expectedAmount),
             periodStart: String(source.periodStart),
             periodEnd: String(source.periodEnd),
             paidOn: String(source.paidOn),
@@ -666,7 +666,7 @@ async function undoMutation(
           await tx.insert(platformRenewals).values({
             id: prev.id,
             subscriptionId: String(source.subscriptionId),
-            amountPaid: amountToCents(Number(source.amountPaid)),
+            amountPaid: Number(source.amountPaid),
             periodStart: String(source.periodStart),
             periodEnd: String(source.periodEnd),
             paidOn: String(source.paidOn),

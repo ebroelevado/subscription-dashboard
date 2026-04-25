@@ -129,23 +129,11 @@ export async function executeMutation(
 
       const [updated] = await runMutationInTransaction(db, async (tx) => {
         return tx.update(users).set({
-          ...(pendingChanges.disciplinePenalty !== undefined
-            ? { disciplinePenalty: pendingChanges.disciplinePenalty as number }
-            : {}),
           ...(pendingChanges.currency
             ? { currency: pendingChanges.currency as string }
             : {}),
-          ...(pendingChanges.companyName !== undefined
-            ? { companyName: pendingChanges.companyName as string }
-            : {}),
-          ...(pendingChanges.whatsappSignatureMode !== undefined
-            ? { whatsappSignatureMode: pendingChanges.whatsappSignatureMode as string }
-            : {}),
         }).where(eq(users.id, userId)).returning({
-          disciplinePenalty: users.disciplinePenalty,
           currency: users.currency,
-          companyName: users.companyName,
-          whatsappSignatureMode: users.whatsappSignatureMode,
         });
       });
 
@@ -477,7 +465,7 @@ export async function executeMutation(
           ...(periodStartStr ? { periodStart: periodStartStr } : {}),
           ...(periodEndStr ? { periodEnd: periodEndStr } : {}),
           ...(nextClientSubscriptionId ? { clientSubscriptionId: nextClientSubscriptionId } : {}),
-          ...(nextExpectedAmount !== undefined ? { expectedAmount: amountToCents(nextExpectedAmount) } : {}),
+          ...(nextExpectedAmount !== undefined ? { expectedAmount: nextExpectedAmount } : {}),
         }).where(eq(renewalLogs.id, paymentId as string)).returning();
       });
 

@@ -6,9 +6,6 @@
 declare module "better-auth" {
   interface User {
     currency?: string;
-    disciplinePenalty?: number;
-    companyName?: string | null;
-    whatsappUseCompany?: boolean;
     plan?: string;
   }
 }

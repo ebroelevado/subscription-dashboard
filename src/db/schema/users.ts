@@ -30,12 +30,7 @@ export const users = sqliteTable("users", {
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
   currency: text("currency").default("EUR").notNull(),
-  disciplinePenalty: real("discipline_penalty").default(0.5).notNull(),
   usageCredits: real("usage_credits").default(0).notNull(),
-  companyName: text("company_name"),
-  whatsappSignatureMode: text("whatsapp_signature_mode")
-    .default("name")
-    .notNull(),
   plan: text("plan", { enum: userPlanValues }).default("FREE").notNull(),
   stripeCustomerId: text("stripe_customer_id").unique(),
   stripeSubscriptionId: text("stripe_subscription_id").unique(),

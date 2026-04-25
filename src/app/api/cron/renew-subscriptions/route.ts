@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { eq, and, lte } from "drizzle-orm";
-import { subscriptions, plans, platformRenewals } from "@/db/schema";
-import { addMonths, startOfDay } from "date-fns";
-import { amountToCents } from "@/lib/currency";
+import { and, lte, eq } from "drizzle-orm";
+import { subscriptions } from "@/db/schema";
+import { startOfDay } from "date-fns";
+import { renewPlatformSubscription } from "@/lib/services/renewals";
 
 export async function GET(req: Request) {
   try {
@@ -32,39 +32,24 @@ export async function GET(req: Request) {
         lte(subscriptions.activeUntil, todayStr),
         eq(subscriptions.status, "active"),
       ),
-      with: {
-        plan: true,
-      },
     });
 
     const results = [];
 
     for (const sub of subscriptionsToRenew) {
-      const nextExpiry = addMonths(new Date(sub.activeUntil), 1);
-      const nextExpiryStr = nextExpiry.toISOString().split("T")[0];
-
-      // Perform renewal in a transaction
-      const [renewal] = await db.transaction(async (tx) => {
-        // Create PlatformRenewal record (this feeds history and analytics)
-        const [pRenewal] = await tx.insert(platformRenewals).values({
-          subscriptionId: sub.id,
-          amountPaid: amountToCents(sub.plan.cost),
-          periodStart: sub.activeUntil,
-          periodEnd: nextExpiryStr,
-          paidOn: todayStr,
-        }).returning();
-
-        // Update Subscription expiry
-        await tx.update(subscriptions).set({ activeUntil: nextExpiryStr }).where(eq(subscriptions.id, sub.id));
-
-        return [pRenewal];
+      // Use the centralized service for renewal
+      // This ensures correct amount (cents) and consistent logging
+      const { subscription, log } = await renewPlatformSubscription({
+        subscriptionId: sub.id,
+        months: 1, // Auto-renewals are always 1 month
+        notes: "Auto-renewed by cron job",
       });
 
       results.push({
         id: sub.id,
         label: sub.label,
-        newExpiry: nextExpiry,
-        renewalId: renewal.id,
+        newExpiry: subscription.activeUntil,
+        renewalId: log.id,
       });
     }
 
