@@ -160,10 +160,12 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
                         
                         // Stress coloring only for manual payments
                         let variant: "default" | "secondary" | "destructive" | "outline" | "warning" | "success" = "outline";
-                        if (!sub.isAutopayable) {
+                        if (!sub.autoRenewal) {
                           if (status === "expired") variant = "destructive";
                           else if (status === "expiring") variant = "warning";
                           else variant = "success";
+                        } else {
+                          variant = "success";
                         }
 
                         const label = diff < 0 ? tc("daysOverdue", { count: Math.abs(diff) }) : tc("daysLeft", { count: diff });
@@ -173,17 +175,17 @@ export function SubscriptionsTable({ subscriptions, isLoading }: SubscriptionsTa
                             <Badge variant={variant} className="whitespace-nowrap truncate max-w-[140px]">
                               {label}
                             </Badge>
-                            {sub.isAutopayable && (
+                            {sub.autoRenewal && (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium uppercase tracking-wider whitespace-nowrap">
-                                      <RefreshCw className="size-2.5 text-primary animate-spin-slow" />
-                                      {t("isAutopayable")}
+                                    <div className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400 font-medium uppercase tracking-wider whitespace-nowrap">
+                                      <RefreshCw className="size-2.5 text-green-600 dark:text-green-400 animate-spin-slow" />
+                                      {t("autoRenewal")}
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    {t("autopayableTooltip")}
+                                    {t("autoRenewalTooltip")}
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>

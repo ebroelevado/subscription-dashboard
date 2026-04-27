@@ -71,23 +71,23 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
               }),
             ]);
     
-            const totalMRR = Number(mrrResult[0]?.total || 0);
+            const totalMRR = centsToAmount(mrrResult[0]?.total || 0);
             const totalClients = totalClientsResult[0]?.count || 0;
             const activeSeatsCount = activeSeatsResult[0]?.count || 0;
-            const totalCosts = activeSubs.reduce((sum, s) => sum + Number(s.plan.cost), 0);
+            const totalCosts = centsToAmount(activeSubs.reduce((sum, s) => sum + Number(s.plan.cost), 0));
     
             const perPlatform = platformsList.map((p) => {
-              let revenue = 0;
-              let costs = 0;
+              let revenueCents = 0;
+              let costsCents = 0;
               let activeSeats = 0;
               let activeSubsCount = 0;
     
               for (const plan of p.plans) {
                   for (const sub of plan.subscriptions) {
-                      costs += Number(plan.cost);
+                      costsCents += Number(plan.cost);
                       activeSubsCount++;
                       for (const cs of sub.clientSubscriptions) {
-                          revenue += Number(cs.customPrice);
+                          revenueCents += Number(cs.customPrice);
                           activeSeats++;
                       }
                   }
@@ -95,8 +95,8 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
     
               return {
                 platform: p.name,
-                revenue,
-                costs,
+                revenue: centsToAmount(revenueCents),
+                costs: centsToAmount(costsCents),
                 activeSeats,
                 activeSubscriptions: activeSubsCount,
               };
@@ -106,6 +106,9 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
               totalMRR,
               totalCosts,
               netProfit: totalMRR - totalCosts,
+              formattedMRR: formatCurrency(mrrResult[0]?.total || 0),
+              formattedCosts: formatCurrency(activeSubs.reduce((sum, s) => sum + Number(s.plan.cost), 0)),
+              formattedNetProfit: formatCurrency((Number(mrrResult[0]?.total || 0)) - (activeSubs.reduce((sum, s) => sum + Number(s.plan.cost), 0))),
               profitMargin: totalMRR > 0 ? `${((1 - totalCosts / totalMRR) * 100).toFixed(1)}%` : "N/A",
               totalClients,
               totalActiveSeats: activeSeatsCount,
@@ -235,8 +238,10 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
                 clientName: rl.clientSubscription?.client.name || "Unknown",
                 platform: rl.clientSubscription?.subscription.plan.platform.name || "Unknown",
                 subscription: rl.clientSubscription?.subscription.label || "N/A",
-                amountPaid: Number(rl.amountPaid),
-                expectedAmount: Number(rl.expectedAmount),
+                amountPaid: centsToAmount(rl.amountPaid),
+                formattedAmountPaid: formatCurrency(rl.amountPaid),
+                expectedAmount: centsToAmount(rl.expectedAmount),
+                formattedExpectedAmount: formatCurrency(rl.expectedAmount),
                 periodStart: rl.periodStart,
                 periodEnd: rl.periodEnd,
                 paidOn: rl.paidOn,
@@ -289,7 +294,7 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
                     totalPayments: stats.totalPayments || 0,
                     lateCount: stats.lateCount || 0,
                     onTimeRate: stats.onTimeRate ?? 100,
-                    pendingAmount: stats.pendingAmount || 0,
+                    pendingAmount: centsToAmount(stats.pendingAmount || 0),
                     isUnpaid: stats.isUnpaid || false
                 };
             });
@@ -341,7 +346,7 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
               const pendingChanges = { clientSubscriptionId, amountPaid, monthsRenewed, paidOn, notes };
               const { token, expiresAt } = await createMutationToken(userId, { toolName: "logPayment", action: "create", changes: pendingChanges, previousValues: { activeUntil: cs.activeUntil } });
               await db.update(mutationAuditLogs).set({ newValues: pendingChanges as any }).where(eq(mutationAuditLogs.token, token));
-              return { status: "requires_confirmation", __token: token, expiresAt,           message: `I'm ready to register a payment of ${formatCurrency(amountPaid, "EUR")} from ${cs.client.name}.`, pendingChanges };
+              return { status: "requires_confirmation", __token: token, expiresAt,           message: `I'm ready to register a payment of ${formatCurrency(amountToCents(amountPaid), "EUR")} from ${cs.client.name}.`, pendingChanges };
             },
           }),
       

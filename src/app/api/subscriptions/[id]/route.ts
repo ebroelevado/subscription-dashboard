@@ -38,6 +38,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return success({
       ...subscription,
+      masterUsername: await decryptCredential(subscription.masterUsername),
+      masterPassword: await decryptCredential(subscription.masterPassword),
       clientSubscriptions: await Promise.all(subscription.clientSubscriptions.map(async (seat) => ({
         ...seat,
         serviceUser: await decryptCredential(seat.serviceUser),
@@ -80,7 +82,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
       updateData.ownerId = data.ownerId;
     }
-    if (data.isAutopayable !== undefined) updateData.isAutopayable = data.isAutopayable;
+    if (data.autoRenewal !== undefined) updateData.autoRenewal = data.autoRenewal;
+    if (data.defaultPaymentNote !== undefined) updateData.defaultPaymentNote = data.defaultPaymentNote;
 
     // If planId is changing, enforce capacity check
     if (data.planId) {

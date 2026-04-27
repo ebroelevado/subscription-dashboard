@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { and, lte, eq } from "drizzle-orm";
-import { subscriptions } from "@/db/schema";
+import { subscriptions, clientSubscriptions } from "@/db/schema";
 import { startOfDay } from "date-fns";
-import { renewPlatformSubscription } from "@/lib/services/renewals";
+import { renewPlatformSubscription, renewClientSubscription } from "@/lib/services/renewals";
 
 export async function GET(req: Request) {
   try {
@@ -25,38 +25,64 @@ export async function GET(req: Request) {
     const today = startOfDay(new Date());
     const todayStr = today.toISOString().split("T")[0];
 
-    // 1. Find subscriptions that are autopayable and have expired
-    const subscriptionsToRenew = await db.query.subscriptions.findMany({
+    // 1. Find platform subscriptions that are autopayable and have expired
+    const platformToRenew = await db.query.subscriptions.findMany({
       where: and(
-        eq(subscriptions.isAutopayable, true),
+        eq(subscriptions.autoRenewal, true),
         lte(subscriptions.activeUntil, todayStr),
         eq(subscriptions.status, "active"),
       ),
     });
 
-    const results = [];
+    const platformResults = [];
 
-    for (const sub of subscriptionsToRenew) {
-      // Use the centralized service for renewal
-      // This ensures correct amount (cents) and consistent logging
+    for (const sub of platformToRenew) {
       const { subscription, log } = await renewPlatformSubscription({
         subscriptionId: sub.id,
-        months: 1, // Auto-renewals are always 1 month
-        notes: "Auto-renewed by cron job",
+        months: 1,
+        notes: "Auto-renewed by cron job (Platform)",
       });
 
-      results.push({
+      platformResults.push({
         id: sub.id,
         label: sub.label,
         newExpiry: subscription.activeUntil,
         renewalId: log.id,
+        type: "platform",
+      });
+    }
+
+    // 2. Find client subscriptions that are autopayable and have expired
+    const clientToRenew = await db.query.clientSubscriptions.findMany({
+      where: and(
+        eq(clientSubscriptions.autoRenewal, true),
+        lte(clientSubscriptions.activeUntil, todayStr),
+        eq(clientSubscriptions.status, "active"),
+      ),
+    });
+
+    const clientResults = [];
+
+    for (const seat of clientToRenew) {
+      const { seat: updatedSeat, log } = await renewClientSubscription({
+        clientSubscriptionId: seat.id,
+        months: 1,
+        notes: "Auto-renewed by cron job (Client)",
+      });
+
+      clientResults.push({
+        id: seat.id,
+        newExpiry: updatedSeat.activeUntil,
+        renewalId: log.id,
+        type: "client",
       });
     }
 
     return NextResponse.json({
       ok: true,
-      processed: results.length,
-      renewals: results,
+      processed: platformResults.length + clientResults.length,
+      platformRenewals: platformResults,
+      clientRenewals: clientResults,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown cron renewal error";

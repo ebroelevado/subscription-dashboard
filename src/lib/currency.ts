@@ -31,12 +31,26 @@ export function amountToCents(amount: number | string): number {
  * Format currency amount for display
  * @param cents - Integer amount in cents (e.g., 1050 for €10.50)
  * @param currency - Currency code (EUR, USD, GBP, CNY)
- * @returns Formatted string (e.g., "€10.50")
+ * @param locale - Locale for formatting (defaults to 'es-ES')
+ * @returns Formatted string (e.g., "10,50 €")
  */
-export function formatCurrency(cents: number | string, currency: string = 'EUR'): string {
-  const num = centsToAmount(cents);
-  const config = (CURRENCIES[currency as Currency] || CURRENCIES.EUR).symbol;
+export function formatCurrency(
+  cents: number | string, 
+  currency: string = 'EUR',
+  locale: string = 'es-ES'
+): string {
+  const amount = centsToAmount(cents);
   
-  // Format with 2 decimal places
-  return `${config}${num.toFixed(2)}`;
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch (e) {
+    // Fallback if locale/currency is invalid
+    const symbol = CURRENCIES[currency as Currency]?.symbol || '€';
+    return `${amount.toFixed(2)} ${symbol}`;
+  }
 }

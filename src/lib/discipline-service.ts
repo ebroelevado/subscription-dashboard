@@ -6,7 +6,7 @@ import { amountToCents } from "@/lib/currency";
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
 function toUtcMidnightTimestamp(value: Date) {
-  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+  return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
 function diffCalendarDays(later: Date, earlier: Date) {
@@ -14,8 +14,8 @@ function diffCalendarDays(later: Date, earlier: Date) {
 }
 
 export async function getDisciplineAnalytics(userId: string, filters?: { clientId?: string; subscriptionId?: string; planId?: string }) {
-  // Fixed daily score deduction for late payments
-  const dailyPenalty = 0.5;
+  // Organic daily score deduction (hits 0 at exactly 30 days)
+  const dailyPenalty = 10000 / 30;
 
   // 2. Fetch clients with dynamic filters
   const csConditions = [];
@@ -87,7 +87,7 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
       let totalRenewalLogs = 0;
 
       for (const seat of client.clientSubscriptions) {
-          const expiryDate = new Date(seat.activeUntil);
+          const expiryDate = new Date(seat.activeUntil + "T00:00:00");
           if (expiryDate < now && seat.status === "active") {
             const overdueDays = Math.max(0, diffCalendarDays(now, expiryDate));
               if (overdueDays > maxDaysOverdue) maxDaysOverdue = overdueDays;
@@ -99,9 +99,9 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
               cTotalPayments++;
               global.totalPayments++;
 
-                const diffDays = diffCalendarDays(new Date(log.paidOn), new Date(log.dueOn));
+                const diffDays = diffCalendarDays(new Date(log.paidOn + "T00:00:00"), new Date(log.dueOn + "T00:00:00"));
               
-              let paymentScore = 10;
+              let paymentScore = 10000;
               if (diffDays <= 0) {
                   cOnTimeCount++;
                   global.onTimeCount++;
@@ -112,7 +112,7 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
                   global.totalDaysLate += diffDays;
 
                   const deductions = diffDays * effectivePenaltyPerDay;
-                  paymentScore = Math.max(0, 10 - deductions);
+                  paymentScore = Math.max(0, 10000 - deductions);
               }
               cTotalScorePoints += paymentScore;
               global.totalScorePoints += paymentScore;
@@ -130,7 +130,7 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
       } else if (maxDaysOverdue > 0) {
           // Client has never paid, but is already overdue for their first payment/renewal
           const deductions = maxDaysOverdue * effectivePenaltyPerDay;
-          finalScore = Math.max(0, 10 - deductions);
+          finalScore = Math.max(0, 10000 - deductions);
       }
 
       let healthStatus: "Excellent" | "Good" | "Late" | "Overdue" | "Critical" | "New" = "New";
@@ -141,17 +141,17 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
       } else if (maxDaysOverdue > 0) {
           healthStatus = "Overdue";
       } else if (finalScore !== null) {
-          if (finalScore >= 9) healthStatus = "Excellent";
-          else if (finalScore >= 7) healthStatus = "Good";
+          if (finalScore >= 9000) healthStatus = "Excellent";
+          else if (finalScore >= 7000) healthStatus = "Good";
           else healthStatus = "Late";
       }
 
       if (finalScore === null && healthStatus === "New" && maxDaysOverdue === 0) {
-          finalScore = 10.0;
+          finalScore = 10000;
       }
 
       const dataToPersist = {
-          disciplineScore: finalScore !== null ? (Math.round(finalScore * 10) / 10).toString() : null,
+          disciplineScore: finalScore !== null ? Math.floor(finalScore).toString() : null,
           dailyPenalty: amountToCents(effectivePenaltyPerDay),
           daysOverdue: maxDaysOverdue,
           healthStatus: healthStatus
@@ -182,7 +182,7 @@ export async function getDisciplineAnalytics(userId: string, filters?: { clientI
     global: {
         avgDaysLate: global.lateCount > 0 ? Math.round((global.totalDaysLate / global.lateCount) * 10) / 10 : 0,
         onTimeRate: global.totalPayments > 0 ? Math.round((global.onTimeCount / global.totalPayments) * 1000) / 10 : 100,
-        score: global.totalRenewals > 0 ? Math.round((global.totalScorePoints / global.totalRenewals) * 10) / 10 : 10,
+        score: global.totalRenewals > 0 ? Math.floor(global.totalScorePoints / global.totalRenewals) : 10000,
         totalPayments: global.totalPayments,
         onTimeCount: global.onTimeCount,
         lateCount: global.lateCount

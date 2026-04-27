@@ -92,11 +92,8 @@ export default function RevenueChart({ data }: { data: TrendDataPoint[] }) {
         <YAxis
           tick={{ fontSize: 12 }}
           className="fill-muted-foreground"
-          width={46}
-          tickFormatter={(v) => {
-            const symbol = (CURRENCIES[currency as keyof typeof CURRENCIES] || CURRENCIES.EUR).symbol;
-            return `${symbol}${Number(v)}`;
-          }}
+          width={60}
+          tickFormatter={(v) => formatCurrency(v, currency)}
         />
         <Tooltip content={<ChartTooltip currency={currency} />} />
         <Area

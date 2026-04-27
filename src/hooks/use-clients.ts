@@ -22,6 +22,8 @@ export interface Client {
     status: string;
     customPrice: number;
     activeUntil: string;
+    subscriptionId: string;
+    autoRenewal: boolean;
     subscription: {
       id: string;
       label: string;
@@ -53,6 +55,8 @@ export interface ClientDetail {
     joinedAt: string;
     leftAt: string | null;
     activeUntil: string;
+    subscriptionId: string;
+    autoRenewal: boolean;
     subscription: {
       id: string;
       label: string;

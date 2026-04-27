@@ -392,7 +392,7 @@ export async function importUserData(
         masterUsername: s.masterUsername ?? null,
         masterPassword: s.masterPassword ?? null,
         ownerId,
-        isAutopayable: s.isAutopayable ?? true,
+        autoRenewal: s.autoRenewal ?? true,
         defaultPaymentNote: s.defaultPaymentNote ?? null,
         ...(s.createdAt && { createdAt: new Date(s.createdAt).toISOString() }),
       });
@@ -417,6 +417,7 @@ export async function importUserData(
         joinedAt: new Date(cs.joinedAt).toISOString().split("T")[0],
         leftAt: cs.leftAt ? new Date(cs.leftAt).toISOString().split("T")[0] : null,
         status: cs.status,
+        autoRenewal: (cs as any).autoRenewal ?? false,
         remainingDays: cs.remainingDays ?? null,
         serviceUser: (cs as any).serviceUser ?? null,
         servicePassword: (cs as any).servicePassword ?? null,

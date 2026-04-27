@@ -414,6 +414,8 @@ export default function SubscriptionDetailPage({
       {/* Renew Client */}
       <RenewClientDialog
         seat={renewClientSeat}
+        defaultPaymentNote={sub.defaultPaymentNote}
+        autoRenewal={sub.autoRenewal}
         open={!!renewClientSeat}
         onOpenChange={(open) => {
           if (!open) setRenewClientSeat(null);

@@ -21,6 +21,7 @@ export async function GET() {
       activePlanCount,
       clientCount,
       activeSubscriptionCount,
+      subscriptionsList,
       monthlyCostAgg,
       allActiveSeats,
       thisMonthRevenueAgg,
@@ -31,6 +32,14 @@ export async function GET() {
       db.$count(clients, eq(clients.userId, userId)),
       // Count only — no need to load full rows
       db.$count(subscriptions, eq(subscriptions.userId, userId)),
+      db.query.subscriptions.findMany({
+        where: eq(subscriptions.userId, userId),
+        with: {
+          plan: {
+            with: { platform: true }
+          }
+        }
+      }),
       // SUM plan.cost for active subscriptions (replaces findMany + reduce)
       db.select({
         total: sql<string>`COALESCE(SUM(${plans.cost}), 0)`,
@@ -45,12 +54,12 @@ export async function GET() {
       db.query.clientSubscriptions.findMany({
         where: eq(clientSubscriptions.status, "active"),
         with: {
-          client: {
-            columns: { id: true, name: true, phone: true },
-          },
-          subscription: {
-            columns: { id: true, label: true, userId: true },
-            with: {
+        client: {
+          columns: { id: true, name: true, phone: true },
+        },
+        subscription: {
+          columns: { id: true, label: true, userId: true },
+          with: {
               plan: {
                 columns: { id: true, name: true },
                 with: {
@@ -103,6 +112,7 @@ export async function GET() {
       clientPhone: string | null;
       overdueCount: number;
       expiringCount: number;
+      autoRenewalCount: number;
       okayCount: number;
       totalCount: number;
       maxDaysOverdue: number;
@@ -134,6 +144,7 @@ export async function GET() {
           clientPhone: s.client.phone,
           overdueCount: 0,
           expiringCount: 0,
+          autoRenewalCount: 0,
           okayCount: 0,
           totalCount: 0,
           maxDaysOverdue: 0,
@@ -143,6 +154,9 @@ export async function GET() {
 
       const client = clientMap.get(s.client.id)!;
       client.totalCount++;
+      if (s.autoRenewal) {
+        client.autoRenewalCount++;
+      }
       if (status === "overdue") {
         client.overdueCount++;
         client.maxDaysOverdue = Math.max(client.maxDaysOverdue, daysOverdue);
@@ -177,6 +191,20 @@ export async function GET() {
       thisMonthProfit: thisMonthRevenue - thisMonthCost,
       overdueGroups,
       expiringSoonGroups,
+      expiringSubscriptions: subscriptionsList
+        .filter(s => {
+          const activeUntilDate = new Date(s.activeUntil);
+          return activeUntilDate >= today && activeUntilDate <= soonThreshold;
+        })
+        .map(s => ({
+          id: s.id,
+          label: s.label,
+          activeUntil: s.activeUntil,
+          autoRenewal: s.autoRenewal,
+          planName: s.plan.name,
+          platformName: s.plan.platform.name,
+          daysLeft: Math.ceil((new Date(s.activeUntil).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+        }))
     });
   });
 }

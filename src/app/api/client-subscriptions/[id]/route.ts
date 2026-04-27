@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
 import { db } from "@/db";
 import { clientSubscriptions, subscriptions, renewalLogs, plans, platforms } from "@/db/schema";
 import { success, error, withErrorHandling } from "@/lib/api-utils";
@@ -71,6 +71,35 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Handle credentials (stored on ClientSubscription, not Client)
     if (data.serviceUser !== undefined) updateData.serviceUser = await encryptCredential(data.serviceUser);
     if (data.servicePassword !== undefined) updateData.servicePassword = await encryptCredential(data.servicePassword);
+    
+    if (data.subscriptionId !== undefined && data.subscriptionId !== existing.subscriptionId) {
+      // 1. Verify ownership of the target subscription
+      const targetSub = await db.query.subscriptions.findFirst({
+        where: and(eq(subscriptions.id, data.subscriptionId), eq(subscriptions.userId, userId)),
+        with: { plan: { columns: { maxSeats: true } } },
+      });
+      if (!targetSub) return error("Target subscription not found or unauthorized", 404);
+
+      // 2. Capacity check for target subscription
+      if (targetSub.plan.maxSeats !== null) {
+        const [{ currentOccupied }] = await db
+          .select({ currentOccupied: count() })
+          .from(clientSubscriptions)
+          .where(and(
+            eq(clientSubscriptions.subscriptionId, data.subscriptionId),
+            eq(clientSubscriptions.status, "active")
+          ));
+        if (currentOccupied >= targetSub.plan.maxSeats) {
+          return error(
+            `Target subscription is full (${currentOccupied}/${targetSub.plan.maxSeats} seats occupied)`,
+            409
+          );
+        }
+      }
+      updateData.subscriptionId = data.subscriptionId;
+    }
+
+    if (data.autoRenewal !== undefined) updateData.autoRenewal = data.autoRenewal;
 
     if (data.status !== undefined && data.status !== existing.status) {
       updateData.status = data.status;

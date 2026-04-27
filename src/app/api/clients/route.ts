@@ -21,6 +21,7 @@ export async function GET() {
                   status: true,
                   customPrice: true,
                   activeUntil: true,
+                  subscriptionId: true,
               },
               with: {
                   subscription: {
@@ -55,6 +56,7 @@ export async function GET() {
         clientSubscriptions: (client.clientSubscriptions || []).map((cs: any) => ({
           id: cs.id,
           status: cs.status,
+          subscriptionId: cs.subscriptionId,
           customPrice: Number(cs.customPrice || 0),
           activeUntil: cs.activeUntil || cs.subscription?.activeUntil || client.createdAt,
           subscription: cs.subscription ? {

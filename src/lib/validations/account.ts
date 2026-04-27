@@ -43,7 +43,7 @@ const subscriptionImportSchema = z.object({
   masterUsername: z.string().max(200).nullable().optional(),
   masterPassword: z.string().max(500).nullable().optional(),
   ownerId: z.string().nullable().optional(),
-  isAutopayable: z.boolean().optional().default(true),
+  autoRenewal: z.boolean().optional().default(true),
   defaultPaymentNote: z.string().nullable().optional(),
 });
 
@@ -68,6 +68,7 @@ const clientSubscriptionImportSchema = z.object({
   joinedAt: z.string(),
   leftAt: z.string().nullable().optional(),
   status: z.enum(["active", "paused"]).default("active"),
+  autoRenewal: z.boolean().optional().default(false),
   remainingDays: z.number().int().nullable().optional(),
   serviceUser: z.string().max(100).nullable().optional(),
   servicePassword: z.string().max(100).nullable().optional(),

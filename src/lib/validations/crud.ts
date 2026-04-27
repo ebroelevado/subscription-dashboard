@@ -34,10 +34,10 @@ export const createSubscriptionSchema = z.object({
   startDate: z.string().date().transform((val) => new Date(val)),
   durationMonths: z.coerce.number().int().positive(),
   status: z.enum(["active", "paused"]).optional().default("active"),
-  masterUsername: z.string().max(100).nullable().optional(),
-  masterPassword: z.string().max(100).nullable().optional(),
+  masterUsername: z.string().max(500).nullable().optional(),
+  masterPassword: z.string().max(500).nullable().optional(),
   ownerId: z.string().uuid().nullable().optional(),
-  isAutopayable: z.boolean().optional().default(true),
+  autoRenewal: z.boolean().optional().default(true),
   isPaid: z.boolean().optional().default(false),
   paymentNote: z.string().nullable().optional(),
   defaultPaymentNote: z.string().nullable().optional(),
@@ -77,6 +77,7 @@ export const createClientSubscriptionSchema = z.object({
     .default("active"),
   isPaid: z.boolean().optional().default(false),
   paymentNote: z.string().nullable().optional(),
+  autoRenewal: z.boolean().optional().default(false),
 });
 
 export type CreateClientSubscriptionInput = z.infer<
@@ -154,6 +155,8 @@ export const updateSeatSchema = z.object({
   activeUntil: z.string().date().transform((val) => new Date(val)).optional(),
   serviceUser: z.string().max(100).nullable().optional(),
   servicePassword: z.string().max(100).nullable().optional(),
+  subscriptionId: z.string().uuid().optional(),
+  autoRenewal: z.boolean().optional(),
 });
 
 export type UpdateSeatInput = z.infer<typeof updateSeatSchema>;

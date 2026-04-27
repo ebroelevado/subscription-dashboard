@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
         lateCount: 0,
         onTimeRate: 100,
         avgDaysLate: 0,
-        score: 10
+        score: 10000
       });
     }
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       lateCount: stats.lateCount,
       onTimeRate: stats.onTimeRate,
       avgDaysLate: stats.avgDaysLate,
-      score: Number(stats.score ?? 10),
+      score: Number(stats.score ?? 10000),
     });
   });
 }

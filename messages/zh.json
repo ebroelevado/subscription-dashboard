@@ -100,6 +100,7 @@
     "dashboardShortcut": "仪表板",
     "newChat": "新对话",
     "autopayable": "自动续费",
+    "autoRenewal": "自动续约",
     "totalPayments": "总计付款",
     "overdue": "逾期",
     "expiring": "即将到期",
@@ -232,7 +233,9 @@
     "viewSubscriptions": "查看订阅",
     "viewClients": "查看客户",
     "viewPlans": "查看计划",
-    "askAssistant": "询问助手"
+    "askAssistant": "询问助手",
+    "platformSubscriptions": "平台订阅",
+    "clientSeats": "客户席位"
   },
   "platforms": {
     "title": "平台",
@@ -328,9 +331,9 @@
     "cancelling": "正在取消…",
     "noActiveSeats": "无活跃席位",
     "renewSeat": "续约席位",
-    "isAutopayable": "自动续约",
-    "autopayableTooltip": "如果开启，订阅将在到期时自动续约",
-    "autopayableDescription": "如果该服务从您的卡或账户自动扣款，请开启此选项。",
+    "autoRenewal": "自动续约",
+    "autoRenewalTooltip": "如果开启，订阅将在到期时自动续约",
+    "autoRenewalDescription": "如果该服务从您的卡或账户自动扣款，请开启此选项。",
     "masterUsername": "主账号用户名",
     "masterPassword": "主账号密码",
     "owner": "所有者 (客户)",

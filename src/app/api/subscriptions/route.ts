@@ -6,7 +6,7 @@ import { createSubscriptionSchema } from "@/lib/validations";
 import { success, withErrorHandling, error } from "@/lib/api-utils";
 import { amountToCents } from "@/lib/currency";
 import { checkSubscriptionLimit } from "@/lib/saas-limits";
-import { encryptCredential } from "@/lib/credential-encryption";
+import { decryptCredential, encryptCredential } from "@/lib/credential-encryption";
 
 // GET /api/subscriptions — List all subscriptions for the authenticated user (optionally filtered by planId)
 export async function GET(request: NextRequest) {
@@ -30,11 +30,18 @@ export async function GET(request: NextRequest) {
         },
         clientSubscriptions: {
           where: eq(clientSubscriptions.status, "active"),
-          columns: { id: true, customPrice: true, status: true },
+          columns: { id: true, customPrice: true, status: true, subscriptionId: true },
         },
       },
     });
-    return success(subsList);
+
+    const decryptedList = await Promise.all(subsList.map(async (sub) => ({
+      ...sub,
+      masterUsername: await decryptCredential(sub.masterUsername),
+      masterPassword: await decryptCredential(sub.masterPassword),
+    })));
+
+    return success(decryptedList);
   });
 }
 
@@ -85,7 +92,7 @@ export async function POST(request: NextRequest) {
         status: data.status,
         masterUsername: data.masterUsername,
         masterPassword: await encryptCredential(data.masterPassword),
-        isAutopayable: data.isAutopayable,
+        autoRenewal: data.autoRenewal,
         defaultPaymentNote,
         userId,
         planId: data.planId,

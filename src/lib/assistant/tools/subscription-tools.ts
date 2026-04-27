@@ -73,23 +73,24 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
               : subsList;
     
             const results = filtered.map((sub) => {
-              const monthlyRevenue = sub.clientSubscriptions.reduce(
+              const monthlyRevenue = centsToAmount(sub.clientSubscriptions.reduce(
                 (sum, cs) => sum + Number(cs.customPrice),
                 0,
-              );
+              ));
               const seatsUsed = sub.clientSubscriptions.length;
+              const planCost = centsToAmount(Number(sub.plan.cost));
               return {
                 id: sub.id,
                 label: sub.label,
                 platform: sub.plan.platform.name,
                 plan: sub.plan.name,
-                planCost: Number(sub.plan.cost),
+                planCost,
                 maxSeats: sub.plan.maxSeats,
                 seatsUsed,
                 status: sub.status,
                 activeUntil: sub.activeUntil,
                 monthlyRevenue,
-                profit: monthlyRevenue - Number(sub.plan.cost),
+                profit: monthlyRevenue - planCost,
                 owner: sub.owner?.name || null,
                 masterUsername: sub.masterUsername,
               };
@@ -159,7 +160,7 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
               label: sub.label,
               platform: sub.plan.platform.name,
               plan: sub.plan.name,
-              planCost: Number(sub.plan.cost),
+              planCost: centsToAmount(Number(sub.plan.cost)),
               maxSeats: sub.plan.maxSeats,
               status: sub.status,
               startDate: sub.startDate,
@@ -172,7 +173,7 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
                 clientName: cs.client.name,
                 clientPhone: cs.client.phone,
                 clientId: cs.client.id,
-                price: Number(cs.customPrice),
+                price: centsToAmount(Number(cs.customPrice)),
                 status: cs.status,
                 serviceUser: cs.serviceUser,
                 servicePassword: cs.servicePassword,
@@ -180,7 +181,7 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
                 joinedAt: cs.joinedAt,
               })),
               recentPlatformPayments: sub.platformRenewals.map((pr) => ({
-                amount: Number(pr.amountPaid),
+                amount: centsToAmount(Number(pr.amountPaid)),
                 periodStart: pr.periodStart,
                 periodEnd: pr.periodEnd,
                 paidOn: pr.paidOn,
@@ -229,7 +230,7 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
                       startDate: sub.startDate,
                       activeUntil: sub.activeUntil,
                       status: sub.status,
-                      isAutopayable: sub.isAutopayable,
+                      autoRenewal: sub.autoRenewal,
                       createdAt: sub.createdAt,
                       masterUsername: sub.masterUsername ?? null,
                       masterPassword: sub.masterPassword ?? null,

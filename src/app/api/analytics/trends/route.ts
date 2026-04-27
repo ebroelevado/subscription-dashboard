@@ -127,14 +127,14 @@ export async function GET(req: NextRequest) {
 
     const renewalRows = renewalLogsResult || [];
     for (const row of renewalRows) {
-      const key = dateToKey(new Date(row.paid_on), scale);
+      const key = dateToKey(new Date(row.paid_on + "T00:00:00"), scale);
       const bucket = bucketMap.get(key);
       if (bucket) bucket.revenue += Number(row.amount_paid);
     }
 
     const platformRows = platformRenewalsResult || [];
     for (const row of platformRows) {
-      const key = dateToKey(new Date(row.paid_on), scale);
+      const key = dateToKey(new Date(row.paid_on + "T00:00:00"), scale);
       const bucket = bucketMap.get(key);
       if (bucket) bucket.cost += Number(row.amount_paid);
     }

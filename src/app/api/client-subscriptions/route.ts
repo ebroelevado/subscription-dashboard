@@ -137,6 +137,7 @@ export async function POST(request: NextRequest) {
         activeUntil: activeUntil.toISOString().split("T")[0],
         joinedAt: startDate.toISOString().split("T")[0],
         status: "active",
+        autoRenewal: data.autoRenewal,
         serviceUser: await encryptCredential(data.serviceUser),
         servicePassword: await encryptCredential(data.servicePassword),
       }).returning();

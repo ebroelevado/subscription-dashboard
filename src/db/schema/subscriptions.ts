@@ -25,7 +25,7 @@ export const subscriptions = sqliteTable(
     masterPassword: text("master_password"),
     masterUsername: text("master_username"),
     ownerId: text("owner_id"),
-    isAutopayable: integer("is_autopayable", { mode: "boolean" }).default(true).notNull(),
+    autoRenewal: integer("auto_renewal", { mode: "boolean" }).default(true).notNull(),
     defaultPaymentNote: text("default_payment_note").default("como pago"),
   },
   (table) => [index("subscriptions_user_id_index").on(table.userId)],

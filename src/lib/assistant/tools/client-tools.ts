@@ -180,11 +180,11 @@ export function getClientTools(defineTool: DefineToolFn, userId: string, allowDe
                 plan: cs.subscription.plan.name,
                 subscriptionLabel: cs.subscription.label,
                 status: cs.status,
-                pricePerMonth: Number(cs.customPrice),
+                pricePerMonth: centsToAmount(cs.customPrice),
                 activeUntil: cs.activeUntil,
                 joinedAt: cs.joinedAt,
                 recentPayments: cs.renewalLogs.map((rl) => ({
-                  amount: Number(rl.amountPaid),
+                  amount: centsToAmount(rl.amountPaid),
                   periodStart: rl.periodStart,
                   periodEnd: rl.periodEnd,
                   paidOn: rl.paidOn,

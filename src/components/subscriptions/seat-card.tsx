@@ -77,8 +77,8 @@ interface SeatCardProps {
     customPrice: number;
     activeUntil: string;
     joinedAt: string;
-    leftAt: string | null;
     status: "active" | "paused";
+    subscriptionId: string;
     client: {
       id: string;
       name: string;

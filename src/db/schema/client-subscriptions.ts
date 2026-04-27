@@ -29,6 +29,7 @@ export const clientSubscriptions = sqliteTable(
     remainingDays: integer("remaining_days"),
     servicePassword: text("service_password"),
     serviceUser: text("service_user"),
+    autoRenewal: integer("auto_renewal", { mode: "boolean" }).default(false).notNull(),
   },
   (table) => [
     unique().on(table.clientId, table.subscriptionId),

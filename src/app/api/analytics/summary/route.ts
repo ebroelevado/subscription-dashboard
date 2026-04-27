@@ -1,7 +1,8 @@
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, between } from "drizzle-orm";
 import { db } from "@/db";
 import { renewalLogs, clientSubscriptions, subscriptions, platformRenewals } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
+import { startOfMonth, endOfMonth, format } from "date-fns";
 
 // GET /api/analytics/summary — Core KPIs scoped to the current user
 export async function GET() {
@@ -9,8 +10,20 @@ export async function GET() {
     const { getAuthUserId } = await import("@/lib/auth-utils");
     const userId = await getAuthUserId();
 
-    const [revenueAgg, costAgg, uniqueClients, totalPayments, onTimeCount] =
-      await Promise.all([
+    const now = new Date();
+    const startOfCurrentMonthStr = format(startOfMonth(now), "yyyy-MM-dd");
+    const endOfCurrentMonthStr = format(endOfMonth(now), "yyyy-MM-dd");
+
+    const [
+      revenueAgg, 
+      costAgg, 
+      uniqueClients, 
+      totalPayments, 
+      onTimeCount,
+      monthlyRevenueAgg,
+      monthlyCostAgg,
+      monthlyUniqueClients
+    ] = await Promise.all([
         db
           .select({ total: sql<string>`COALESCE(SUM(${renewalLogs.amountPaid}), 0)` })
           .from(renewalLogs)
@@ -45,6 +58,38 @@ export async function GET() {
               sql`${renewalLogs.paidOn} <= ${renewalLogs.dueOn}`
             )
           ),
+        db
+          .select({ total: sql<string>`COALESCE(SUM(${renewalLogs.amountPaid}), 0)` })
+          .from(renewalLogs)
+          .innerJoin(clientSubscriptions, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              between(renewalLogs.paidOn, startOfCurrentMonthStr, endOfCurrentMonthStr)
+            )
+          ),
+        db
+          .select({ total: sql<string>`COALESCE(SUM(${platformRenewals.amountPaid}), 0)` })
+          .from(platformRenewals)
+          .innerJoin(subscriptions, eq(platformRenewals.subscriptionId, subscriptions.id))
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              between(platformRenewals.paidOn, startOfCurrentMonthStr, endOfCurrentMonthStr)
+            )
+          ),
+        db
+          .selectDistinct({ clientId: clientSubscriptions.clientId })
+          .from(clientSubscriptions)
+          .innerJoin(subscriptions, eq(clientSubscriptions.subscriptionId, subscriptions.id))
+          .innerJoin(renewalLogs, eq(renewalLogs.clientSubscriptionId, clientSubscriptions.id))
+          .where(
+            and(
+              eq(subscriptions.userId, userId),
+              between(renewalLogs.paidOn, startOfCurrentMonthStr, endOfCurrentMonthStr)
+            )
+          ),
       ]);
 
     const totalRevenue = Number(revenueAgg[0]?.total ?? 0);
@@ -58,6 +103,12 @@ export async function GET() {
     const onTimeRate =
       totalPaymentsNum > 0 ? (onTimeCountNum / totalPaymentsNum) * 100 : 100;
 
+    const monthlyRevenue = Number(monthlyRevenueAgg[0]?.total ?? 0);
+    const monthlyCost = Number(monthlyCostAgg[0]?.total ?? 0);
+    const monthlyNetMargin = monthlyRevenue - monthlyCost;
+    const monthlyUniqueClientCount = monthlyUniqueClients.length;
+    const monthlyArpu = monthlyUniqueClientCount > 0 ? monthlyRevenue / monthlyUniqueClientCount : 0;
+
     return success({
       totalRevenue,
       totalCost,
@@ -68,6 +119,11 @@ export async function GET() {
       onTimeCount: onTimeCountNum,
       lateCount: totalPaymentsNum - onTimeCountNum,
       uniqueClientCount,
+      monthlyRevenue,
+      monthlyCost,
+      monthlyNetMargin,
+      monthlyArpu,
+      monthlyUniqueClientCount
     });
   });
 }

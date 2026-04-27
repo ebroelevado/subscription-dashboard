@@ -115,6 +115,7 @@ export default function DashboardPage() {
   // Groups are now provided pre-calculated by the backend
   const overdueGroups = stats.overdueGroups || [];
   const expiringSoonGroups = stats.expiringSoonGroups || [];
+  const expiringSubscriptions = (stats as any).expiringSubscriptions || [];
 
   return (
     <div className="space-y-6">
@@ -310,57 +311,120 @@ export default function DashboardPage() {
             )}
           </CardHeader>
           <CardContent>
-            {expiringSoonGroups.length === 0 ? (
+            {expiringSoonGroups.length === 0 && expiringSubscriptions.length === 0 ? (
               <div className="py-6 text-center">
                 <p className="text-muted-foreground">
                   {t("noExpiringSoon")}
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {expiringSoonGroups.map((group) => (
-                  <div
-                    key={group.clientId}
-                    className="flex items-center justify-between rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-900/40 dark:bg-yellow-950/20 px-3 py-2"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">
-                        {group.clientName}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground">
-                          {group.totalCount} {group.totalCount === 1 ? tc("subscription") : tc("subscriptions")}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1 max-w-[120px]">
-                          {Array.from({ length: group.overdueCount }).map((_, i) => (
-                            <span key={`ov-${i}`} className="size-1.5 rounded-full bg-red-500 animate-pulse" title={tc("overdue")} />
-                          ))}
-                          {Array.from({ length: group.expiringCount }).map((_, i) => (
-                            <span key={`ex-${i}`} className="size-1.5 rounded-full bg-yellow-500" title={tc("expiring")} />
-                          ))}
-                          {Array.from({ length: group.okayCount }).map((_, i) => (
-                            <span key={`ok-${i}`} className="size-1.5 rounded-full bg-green-500" title={tc("active")} />
-                          ))}
+              <div className="space-y-3">
+                {/* Platform Subscriptions First */}
+                {expiringSubscriptions.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                      {t("platformSubscriptions")}
+                    </p>
+                    {expiringSubscriptions.map((sub: any) => (
+                      <div
+                        key={sub.id}
+                        className="flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/20 px-3 py-2"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium">
+                            {sub.label} ({sub.platformName})
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {sub.planName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {sub.autoRenewal ? (
+                            <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700 text-white border-none">
+                              {tc("autoRenewal")}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              {sub.daysLeft === 0
+                                ? tc("today")
+                                : tc("daysLeft", { count: sub.daysLeft })}
+                            </Badge>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            asChild
+                            className="size-8"
+                          >
+                            <Link href="/dashboard/subscriptions">
+                              <ArrowRight className="size-3.5" />
+                            </Link>
+                          </Button>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
-                        {group.minDaysLeft === 0
-                          ? tc("today")
-                          : tc("daysLeft", { count: group.minDaysLeft })}
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setSheetClientId(group.clientId)}
-                        className="size-8"
-                      >
-                        <ArrowRight className="size-3.5" />
-                      </Button>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* Client Seats */}
+                {expiringSoonGroups.length > 0 && (
+                  <div className="space-y-2">
+                    {expiringSubscriptions.length > 0 && (
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1 mt-2">
+                        {t("clientSeats")}
+                      </p>
+                    )}
+                    {expiringSoonGroups.map((group) => (
+                      <div
+                        key={group.clientId}
+                        className="flex items-center justify-between rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-900/40 dark:bg-yellow-950/20 px-3 py-2"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium">
+                            {group.clientName}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground">
+                              {group.totalCount} {group.totalCount === 1 ? tc("subscription") : tc("subscriptions")}
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1 max-w-[120px]">
+                              {Array.from({ length: group.overdueCount }).map((_, i) => (
+                                <span key={`ov-${i}`} className="size-1.5 rounded-full bg-red-500 animate-pulse" title={tc("overdue")} />
+                              ))}
+                              {Array.from({ length: group.expiringCount }).map((_, i) => (
+                                <span key={`ex-${i}`} className="size-1.5 rounded-full bg-yellow-500" title={tc("expiring")} />
+                              ))}
+                              {Array.from({ length: group.okayCount }).map((_, i) => (
+                                <span key={`ok-${i}`} className="size-1.5 rounded-full bg-green-500" title={tc("active")} />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {group.autoRenewalCount > 0 ? (
+                            <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700 text-white border-none">
+                              {tc("autoRenewal")}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              {group.minDaysLeft === 0
+                                ? tc("today")
+                                : tc("daysLeft", { count: group.minDaysLeft })}
+                            </Badge>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSheetClientId(group.clientId)}
+                            className="size-8"
+                          >
+                            <ArrowRight className="size-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

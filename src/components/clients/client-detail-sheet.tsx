@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useClient } from "@/hooks/use-clients";
 import { useRenewClient } from "@/hooks/use-renewals";
 import { useDiscipline } from "@/hooks/use-analytics";
+import { useUpdateSeat } from "@/hooks/use-seats";
 import { BulkRenewDialog, type BulkRenewSeat } from "@/components/clients/bulk-renew-dialog";
 import { getScoreColor, getScoreLabel } from "@/lib/utils";
 import {
@@ -13,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -68,6 +70,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
   const { data: client, isLoading } = useClient(clientId ?? undefined);
   const { data: discipline } = useDiscipline({ clientId: clientId ?? undefined });
   const renewMut = useRenewClient();
+  const updateSeatMut = useUpdateSeat();
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const locale = useLocale();
   const [lang, setLang] = useState<Lang>((locale === "en" || locale === "zh" ? locale : "es") as Lang);
@@ -408,6 +411,21 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                           } className="text-[10px] h-5">
                             {tc(cs.status)}
                           </Badge>
+                        </div>
+
+                        {/* Auto-renewal toggle */}
+                        <div className="flex items-center justify-between py-1 border-y border-dashed border-muted">
+                          <Label htmlFor={`auto-renew-${cs.id}`} className="text-[10px] font-medium text-muted-foreground uppercase cursor-pointer">
+                            {tc("autoRenewal")}
+                          </Label>
+                          <Switch
+                            id={`auto-renew-${cs.id}`}
+                            checked={cs.autoRenewal}
+                            onCheckedChange={(checked) => {
+                              updateSeatMut.mutate({ id: cs.id, autoRenewal: checked });
+                            }}
+                            className="scale-75"
+                          />
                         </div>
 
                         {/* Price & Expiry */}

@@ -17,6 +17,11 @@ export interface AnalyticsSummary {
   onTimeCount: number;
   lateCount: number;
   uniqueClientCount: number;
+  monthlyRevenue: number;
+  monthlyCost: number;
+  monthlyNetMargin: number;
+  monthlyArpu: number;
+  monthlyUniqueClientCount: number;
 }
 
 export interface HistoryRow {
@@ -58,13 +63,16 @@ export interface ClientAnalytics {
   clientId: string;
   clientName: string;
   totalPaid: number;
+  monthlyPaid: number;
   renewalCount: number;
   weight: number;
+  monthlyWeight: number;
 }
 
 export interface ClientsResponse {
   clients: ClientAnalytics[];
   totalRevenue: number;
+  totalMonthlyRevenue: number;
 }
 
 export interface BreakEvenEntry {

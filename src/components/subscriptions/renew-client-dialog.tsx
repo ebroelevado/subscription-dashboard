@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRenewClient } from "@/hooks/use-renewals";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { addMonths, subMonths, startOfDay, format } from "date-fns";
 import { AlertTriangle } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
-import { CURRENCIES, centsToAmount, formatCurrency } from "@/lib/currency";
+import { CURRENCIES, centsToAmount, amountToCents, formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
 interface RenewClientDialogProps {
@@ -21,17 +21,25 @@ interface RenewClientDialogProps {
     activeUntil: string;
     client: { name: string };
   } | null;
+  defaultPaymentNote?: string | null;
+  autoRenewal?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function RenewClientDialog({ seat, open, onOpenChange }: RenewClientDialogProps) {
+export function RenewClientDialog({ 
+  seat, 
+  defaultPaymentNote, 
+  autoRenewal, 
+  open, 
+  onOpenChange 
+}: RenewClientDialogProps) {
   const renewMut = useRenewClient();
   const tc = useTranslations("common");
-  const [amount, setAmount] = useState(0);
-  const [months, setMonths] = useState(1);
-  const [paidOn, setPaidOn] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const [notes, setNotes] = useState("");
+  const [amount, setAmount] = React.useState(0);
+  const [months, setMonths] = React.useState(1);
+  const [paidOn, setPaidOn] = React.useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [notes, setNotes] = React.useState("");
 
   const price = seat ? centsToAmount(seat.customPrice) : 0;
 
@@ -85,14 +93,26 @@ export function RenewClientDialog({ seat, open, onOpenChange }: RenewClientDialo
   };
 
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && seat) {
+    if (!isOpen) {
+      onOpenChange(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (open && seat) {
       setAmount(Number(seat.customPrice) / 100);
       setMonths(1);
       setPaidOn(format(new Date(), "yyyy-MM-dd"));
-      setNotes("");
+      
+      let initialNote = defaultPaymentNote || "";
+      if (autoRenewal) {
+        initialNote = initialNote 
+          ? `Renovación automática - ${initialNote}` 
+          : "Renovación automática";
+      }
+      setNotes(initialNote);
     }
-    onOpenChange(isOpen);
-  };
+  }, [open, seat, defaultPaymentNote, autoRenewal]);
 
   const { data: session } = useSession();
   const currency = (session?.user as { currency?: string })?.currency || "EUR";
@@ -119,7 +139,7 @@ export function RenewClientDialog({ seat, open, onOpenChange }: RenewClientDialo
             />
             {months > 1 && (
               <p className="text-xs text-muted-foreground">
-                Auto-calculated: {formatCurrency(price * months, currency)}
+                Auto-calculated: {formatCurrency(amountToCents(price * months), currency)}
               </p>
             )}
           </div>

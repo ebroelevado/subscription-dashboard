@@ -21,11 +21,11 @@ export interface Subscription {
     maxSeats: number | null;
     platform: { id: string; name: string };
   };
-  clientSubscriptions: { id: string; customPrice: number; status: string }[];
+  clientSubscriptions: { id: string; customPrice: number; status: string; subscriptionId: string }[];
   masterUsername?: string | null;
   masterPassword?: string | null;
   ownerId?: string | null;
-  isAutopayable: boolean;
+  autoRenewal: boolean;
   defaultPaymentNote?: string | null;
 }
 
@@ -38,6 +38,7 @@ export interface SubscriptionDetail extends Omit<Subscription, "clientSubscripti
     joinedAt: string;
     leftAt: string | null;
     status: "active" | "paused";
+    subscriptionId: string;
     client: { id: string; name: string; phone: string | null; serviceUser: string | null; servicePassword: string | null };
   }[];
   platformRenewals: {
@@ -81,7 +82,7 @@ export function useCreateSubscription() {
       masterUsername?: string | null;
       masterPassword?: string | null;
       ownerId?: string | null;
-      isAutopayable?: boolean;
+      autoRenewal?: boolean;
       isPaid?: boolean;
       paymentNote?: string | null;
       defaultPaymentNote?: string | null;
@@ -112,7 +113,8 @@ export function useUpdateSubscription() {
       masterUsername?: string | null;
       masterPassword?: string | null;
       ownerId?: string | null;
-      isAutopayable?: boolean;
+      autoRenewal?: boolean;
+      defaultPaymentNote?: string | null;
     }) =>
       fetchApi<Subscription>(`/api/subscriptions/${data.id}`, {
         method: "PATCH",

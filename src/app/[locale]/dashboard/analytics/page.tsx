@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
   useAnalyticsSummary,
@@ -49,8 +49,8 @@ const RevenueChart = dynamic(
   },
 );
 
-const ClientPieChart = dynamic(
-  () => import("@/components/analytics/client-pie-chart"),
+const TopClientsList = dynamic(
+  () => import("@/components/analytics/top-clients-list"),
   {
     ssr: false,
     loading: () => (
@@ -92,12 +92,16 @@ function KpiCard({
   title,
   value,
   subtitle,
+  secondaryValue,
+  secondaryLabel,
   icon: Icon,
   color,
 }: {
   title: string;
   value: string;
   subtitle?: string;
+  secondaryValue?: string;
+  secondaryLabel?: string;
   icon: React.ElementType;
   color: "emerald" | "red" | "blue" | "amber";
 }) {
@@ -111,16 +115,27 @@ function KpiCard({
   };
 
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <div className={cn("rounded-lg p-2", colorClasses[color])}>
-          <Icon className="size-4" />
+    <div className="rounded-xl border bg-card p-5 flex flex-col justify-between">
+      <div>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <div className={cn("rounded-lg p-2", colorClasses[color])}>
+            <Icon className="size-4" />
+          </div>
+        </div>
+        <div className="mt-3 flex items-baseline gap-2">
+          <p className="text-2xl font-bold tracking-tight">{value}</p>
+          {subtitle && (
+            <p className="text-xs text-muted-foreground font-medium">{subtitle}</p>
+          )}
         </div>
       </div>
-      <p className="mt-2 text-2xl font-bold tracking-tight">{value}</p>
-      {subtitle && (
-        <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+      
+      {secondaryValue && (
+        <div className="mt-4 pt-3 border-t border-border/50 flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">{secondaryLabel}</p>
+          <p className="text-sm font-semibold">{secondaryValue}</p>
+        </div>
       )}
     </div>
   );
@@ -145,7 +160,7 @@ export default function AnalyticsPage() {
     { value: "daily", label: t("daily"), icon: Calendar },
   ];
 
-  // ── State ──
+  const [topClientsMode, setTopClientsMode] = useState<"monthly" | "total">("monthly");
   const [trendScale, setTrendScale] = useState<TrendScale>("monthly");
   const [platformMode, setPlatformMode] = useState<ContributionMode>("net");
   const [disciplineFilters, setDisciplineFilters] = useState<DisciplineFilters>({});
@@ -162,6 +177,25 @@ export default function AnalyticsPage() {
   const { data: subscriptions } = useSubscriptions();
   const { data: clients } = useClients();
 
+  // Prepare list data
+  const listData = useMemo(() => {
+    if (!clientData?.clients) return [];
+    
+    // Select the appropriate metric based on the toggle
+    const rawData = clientData.clients.map((c) => ({
+      name: c.clientName,
+      value: topClientsMode === "monthly" ? c.monthlyPaid : c.totalPaid,
+      weight: topClientsMode === "monthly" ? c.monthlyWeight : c.weight,
+    }));
+
+    // Filter out 0 value clients and sort by value descending
+    const filteredAndSorted = rawData
+      .filter((c) => c.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    return filteredAndSorted;
+  }, [clientData, topClientsMode]);
+
   const isLoading = summaryLoading || clientsLoading;
 
   if (isLoading) {
@@ -171,31 +205,6 @@ export default function AnalyticsPage() {
       </div>
     );
   }
-
-  // Prepare pie data — top 7 + "Others"
-  const pieData = (() => {
-    if (!clientData?.clients.length) return [];
-    const top = clientData.clients.slice(0, 7);
-    const otherWeight = clientData.clients
-      .slice(7)
-      .reduce((s, c) => s + c.weight, 0);
-    const otherAmount = clientData.clients
-      .slice(7)
-      .reduce((s, c) => s + c.totalPaid, 0);
-    const result = top.map((c) => ({
-      name: c.clientName,
-      value: Math.round(c.weight * 10) / 10,
-      amount: c.totalPaid,
-    }));
-    if (otherWeight > 0) {
-      result.push({
-        name: "Others",
-        value: Math.round(otherWeight * 10) / 10,
-        amount: otherAmount,
-      });
-    }
-    return result;
-  })();
 
   const hasDisciplineFilter =
     disciplineFilters.planId ||
@@ -218,31 +227,41 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           title={t("totalRevenue")}
-          value={formatCurrency(summary?.totalRevenue ?? 0, currency)}
-          subtitle={`${summary?.uniqueClientCount ?? 0} ${t("clientsLabel").toLowerCase()}`}
+          value={formatCurrency(summary?.monthlyRevenue ?? 0, currency)}
+          subtitle={`${summary?.monthlyUniqueClientCount ?? 0} ${t("thisMonthLabel").toLowerCase()}`}
+          secondaryLabel={t("lifetimeLabel")}
+          secondaryValue={formatCurrency(summary?.totalRevenue ?? 0, currency)}
           icon={TrendingUp}
           color="emerald"
         />
         <KpiCard
           title={t("cogs")}
-          value={formatCurrency(summary?.totalCost ?? 0, currency)}
+          value={formatCurrency(summary?.monthlyCost ?? 0, currency)}
+          subtitle={t("thisMonthLabel")}
+          secondaryLabel={t("lifetimeLabel")}
+          secondaryValue={formatCurrency(summary?.totalCost ?? 0, currency)}
           icon={TrendingDown}
           color="red"
         />
         <KpiCard
           title={t("netMargin")}
-          value={formatCurrency(summary?.netMargin ?? 0, currency)}
+          value={formatCurrency(summary?.monthlyNetMargin ?? 0, currency)}
           subtitle={
-            summary && summary.totalRevenue > 0
-              ? `${((summary.netMargin / summary.totalRevenue) * 100).toFixed(1)}% ${t("grossMargin").toLowerCase()}`
+            summary && summary.monthlyRevenue > 0
+              ? `${((summary.monthlyNetMargin / summary.monthlyRevenue) * 100).toFixed(1)}%`
               : undefined
           }
+          secondaryLabel={t("lifetimeLabel")}
+          secondaryValue={formatCurrency(summary?.netMargin ?? 0, currency)}
           icon={DollarSign}
-          color={(summary?.netMargin ?? 0) >= 0 ? "blue" : "red"}
+          color={(summary?.monthlyNetMargin ?? 0) >= 0 ? "blue" : "red"}
         />
         <KpiCard
           title={t("arpu")}
-          value={formatCurrency(summary?.arpu ?? 0, currency)}
+          value={formatCurrency(summary?.monthlyArpu ?? 0, currency)}
+          subtitle={t("thisMonthLabel")}
+          secondaryLabel={t("lifetimeLabel")}
+          secondaryValue={formatCurrency(summary?.arpu ?? 0, currency)}
           icon={Users}
           color="amber"
         />
@@ -310,20 +329,41 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* ── 2. Client Weight Pie Chart ── */}
+        {/* ── 2. Client Weight List ── */}
         <div className={cn("rounded-xl border bg-card p-5 relative overflow-hidden flex flex-col h-[500px]", premiumHighlight)}>
-          <h2 className="text-base font-semibold mb-1">
-            {t("topClients")}
-          </h2>
-          <div className="relative flex-1">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold">
+              {t("topClients")}
+            </h2>
+            <div className="flex items-center rounded-lg border bg-muted/50 p-0.5">
+              <button
+                onClick={() => setTopClientsMode("monthly")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                  topClientsMode === "monthly"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("thisMonthLabel")}
+              </button>
+              <button
+                onClick={() => setTopClientsMode("total")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                  topClientsMode === "total"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("lifetimeLabel")}
+              </button>
+            </div>
+          </div>
+          
+          <div className="relative flex-1 min-h-0">
             <div className={cn("h-full transition-all duration-500", isFree && "blur-md select-none pointer-events-none opacity-40")}>
-              {pieData.length > 0 ? (
-                <ClientPieChart data={pieData} currency={currency} />
-              ) : (
-                <p className="text-muted-foreground text-sm py-16 text-center">
-                  {t("noDataAvailable")}
-                </p>
-              )}
+              <TopClientsList data={listData} currency={currency} />
             </div>
             
             {isFree && (
@@ -493,19 +533,19 @@ export default function AnalyticsPage() {
                             strokeWidth="10"
                             fill="transparent"
                             strokeDasharray={339.3}
-                            strokeDashoffset={339.3 - (339.3 * (discipline?.score ?? 10)) / 10}
+                            strokeDashoffset={339.3 - (339.3 * (discipline?.score ?? 10000)) / 10000}
                             strokeLinecap="round"
                             className={cn(
                               "transition-all duration-1000 ease-out",
-                              (discipline?.score ?? 10) >= 9 ? "text-emerald-500" :
-                              (discipline?.score ?? 10) >= 7 ? "text-yellow-500" :
-                              (discipline?.score ?? 10) >= 5 ? "text-orange-500" : "text-red-500"
+                              (discipline?.score ?? 10000) >= 9000 ? "text-emerald-500" :
+                              (discipline?.score ?? 10000) >= 7000 ? "text-yellow-500" :
+                              (discipline?.score ?? 10000) >= 5000 ? "text-orange-500" : "text-red-500"
                             )}
                           />
                         </svg>
                         <div className="absolute flex flex-col items-center justify-center leading-none">
-                          <span className="text-4xl font-black tabular-nums">{(discipline?.score ?? 10).toFixed(1)}</span>
-                          <span className="text-sm font-bold opacity-40 mt-1">/10</span>
+                          <span className="text-4xl font-black tabular-nums">{discipline?.score ?? 10000}</span>
+                          <span className="text-sm font-bold opacity-40 mt-1">/10000</span>
                         </div>
                       </div>
                     </div>

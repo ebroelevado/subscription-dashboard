@@ -37,7 +37,7 @@ const schema = z.object({
   masterUsername: z.string().optional(),
   masterPassword: z.string().optional(),
   ownerId: z.string().optional(),
-  isAutopayable: z.boolean().default(true),
+  autoRenewal: z.boolean().default(true),
   isPaid: z.boolean().default(false),
   paymentNote: z.string().optional(),
   defaultPaymentNote: z.string().optional(),
@@ -74,7 +74,7 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
       platformId: "", planId: "", label: "", startDate: today,
       durationMonths: 1, status: "active",
       masterUsername: "", masterPassword: "", ownerId: "",
-      isAutopayable: true,
+      autoRenewal: true,
       isPaid: false,
       paymentNote: "",
       defaultPaymentNote: "como pago",
@@ -88,19 +88,21 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
   // Fetch plans filtered by selected platform
   const { data: plans } = usePlans(selectedPlatformId || undefined);
 
-  // Reset planId when platform changes, but ONLY if it's an interactive change 
-  // (not the initial population from edit mode).
+  // Reset planId when platform changes, but ONLY if it's an interactive change by user.
+  // We use a flag to track if the current platformId change is from a form reset (initial/edit population)
+  const [isResetting, setIsResetting] = useState(false);
   const [prevPlatformId, setPrevPlatformId] = useState(selectedPlatformId);
+
   useEffect(() => {
     if (selectedPlatformId !== prevPlatformId) {
-      // Only wipe if there's actually a previous platform id (meaning it's an interactive change by user)
-      // or if it goes from something to empty.
-      if (prevPlatformId !== "") {
+      // Only wipe plan if it's NOT a reset and NOT the initial load
+      if (!isResetting && prevPlatformId !== "") {
         setValue("planId", "");
       }
       setPrevPlatformId(selectedPlatformId);
+      setIsResetting(false); // Clear flag after consumption
     }
-  }, [selectedPlatformId, prevPlatformId, setValue]);
+  }, [selectedPlatformId, prevPlatformId, setValue, isResetting]);
 
   // Compute preview date
   const previewDate = selectedStartDate && Number(selectedDuration) > 0
@@ -125,40 +127,38 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
   useEffect(() => {
     if (open) {
       if (mode === "edit" && subscription) {
-        // Find platform from existing data
-        const platform = platforms?.find(p =>
-          p.plans.some(pl => pl.id === subscription.planId)
-        );
-        // Small delay to ensure platform matches and avoids getting reset
-        setTimeout(() => {
-          reset({
-            platformId: platform?.id ?? "",
-            planId: subscription.planId,
-            label: subscription.label,
-            startDate: subscription.startDate.split("T")[0],
-            durationMonths: 1,
-            status: subscription.status,
-            masterUsername: subscription.masterUsername || "",
-            masterPassword: subscription.masterPassword || "",
-            ownerId: subscription.ownerId || "none",
-            isAutopayable: subscription.isAutopayable,
-            defaultPaymentNote: subscription.defaultPaymentNote || "como pago",
-          });
-          setPrevPlatformId(platform?.id ?? "");
-        }, 0);
+        setIsResetting(true);
+        const platformId = subscription.plan?.platform?.id || "";
+        
+        reset({
+          platformId,
+          planId: subscription.planId,
+          label: subscription.label,
+          startDate: subscription.startDate.split("T")[0],
+          durationMonths: 1,
+          status: subscription.status,
+          masterUsername: subscription.masterUsername || "",
+          masterPassword: subscription.masterPassword || "",
+          ownerId: subscription.ownerId || "none",
+          autoRenewal: subscription.autoRenewal,
+          defaultPaymentNote: subscription.defaultPaymentNote || "como pago",
+        });
+        setPrevPlatformId(platformId);
       } else {
+        setIsResetting(true);
         reset({
           platformId: "", planId: "", label: "", startDate: today,
           durationMonths: 1, status: "active",
           masterUsername: "", masterPassword: "", ownerId: "",
-          isAutopayable: true,
+          autoRenewal: true,
           isPaid: false,
           paymentNote: "",
           defaultPaymentNote: "como pago",
         });
+        setPrevPlatformId("");
       }
     }
-  }, [open, mode, subscription, reset, today, platforms]);
+  }, [open, mode, subscription, reset, today]);
 
   const onSubmit = async (values: FormValues) => {
     const parsedOwnerId = values.ownerId === "none" || !values.ownerId ? null : values.ownerId;
@@ -176,7 +176,8 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
         masterUsername: parsedMasterUsername,
         masterPassword: parsedMasterPassword,
         ownerId: parsedOwnerId,
-        isAutopayable: values.isAutopayable,
+        autoRenewal: values.autoRenewal,
+        defaultPaymentNote: values.defaultPaymentNote || null,
       });
     } else {
       await createMutation.mutateAsync({
@@ -188,7 +189,7 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
         masterUsername: parsedMasterUsername,
         masterPassword: parsedMasterPassword,
         ownerId: parsedOwnerId,
-        isAutopayable: values.isAutopayable,
+        autoRenewal: values.autoRenewal,
         isPaid: values.isPaid,
         paymentNote: values.paymentNote || null,
         defaultPaymentNote: values.defaultPaymentNote || null,
@@ -275,6 +276,14 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
                         </span>
                       </SelectItem>
                     ))}
+                    {/* Ensure current plan is visible even if plans are loading or filtered */}
+                    {mode === "edit" && subscription && !plans?.some(p => p.id === subscription.planId) && (
+                      <SelectItem key={subscription.planId} value={subscription.planId}>
+                        <span className="text-xs text-muted-foreground mr-2 group-hover:text-primary-foreground/70 transition-colors">
+                          {subscription.plan.platform.name} — {subscription.plan.name} ({formatCurrency(Number(subscription.plan.cost), currency)})
+                        </span>
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               )}
@@ -360,7 +369,7 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <Label className="text-sm font-medium">
-                  {t("isAutopayable")}
+                  {t("autoRenewal")}
                 </Label>
                 <TooltipProvider>
                   <Tooltip>
@@ -368,18 +377,18 @@ export function SubscriptionFormDialog({ mode, subscription, open, onOpenChange 
                       <AlertTriangle className="size-3.5 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[200px]">
-                      {t("autopayableTooltip")}
+                      {t("autoRenewalTooltip")}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
               <p className="text-[12px] text-muted-foreground">
-                {t("autopayableDescription")}
+                {t("autoRenewalDescription")}
               </p>
             </div>
             <Controller
               control={control}
-              name="isAutopayable"
+              name="autoRenewal"
               render={({ field }) => (
                 <Switch
                   checked={field.value}

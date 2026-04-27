@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useSession } from "@/lib/auth-client";
 import { CURRENCIES, centsToAmount, type Currency } from "@/lib/currency";
 import { useRenewPlatform } from "@/hooks/use-renewals";
@@ -30,9 +30,9 @@ export function RenewPlatformDialog({
   onOpenChange,
 }: RenewPlatformDialogProps) {
   const renewMut = useRenewPlatform();
-  const [amount, setAmount] = useState(0);
-  const [paidOn, setPaidOn] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const [notes, setNotes] = useState("");
+  const [amount, setAmount] = React.useState(0);
+  const [paidOn, setPaidOn] = React.useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [notes, setNotes] = React.useState("");
   const t = useTranslations("subscriptions");
   const tc = useTranslations("common");
   const { data: session } = useSession();

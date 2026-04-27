@@ -16,8 +16,8 @@ export function useCreateSeat() {
       startDate?: string | Date;
       serviceUser?: string | null;
       servicePassword?: string | null;
-      isPaid?: boolean;
       paymentNote?: string | null;
+      autoRenewal?: boolean;
     }) =>
       fetchApi("/api/client-subscriptions", {
         method: "POST",
@@ -44,6 +44,8 @@ export function useUpdateSeat() {
       activeUntil?: string | Date;
       serviceUser?: string | null;
       servicePassword?: string | null;
+      subscriptionId?: string;
+      autoRenewal?: boolean;
     }) => {
       const { id, ...body } = data;
       return fetchApi(`/api/client-subscriptions/${id}`, {

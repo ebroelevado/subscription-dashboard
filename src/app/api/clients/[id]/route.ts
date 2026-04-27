@@ -66,6 +66,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         clientSubscriptions: (c.clientSubscriptions || []).map((cs: any) => ({
             id: cs.id,
             status: cs.status,
+            subscriptionId: cs.subscriptionId,
             customPrice: Number(cs.customPrice || 0),
             joinedAt: cs.joinedAt,
             leftAt: cs.leftAt,

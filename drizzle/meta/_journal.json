@@ -36,6 +36,20 @@
       "when": 1777127649377,
       "tag": "0004_fancy_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1777127649378,
+      "tag": "0005_sync_auto_renewal",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777304457082,
+      "tag": "0006_petite_solo",
+      "breakpoints": true
     }
   ]
 }
