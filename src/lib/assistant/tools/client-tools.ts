@@ -8,6 +8,7 @@ import { createMutationToken } from "@/lib/mutation-token";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { formatCurrency, centsToAmount } from "@/lib/currency";
 import { preparePythonAnalysis as preparePython, pythonAnalysisTemplateIds } from "@/lib/python-analysis";
+import { sanitizeData } from "@/lib/data-utils";
 
 type DefineToolFn = (...args: any[]) => any;
 
@@ -77,11 +78,7 @@ export function getClientTools(defineTool: DefineToolFn, userId: string, allowDe
               ? clientsList.filter((c) => !c.clientSubscriptions.some((cs) => cs.status === "active"))
               : clientsList;
     
-            return {
-              totalFound: filtered.length,
-              limitApplied: Math.min(limit, 100),
-              note: filtered.length === Math.min(limit, 100) ? "Result may be truncated. Increase `limit` or use `search` to narrow results." : undefined,
-              clients: filtered.map((c) => ({
+            const clientsData = filtered.map((c) => ({
                 id: c.id,
                 name: c.name,
                 phone: c.phone,
@@ -93,8 +90,14 @@ export function getClientTools(defineTool: DefineToolFn, userId: string, allowDe
                 activeSubscriptions: c.clientSubscriptions.filter((cs) => cs.status === "active").length,
                 pausedSubscriptions: c.clientSubscriptions.filter((cs) => cs.status === "paused").length,
                 createdAt: c.createdAt,
-              })),
-            };
+              }));
+
+            return sanitizeData({
+              totalFound: filtered.length,
+              limitApplied: Math.min(limit, 100),
+              note: filtered.length === Math.min(limit, 100) ? "Result may be truncated. Increase `limit` or use `search` to narrow results." : undefined,
+              clients: clientsData,
+            });
           },
         }),
     
@@ -134,19 +137,20 @@ export function getClientTools(defineTool: DefineToolFn, userId: string, allowDe
                     customPrice: true,
                     activeUntil: true,
                     joinedAt: true,
+                    subscriptionId: true,
                   },
                   with: {
                     subscription: {
-                      columns: { label: true },
+                      columns: { id: true, label: true, planId: true },
                       with: {
                         plan: {
-                          columns: { name: true },
-                          with: { platform: { columns: { name: true } } }
+                          columns: { id: true, name: true, platformId: true },
+                          with: { platform: { columns: { id: true, name: true } } }
                         }
                       }
                     },
                     renewalLogs: {
-                      columns: { amountPaid: true, periodStart: true, periodEnd: true, paidOn: true },
+                      columns: { id: true, amountPaid: true, periodStart: true, periodEnd: true, paidOn: true },
                       orderBy: [desc(renewalLogs.paidOn)],
                       limit: 5,
                     },
@@ -189,7 +193,7 @@ export function getClientTools(defineTool: DefineToolFn, userId: string, allowDe
               ownedSubscriptions: client.ownedSubscriptions,
             }));
     
-            return { clients: mappedClients };
+            return sanitizeData({ clients: mappedClients });
           },
         }),
     

@@ -8,6 +8,7 @@ import { createMutationToken } from "@/lib/mutation-token";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { formatCurrency, centsToAmount } from "@/lib/currency";
 import { preparePythonAnalysis as preparePython, pythonAnalysisTemplateIds } from "@/lib/python-analysis";
+import { sanitizeData } from "@/lib/data-utils";
 
 type DefineToolFn = (...args: any[]) => any;
 
@@ -72,7 +73,7 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
         
         if (!user) return { error: "User account not found." };
         
-        return {
+        return sanitizeData({
           profile: {
             name: user.name,
             email: user.email,
@@ -87,7 +88,7 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
             totalSubscriptions: user.subscriptions.length,
             totalPlatforms: user.platforms.length,
           }
-        };
+        });
       }
     }),
     defineTool("runPython", {
@@ -124,12 +125,7 @@ export function getSystemTools(defineTool: DefineToolFn, userId: string, allowDe
           // We need to use sql.raw() to wrap the string query.
           const result = await db.execute(sql.raw(query)); 
           
-          // Deeply search and convert BigInts to strings to avoid JSON.stringify crashes in the AI SDK
-          const safeResult = JSON.parse(JSON.stringify(result, (_, v) => 
-            typeof v === 'bigint' ? v.toString() : v
-          ));
-
-          return safeResult;
+          return sanitizeData(result);
         } catch (err: any) {
           return { error: `SQL Error: ${err.message}` };
         }

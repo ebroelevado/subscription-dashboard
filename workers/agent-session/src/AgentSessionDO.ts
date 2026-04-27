@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { streamText, tool, stepCountIs, convertToModelMessages, wrapLanguageModel } from "ai";
-import { createAiGateway } from "ai-gateway-provider";
-import { createUnified } from "ai-gateway-provider/providers/unified";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createUserScopedTools } from "@/lib/assistant-tools";
 import { initDb, getDb } from "@/db";
 import { rollbackConsumedMutationToken, validateAndConsumeMutationToken } from "@/lib/mutation-token";
@@ -144,31 +143,31 @@ export class AgentSessionDO extends DurableObject {
   }
 
   getModel(mode?: string) {
-    const hasGateway = this.env.CF_ACCOUNT_ID && this.env.CF_AIG_TOKEN;
-    
-    const aigateway = hasGateway 
-      ? createAiGateway({
-          accountId: this.env.CF_ACCOUNT_ID!,
-          gateway: this.env.CF_AI_GATEWAY_NAME || 'pearfect',
-          apiKey: this.env.CF_AIG_TOKEN!,
-        })
-      : (model: any) => model; // Bypass if no credentials
-
     if (mode === "ultra-fast") {
-      const unified = createUnified({ apiKey: this.env.CEREBRAS_API_KEY });
-      return aigateway(unified("cerebras/qwen-3-235b-a22b-instruct-2507"));
+      const cerebras = createOpenAI({
+        baseURL: "https://api.cerebras.ai/v1",
+        apiKey: this.env.CEREBRAS_API_KEY,
+      });
+      return cerebras("llama3.1-70b"); // Standard Cerebras model name
     }
 
     if (mode === "fast") {
-      const unified = createUnified({ apiKey: this.env.GROQ_API_KEY });
+      const groq = createOpenAI({
+        baseURL: "https://api.groq.com/openai/v1",
+        apiKey: this.env.GROQ_API_KEY,
+      });
       return wrapLanguageModel({
-        model: aigateway(unified("groq/openai/gpt-oss-120b")),
+        model: groq("llama-3.3-70b-versatile"),
         middleware: sanitizeGroqMiddleware
       });
     }
 
-    const unified = createUnified();
-    return aigateway(unified("workers-ai/@cf/nvidia/nemotron-3-120b-a12b"));
+    // Default to Groq if no mode specified, as it's reliable for direct access
+    const groq = createOpenAI({
+      baseURL: "https://api.groq.com/openai/v1",
+      apiKey: this.env.GROQ_API_KEY,
+    });
+    return groq("llama-3.1-8b-instant");
   }
 
   async fetch(request: Request) {
@@ -265,7 +264,17 @@ export class AgentSessionDO extends DurableObject {
       createUserScopedTools(adaptedDefineTool as any, userId, allowDestructive);
       const tools = builtTools;
 
-      const coreMessages = await convertToModelMessages(messages);
+      // Normalize messages to UIMessage format (with parts + id) that convertToModelMessages expects
+      const normalizedMessages = messages.map((msg: any) => ({
+        id: msg.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(7)),
+        role: msg.role,
+        parts: msg.parts || (Array.isArray(msg.content) 
+          ? msg.content 
+          : [{ type: 'text', text: String(msg.content || '') }]),
+        ...(msg.metadata ? { metadata: msg.metadata } : {}),
+      }));
+
+      const coreMessages = await convertToModelMessages(normalizedMessages);
       const sanitizedMessages = coreMessages.map((msg: any) => {
         const newMsg = { ...msg } as any;
         if (newMsg.reasoning_content !== undefined) delete newMsg.reasoning_content;
@@ -362,7 +371,7 @@ export class AgentSessionDO extends DurableObject {
 
       // Stream the raw stream to the requesting frontend
       return result.toUIMessageStreamResponse({
-        originalMessages: messages,
+        originalMessages: normalizedMessages,
         onFinish: async ({ responseMessage, isAborted }) => {
           if (!activeRunId || runFinalized) return;
 
@@ -384,7 +393,7 @@ export class AgentSessionDO extends DurableObject {
             if (this.env.CHAT_BACKUPS && userId) {
               try {
                 const timestamp = new Date().toISOString();
-                const allMessages = [...messages];
+                const allMessages = [...normalizedMessages];
                 if (responseMessage) {
                   allMessages.push(responseMessage);
                 }

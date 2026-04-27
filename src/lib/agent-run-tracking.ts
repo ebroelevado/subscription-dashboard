@@ -146,18 +146,19 @@ export async function startAgentRun(
   db: SchemaDatabase,
   input: StartAgentRunInput,
 ): Promise<{ id: string }> {
-  const [run] = await db
+  const id = crypto.randomUUID();
+  await db
     .insert(agentRuns)
     .values({
+      id,
       userId: input.userId,
       model: input.model,
       source: input.source ?? "durable_object",
       allowDestructive: input.allowDestructive,
       status: "running",
-    })
-    .returning({ id: agentRuns.id });
+    });
 
-  return run;
+  return { id };
 }
 
 export async function appendAgentMessage(

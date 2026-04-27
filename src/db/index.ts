@@ -1,6 +1,7 @@
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 import { sql } from "drizzle-orm";
 import * as schema from "./schema";
+import { sanitizeData } from "@/lib/data-utils";
 
 // NOTE: better-sqlite3 is used for local development with Vinext/Vite SSR.
 // Vinext runs SSR with Node.js (not Bun), so bun:sqlite doesn't work.
@@ -108,16 +109,18 @@ function createWrappedD1Db(d1Binding: D1Database): SchemaDatabase {
           
           if (isSelect) {
             const result = await bound.all();
+            const rows = (result.results as any[]) ?? [];
             return {
-              results: (result.results as any[]) ?? [],
-              rows: (result.results as any[]) ?? [],
+              results: sanitizeData(rows),
+              rows: sanitizeData(rows),
               meta: result.meta,
             };
           } else {
             const result = await bound.run();
+            const rows = (result.results as any[]) ?? [];
             return {
-              results: (result.results as any[]) ?? [],
-              rows: (result.results as any[]) ?? [],
+              results: sanitizeData(rows),
+              rows: sanitizeData(rows),
               meta: result.meta,
             };
           }
@@ -200,8 +203,8 @@ function createWrappedSQLiteDb(): SchemaDatabase {
           }
 
           return {
-            results,
-            rows: results,
+            results: sanitizeData(results),
+            rows: sanitizeData(results),
             meta: {
               changed_db: false,
               changes: 0,

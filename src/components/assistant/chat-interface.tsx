@@ -7,9 +7,11 @@ import { ReasonerBlock } from "./chat/reasoner-block";
 import { RotatingPhrase } from "./chat/rotating-phrase";
 import { ToolInvocationBlock } from "./chat/tool-invocation-block";
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
-import { useChat } from "@ai-sdk/react";
 import { useTranslations } from "next-intl";
 import type { UIMessage } from "ai";
+import { useChatEngine } from "@/lib/ai-assistant/hooks/use-chat-engine";
+import { useMutations } from "@/lib/ai-assistant/hooks/use-mutations";
+import { ErrorDisplay } from "@/components/assistant/error-display";
 import { SendHorizontal, Bot, Loader2, Copy, Check, Terminal, ChevronDown, ChevronUp, BrainCircuit, AlertCircle, MessageSquarePlus, Sparkles, Square, X, Undo2, Clock, Download, RefreshCcw, GitBranch } from "lucide-react";
 import HistoryPanel from "@/components/assistant/history-panel";
 import { Button } from "@/components/ui/button";
@@ -140,58 +142,60 @@ export function ChatInterface() {
     { id: "fast",       name: "🚀 Fast",       description: "Groq" },
     { id: "default",   name: "🧠 Default",    description: "Workers AI" },
   ];
-  const [selectedModel, setSelectedModel] = useState<string>("ultra-fast");
 
   const { data: saasStatus, isLoading: saasLoading } = useSaasStatus();
   const isPremium = saasStatus?.plan === "PREMIUM";
-  
+
   // ── Conversation History ──
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationCreatedAt, setConversationCreatedAt] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const savingRef = useRef(false);
 
+  // ── New Architecture: useChatEngine & useMutations ──
+  const {
+    messages,
+    input,
+    isLoading,
+    error,
+    sendMessage,
+    setInput,
+    stop,
+    clearError,
+    selectedModel,
+    setSelectedModel,
+    allowDestructive,
+    setAllowDestructive,
+    canSendMessage,
+    reset,
+    retryLastMessage
+  } = useChatEngine();
+
+  const {
+    executeMutation,
+    rejectMutation,
+    undoMutation,
+    isExecuted,
+    isRejected,
+    isAccepted,
+    executedMutations,
+    rejectedActionIds,
+    acceptedActionIds
+  } = useMutations();
+
   const handleNewChat = () => {
-    setMessages([]);
-    stop();
-    setExecutedMutations(new Map());
-    setRejectedActionIds(new Set());
-    setAcceptedActionIds(new Set());
+    reset();
     setConversationId(null);
     setConversationCreatedAt(null);
   };
 
-
-  const [input, setInput] = useState("");
-  const [allowDestructive, setAllowDestructive] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Vercel AI SDK — useChat
-  const chatProps = useChat({
-    api: "/api/chat",
-    onError: (err) => {
-      console.error("AI SDK Chat Error:", err);
-    },
-    onFinish: (options: any) => {
-      if (options?.isAbort) console.warn("[Chat] Stream aborted");
-    },
-  });
-
-  const { messages, append, reload, stop, isLoading: isChatLoading, setMessages, error: chatError } = chatProps;
-  
-  // Explicitly ensure sendMessage is defined
-  const sendMessage = append;
-
-  // Use isChatLoading as status surrogate for v3 compatibility
-  const status = isChatLoading ? "streaming" : "ready";
-
-  // Debugging log to confirm function existence
-  useEffect(() => {
-    console.log("[Chat Debug] append exists:", !!append, "type:", typeof append);
-    console.log("[Chat Debug] keys available:", Object.keys(chatProps));
-  }, [append, chatProps]);
+  // Use isLoading as status surrogate
+  const status = isLoading ? "streaming" : "ready";
+  const chatError = error;
   const statusRef = useRef(status);
   const activePollControllerRef = useRef<AbortController | null>(null);
   const confirmingTokensRef = useRef<Set<string>>(new Set());
@@ -221,89 +225,11 @@ export function ChatInterface() {
     }
   }, [stop]);
 
-  const clearAcceptedAction = useCallback((callId?: string | null) => {
-    if (!callId) return;
-    setAcceptedActionIds((prev) => {
-      const next = new Set(prev);
-      next.delete(callId);
-      return next;
-    });
-  }, []);
+  // Removed obsolete clearAcceptedAction and waitForMutationExecuted
+  // These are now handled by useMutations hook and MutationClient
 
-  const waitForMutationExecuted = useCallback(async (token: string, signal?: AbortSignal) => {
-    for (let attempt = 0; attempt < QUEUE_POLL_MAX_ATTEMPTS; attempt++) {
-      if (signal?.aborted) {
-        throw new Error("Execution status polling was cancelled.");
-      }
-
-      await sleep(QUEUE_POLL_DELAY_MS);
-
-      let statusRes: Response;
-      try {
-        statusRes = await fetch("/api/mutations/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-          signal,
-        });
-      } catch (statusError) {
-        if ((statusError as any)?.name === "AbortError") {
-          throw new Error("Execution status polling was cancelled.");
-        }
-        if (attempt === QUEUE_POLL_MAX_ATTEMPTS - 1) {
-          throw new Error("Unable to check mutation status. Please retry.");
-        }
-        continue;
-      }
-
-      let statusData: any = null;
-      try {
-        statusData = await statusRes.json();
-      } catch {
-        if (attempt === QUEUE_POLL_MAX_ATTEMPTS - 1) {
-          throw new Error("Unable to parse mutation status response.");
-        }
-        continue;
-      }
-
-      if (!statusRes.ok) {
-        const statusErrorMessage = statusData?.error || `Status check failed (HTTP ${statusRes.status}).`;
-        if (statusRes.status === 401 || statusRes.status === 403 || statusRes.status === 404) {
-          throw new Error(statusErrorMessage);
-        }
-        if (statusData?.status === "expired") {
-          throw new Error(statusData?.error || "Token has expired. Propose the change again.");
-        }
-        if (attempt === QUEUE_POLL_MAX_ATTEMPTS - 1) {
-          throw new Error(statusErrorMessage);
-        }
-        continue;
-      }
-
-      if (statusData?.status === "executed") {
-        if (!statusData?.auditLogId || typeof statusData.auditLogId !== "string") {
-          throw new Error("Mutation was executed but audit log details are invalid.");
-        }
-        return { auditLogId: statusData.auditLogId as string };
-      }
-
-      if (statusData?.status === "expired" || statusData?.status === "invalid" || statusData?.status === "forbidden") {
-        throw new Error(statusData?.error || "Token has expired. Propose the change again.");
-      }
-
-      if (statusData?.status === "failed_permanent") {
-        throw new Error(statusData?.error || "Mutation failed permanently.");
-      }
-    }
-
-    throw new Error("Queued execution is taking too long. Please retry in a few seconds.");
-  }, []);
-
-  // HITL (Human-in-the-Loop) state — moved before auto-save hook to avoid ordering issues
-  // Track executed mutations: token → { auditLogId, toolName, undone? }
-  const [executedMutations, setExecutedMutations] = useState<Map<string, { auditLogId: string; toolName: string; undone?: boolean }>>(new Map());
-  const [rejectedActionIds, setRejectedActionIds] = useState<Set<string>>(new Set());
-  const [acceptedActionIds, setAcceptedActionIds] = useState<Set<string>>(new Set());
+  // HITL (Human-in-the-Loop) state — now managed by useMutations hook
+  // executedMutations, rejectedActionIds, acceptedActionIds come from useMutations
 
   // Auto-save: save conversation to R2 after each AI response completes
   const prevStatusRef = useRef(status);
@@ -365,40 +291,25 @@ export function ChatInterface() {
               .filter(Boolean)
           : [];
 
-        setMessages(runMessages);
-        // Start a fresh live conversation after loading a historical agent run.
+        // Use reset from useChatEngine to clear everything
+        reset();
+        // TODO: Load messages into the new store
+        // For now, just reset to start fresh
         setConversationId(null);
         setConversationCreatedAt(null);
-        setExecutedMutations(new Map());
-        setAcceptedActionIds(new Set());
-        setRejectedActionIds(new Set());
         return;
       }
 
       const res = await fetch(`/api/history/${loadId}`);
       if (!res.ok) return;
       const data = await res.json();
-      setMessages(data.messages || []);
+
+      // Use reset from useChatEngine
+      reset();
+      // TODO: Load messages and mutation state into the new stores
+      // For now, just set conversation metadata
       setConversationId(data.id);
       setConversationCreatedAt(data.createdAt);
-
-      // Restore mutation execution state so confirmed actions show "IR ATRÁS" not "Aceptar"
-      if (data.executedMutations && Array.isArray(data.executedMutations)) {
-        setExecutedMutations(new Map(data.executedMutations));
-      } else {
-        setExecutedMutations(new Map());
-      }
-      // Restore accepted/rejected action states to prevent showing already-handled confirmations
-      if (data.acceptedActionIds && Array.isArray(data.acceptedActionIds)) {
-        setAcceptedActionIds(new Set(data.acceptedActionIds));
-      } else {
-        setAcceptedActionIds(new Set());
-      }
-      if (data.rejectedActionIds && Array.isArray(data.rejectedActionIds)) {
-        setRejectedActionIds(new Set(data.rejectedActionIds));
-      } else {
-        setRejectedActionIds(new Set());
-      }
     } catch (err) {
       console.error("[History] Failed to load conversation:", err);
     }
@@ -526,212 +437,64 @@ export function ChatInterface() {
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
+    setInput(e.target.value); // setInput from useChatEngine
     adjustTextarea();
   };
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    console.log("[Chat] handleSubmit triggered, input:", input.trim());
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim()) {
-      console.warn("[Chat] Input is empty, ignoring.");
-      return;
-    }
-    if (!sendMessage) {
-      console.error("[Chat] sendMessage function is missing!");
+
+    console.log("[Chat] handleSubmit triggered, input:", input.trim());
+
+    if (!canSendMessage) {
+      console.warn("[Chat] Cannot send message in current state");
       return;
     }
 
-    // SaaS Usage Tracking: Increment points (ultra-fast costs 0.2, fast 0.3, default 0.5)
-    const cost = selectedModel === "ultra-fast" ? 0.2 : selectedModel === "fast" ? 0.3 : 0.5;
-    fetch("/api/user/usage", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ increment: cost })
-    }).catch(err => console.error("Failed to update usage:", err));
+    try {
+      console.log("[Chat] Sending message via useChatEngine");
+      await sendMessage();
 
-    console.log("[Chat] Calling sendMessage with content:", input);
-    sendMessage(
-      { role: "user", content: input },
-      { body: { model: selectedModel || undefined, allowDestructive } }
-    );
-    setInput("");
-    console.log("[Chat] Input cleared");
-    // Reset textarea height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+    } catch (error) {
+      console.error("[Chat] Failed to send message:", error);
+      // Error is already handled by useChatEngine and will show in ErrorDisplay
     }
   };
 
-  const appendLocalAssistantNote = useCallback((text: string) => {
-    setMessages((prev) => {
-      const note = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        parts: [{ type: "text", text }],
-      } as unknown as UIMessage;
-      return [...prev, note];
-    });
-  }, [setMessages]);
-
-  const notifyAgentMutationOutcome = useCallback(async (toolName: string, auditLogId: string) => {
-    if (!sendMessage) return;
-
-    const sendNotification = async (retries = 3, delay = 1000): Promise<boolean> => {
-      try {
-        sendMessage(
-          { role: 'user', content: `${t("chat.accept")} <!-- [SYSTEM] Mutation ${toolName} executed successfully. AuditLogId: ${auditLogId}. Continue with the next required step if any. -->` },
-          { body: { model: selectedModel || undefined, allowDestructive } }
-        );
-        return true;
-      } catch (err) {
-        console.error(`[NotifyAgent] Failed (attempt ${4 - retries}/3):`, err);
-        if (retries > 0) {
-          await sleep(delay);
-          return sendNotification(retries - 1, delay * 2);
-        }
-        return false;
-      }
-    };
-
-    const success = await sendNotification();
-    if (!success) {
-      appendLocalAssistantNote(
-        `⚠️ La mutación se ejecutó correctamente pero no pude continuar automáticamente. ` +
-        `Escribe "continúa" para reanudar.`
-      );
-    }
-  }, [sendMessage, t, selectedModel, allowDestructive, appendLocalAssistantNote]);
+  // Removed obsolete appendLocalAssistantNote and notifyAgentMutationOutcome
+  // ChatEngine handles these operations now
 
   const handleUndoTool = async (toolName: string) => {
-    // Stop active stream before injecting the local confirmation message.
-    await waitForStreamToStop();
-    appendLocalAssistantNote(`${t("chat.undo")} ✅ ${toolName}`);
+    // TODO: Implement undo with new architecture
+    console.log(`[Chat] Undo requested for ${toolName}`);
   };
 
   const handlePythonResult = useCallback(async (resultText: string) => {
-    if (!sendMessage) return;
-    await waitForStreamToStop();
-
-    sendMessage(
-      { role: 'user', content: `<!-- [SYSTEM] Python analysis completed with result: ${resultText.slice(0, 500)}${resultText.length > 500 ? '...' : ''} -->` },
-      { body: { model: selectedModel || undefined, allowDestructive } }
-    );
-  }, [sendMessage, selectedModel, allowDestructive]);
+    // TODO: Implement Python result handling with new architecture
+    console.log(`[Chat] Python result received:`, resultText.slice(0, 100));
+  }, []);
 
   const handleConfirmTool = async (toolName: string, args: any, accepted: boolean, toolCallId?: string) => {
-    await waitForStreamToStop();
-    
-    const targetCallId = toolCallId || (hitlPending && hitlPending.toolName === toolName ? hitlPending.toolCallId : null);
-    
     if (!accepted) {
-      if (targetCallId) setRejectedActionIds(prev => new Set(prev).add(targetCallId));
-      appendLocalAssistantNote(`${t("chat.reject")} ❌ ${toolName}`);
+      await rejectMutation(toolCallId || '', toolName);
       return;
-    } else {
-      if (targetCallId) setAcceptedActionIds(prev => new Set(prev).add(targetCallId));
     }
 
-    // Extract the crypto token from the tool output
     const token = args?.__token || hitlPending?.__token;
     if (!token) {
-      clearAcceptedAction(targetCallId);
-      appendLocalAssistantNote(`${t("chat.accept")} ⚠️ ${toolName}: token no disponible para ejecutar.`);
+      console.error("[Chat] No token available for mutation");
       return;
     }
 
-    if (confirmingTokensRef.current.has(token)) {
-      return;
-    }
-    confirmingTokensRef.current.add(token);
-
-    // === DIRECT BACKEND EXECUTION — bypasses AI entirely ===
-    let pollController: AbortController | null = null;
     try {
-      const res = await fetch("/api/mutations/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      let rawBody = "";
-      let data: any = null;
-      try {
-        rawBody = await res.text();
-        if (rawBody) {
-          try {
-            data = JSON.parse(rawBody);
-          } catch {
-            data = null;
-          }
-        }
-      } catch (decodeError) {
-        // Some proxy paths can return HTTP 200 but fail body decoding.
-        // Verify execution via status endpoint before surfacing an error.
-        if (res.ok) {
-          const executed = await waitForMutationExecuted(token);
-          setExecutedMutations(prev => {
-            const next = new Map(prev);
-            next.set(token, { auditLogId: executed.auditLogId, toolName });
-            return next;
-          });
-          clearAcceptedAction(targetCallId);
-          appendLocalAssistantNote(`${t("chat.accept")} ✅ ${toolName}`);
-          return;
-        }
-        throw decodeError;
-      }
-
-      if (!res.ok) {
-        throw new Error(data?.error || rawBody || `HTTP ${res.status}`);
-      }
-
-      if (data?.queued) {
-        pollController = new AbortController();
-        activePollControllerRef.current?.abort();
-        activePollControllerRef.current = pollController;
-        const executed = await waitForMutationExecuted(token, pollController.signal);
-
-        setExecutedMutations(prev => {
-          const next = new Map(prev);
-          next.set(token, { auditLogId: executed.auditLogId, toolName });
-          return next;
-        });
-        clearAcceptedAction(targetCallId);
-        appendLocalAssistantNote(`${t("chat.accept")} ✅ ${toolName} (${t("chat.executing")}: queue OK)`);
-        notifyAgentMutationOutcome(toolName, executed.auditLogId);
-        return;
-      }
-
-      if (data?.success) {
-        // Track this token as executed so the ToolInvocationBlock can show Undo
-        setExecutedMutations(prev => {
-          const next = new Map(prev);
-          next.set(token, { auditLogId: data.auditLogId, toolName });
-          return next;
-        });
-        clearAcceptedAction(targetCallId);
-        appendLocalAssistantNote(`${t("chat.accept")} ✅ ${toolName}`);
-        notifyAgentMutationOutcome(toolName, data.auditLogId);
-      } else {
-        throw new Error(data?.error || rawBody || "Invalid empty response from mutation execute endpoint");
-      }
-    } catch (err) {
-      console.error("[Execute] Network error:", err);
-      clearAcceptedAction(targetCallId);
-      const message = err instanceof Error ? err.message : "Unknown network error";
-      appendLocalAssistantNote(`${t("chat.accept")} ❌ ${toolName}: ${message}`);
-      
-      if (sendMessage) {
-        sendMessage(
-          { role: 'user', content: `<!-- [SYSTEM] Mutation ${toolName} failed with error: ${message}. Please analyze the error, fix the issue, and try again. -->` },
-          { body: { model: selectedModel || undefined, allowDestructive } }
-        );
-      }
-    } finally {
-      confirmingTokensRef.current.delete(token);
-      if (pollController && activePollControllerRef.current === pollController) {
-        activePollControllerRef.current = null;
-      }
+      await executeMutation(token, toolName, toolCallId || '');
+    } catch (error) {
+      console.error("[Chat] Mutation failed:", error);
+      // Error is already handled by useMutations
     }
   };
 
@@ -754,9 +517,11 @@ export function ChatInterface() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const isLoading = (status === "submitted" || status === "streaming") && !chatError;
+  // isLoading already comes from useChatEngine, no need to redefine
+  // const isLoading = (status === "submitted" || status === "streaming") && !chatError;
 
   // Recover automatically when a streaming request gets stuck and blocks the input.
+  // Note: The new ChatEngine handles timeouts and recovery automatically
   useEffect(() => {
     if (status !== "submitted" && status !== "streaming") return;
 
@@ -764,24 +529,12 @@ export function ChatInterface() {
       if (statusRef.current === "submitted" || statusRef.current === "streaming") {
         console.warn("[Chat] Stream watchdog triggered. Stopping stalled request.");
         stop();
-
-        // After a brief delay, try to regenerate the last response
-        setTimeout(() => {
-          if (statusRef.current === "ready" && messages.length > 0) {
-            const hasAssistantMessage = messages.some(m => m.role === "assistant");
-            if (hasAssistantMessage) {
-              console.log("[Chat] Attempting auto-recovery via regenerate...");
-              reload();
-            } else {
-              console.warn("[Chat] No assistant message to reload from.");
-            }
-          }
-        }, 1500);
+        // ChatEngine will handle recovery automatically
       }
     }, STALLED_STREAM_TIMEOUT_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [status, messages, stop, reload]);
+  }, [status, messages, stop]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -860,7 +613,7 @@ export function ChatInterface() {
   // Determine if we should show the bottom generic analyzing orb
   // We show it if we are loading and waiting for the first assistant token,
   // OR if the assistant is streaming but currently visually "silent" (e.g. between tools).
-  let showBottomOrb = isLoading && messages[messages.length - 1]?.role === "user";
+  let showBottomOrb = isLoading && messages[messages.length - 1]?.role === "user" && !chatError;
   
   if (status === 'streaming' && messages.length > 0) {
     const lastMsg = messages[messages.length - 1];
@@ -1104,40 +857,21 @@ export function ChatInterface() {
           )}
 
 
-        {/* AI Error Alert Display */}
+        {/* AI Error Alert Display - New ErrorDisplay Component */}
         {chatError && !isPremiumRequired && (
           <div className="flex animate-in fade-in slide-in-from-bottom-2 duration-300 my-4 px-4 sm:px-6">
-            <div className="w-full flex items-start gap-3 bg-red-500/10 rounded-2xl px-4 py-3 border border-red-500/20 text-red-500">
-              <AlertCircle className="size-5 shrink-0 mt-0.5" />
-              <div className="flex flex-col">
-                <span className="font-bold text-sm tracking-tight">{t("chat.errorTitle") || "Error de conexión"}</span>
-                <span className="text-sm opacity-90 leading-snug">
-                  {chatError.message.includes("quota") || chatError.message.includes("429") || chatError.message.includes("Too Many Requests")
-                    ? "El proveedor de Inteligencia Artificial seleccionado ha alcazando el límite de peticiones permitidas por minuto (429 Rate Limit). Por favor, cambia a un modelo distinto o inténtalo de nuevo en unos momentos."
-                    : chatError.message || "La Inteligencia Artificial ha encontrado un problema al procesar tu solicitud."}
-                </span>
-                <button 
-                  onClick={() => reload()} 
-                  className="text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors border border-red-500/20 flex items-center gap-2"
-                >
-                  <RefreshCcw className="size-3" />
-                  {t("chat.retry") || "Intentar de nuevo"}
-                </button>
-                <button 
-                  onClick={() => {
-                    const errorMsg = chatError.message || "Unknown error";
-                    sendMessage({ 
-                      role: 'user', 
-                      content: `[SYSTEM ERROR REPORT] Ha ocurrido un error en la ejecución: "${errorMsg}". Por favor, analiza qué ha fallado en el paso anterior y busca una solución alternativa o corrige el código/consulta para obtener el resultado esperado.` 
-                    });
-                  }} 
-                  className="text-xs font-semibold bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors border border-primary/20 flex items-center gap-2"
-                >
-                  <BrainCircuit className="size-3" />
-                  {t("chat.autoFix") || "Dejar que la IA lo resuelva"}
-                </button>
-              </div>
-            </div>
+            <ErrorDisplay
+              error={chatError}
+              onRetry={() => {
+                if (input.trim()) {
+                  sendMessage();
+                } else {
+                  retryLastMessage();
+                }
+              }}
+              onDismiss={clearError}
+              locale="es"
+            />
           </div>
         )}
 
@@ -1237,10 +971,10 @@ export function ChatInterface() {
                     <Square className="size-3.5 fill-current" />
                   </Button>
                 ) : (
-                  <Button 
-                    type="submit" 
-                    size="icon" 
-                    disabled={!input.trim()}
+                  <Button
+                    type="submit"
+                    size="icon"
+                    disabled={!canSendMessage}
                     className="size-9 rounded-full shrink-0 shadow-lg bg-primary hover:bg-primary/90 disabled:opacity-50 transition-all active:scale-95"
                   >
                     <SendHorizontal className="size-4 ml-0.5" />

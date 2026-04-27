@@ -8,6 +8,7 @@ import { createMutationToken } from "@/lib/mutation-token";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { formatCurrency, centsToAmount } from "@/lib/currency";
 import { preparePythonAnalysis as preparePython, pythonAnalysisTemplateIds } from "@/lib/python-analysis";
+import { sanitizeData } from "@/lib/data-utils";
 
 type DefineToolFn = (...args: any[]) => any;
 
@@ -67,12 +68,11 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
               },
             });
     
-            // Filter by platform if needed (post-query filter since we can't filter nested)
             const filtered = platformIds
               ? subsList.filter(s => platformIds!.includes(s.plan.platformId))
               : subsList;
     
-            return filtered.map((sub) => {
+            const results = filtered.map((sub) => {
               const monthlyRevenue = sub.clientSubscriptions.reduce(
                 (sum, cs) => sum + Number(cs.customPrice),
                 0,
@@ -94,6 +94,8 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
                 masterUsername: sub.masterUsername,
               };
             });
+
+            return sanitizeData(results);
           },
         }),
     
@@ -110,17 +112,39 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
             const ids = Array.isArray(subscriptionIds) ? subscriptionIds : [subscriptionIds];
             const subs = await db.query.subscriptions.findMany({
               where: and(inArray(subscriptions.id, ids), eq(subscriptions.userId, userId)),
+              columns: {
+                id: true,
+                label: true,
+                status: true,
+                startDate: true,
+                activeUntil: true,
+                masterUsername: true,
+                masterPassword: true,
+                ownerId: true,
+                planId: true,
+              },
               with: {
                 plan: {
+                  columns: { id: true, name: true, cost: true, maxSeats: true },
                   with: { platform: { columns: { id: true, name: true } } },
                 },
                 clientSubscriptions: {
                   orderBy: [desc(clientSubscriptions.joinedAt)],
+                  columns: {
+                    id: true,
+                    status: true,
+                    customPrice: true,
+                    activeUntil: true,
+                    joinedAt: true,
+                    serviceUser: true,
+                    servicePassword: true,
+                  },
                   with: {
                     client: { columns: { id: true, name: true, phone: true } },
                   },
                 },
                 platformRenewals: {
+                  columns: { id: true, amountPaid: true, periodStart: true, periodEnd: true, paidOn: true },
                   orderBy: [desc(platformRenewals.paidOn)],
                   limit: 5,
                 },
@@ -163,7 +187,7 @@ export function getSubscriptionTools(defineTool: DefineToolFn, userId: string, a
               })),
             }));
     
-            return { subscriptions: mappedSubs };
+            return sanitizeData({ subscriptions: mappedSubs });
           },
         }),
     

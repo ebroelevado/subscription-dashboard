@@ -8,6 +8,7 @@ import { createMutationToken } from "@/lib/mutation-token";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { formatCurrency, centsToAmount } from "@/lib/currency";
 import { preparePythonAnalysis as preparePython, pythonAnalysisTemplateIds } from "@/lib/python-analysis";
+import { sanitizeData } from "@/lib/data-utils";
 
 type DefineToolFn = (...args: any[]) => any;
 
@@ -45,9 +46,10 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
                 )),
               db.query.platforms.findMany({
                 where: eq(platforms.userId, userId),
+                columns: { id: true, name: true },
                 with: {
                   plans: {
-                    columns: { id: true, name: true, cost: true },
+                    columns: { id: true, cost: true },
                     with: {
                       subscriptions: {
                         where: eq(subscriptions.status, "active"),
@@ -100,7 +102,7 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
               };
             });
     
-            return {
+            const results = {
               totalMRR,
               totalCosts,
               netProfit: totalMRR - totalCosts,
@@ -109,6 +111,8 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
               totalActiveSeats: activeSeatsCount,
               perPlatform,
             };
+
+            return sanitizeData(results);
           },
         }),
     
@@ -224,7 +228,7 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
               },
             });
     
-            return {
+            const results = {
               totalFound: logs.length,
               payments: logs.map((rl) => ({
                 id: rl.id,
@@ -241,6 +245,8 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
                 notes: rl.notes,
               })),
             };
+
+            return sanitizeData(results);
           },
         }),
     
@@ -297,11 +303,13 @@ export function getFinancialTools(defineTool: DefineToolFn, userId: string, allo
                 return a.score - b.score;
             });
     
-            return {
+            const resultsFinal = {
                 globalStats: analytics.global,
                 totalClients: results.length,
                 clientsRanking: results
             };
+
+            return sanitizeData(resultsFinal);
           },
         }),
     

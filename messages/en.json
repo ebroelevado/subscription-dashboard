@@ -198,7 +198,22 @@
     "somethingWentWrong": "Something went wrong. Please try again.",
     "accountCreated": "Account created! Welcome to Pearfect 🎉",
     "accountCreatedSignInFailed": "Account created but sign in failed. Please sign in manually.",
-    "failedToCreateAccount": "Failed to create account"
+    "failedToCreateAccount": "Failed to create account",
+    "forgotPassword": "Forgot password?",
+    "forgotPasswordTitle": "Forgot password?",
+    "forgotPasswordDescription": "Enter your email address and we'll send you a link to reset your password.",
+    "checkEmail": "Check your email",
+    "resetLinkSent": "We've sent a password reset link to your email.",
+    "sendResetLink": "Send Reset Link",
+    "didntReceiveEmail": "Didn't receive the email?",
+    "tryAgain": "Try again",
+    "resetPasswordTitle": "Reset Password",
+    "resetPasswordDescription": "Enter your new password below.",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm New Password",
+    "resetPassword": "Reset Password",
+    "passwordResetSuccessDescription": "Your password has been reset successfully. Redirecting to login...",
+    "goToLogin": "Go to login"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -815,6 +830,7 @@
   "metadata": {
     "title": "Pearfect S.L. — Professional Subscription Management",
     "description": "Manage platforms, plans, seats, and client renewals from a single dashboard. Automated profitability tracking.",
+    "dashboardTitle": "Dashboard",
     "ogTitle": "Pearfect S.L. — Professional Subscription Management",
     "ogDescription": "Manage platforms, plans, seats, and client renewals from a single dashboard."
   },

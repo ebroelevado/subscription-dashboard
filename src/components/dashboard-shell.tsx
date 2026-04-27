@@ -389,7 +389,7 @@ export function DashboardShell({
           width: mounted && collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED,
           minWidth: mounted && collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED,
         }}
-        className="hidden lg:flex lg:flex-col border-r bg-sidebar/80 backdrop-blur-xl backdrop-saturate-150 transition-[width,min-width] duration-200 ease-in-out"
+        className="hidden lg:flex lg:flex-col border-r bg-sidebar/70 backdrop-blur-2xl backdrop-saturate-200 transition-[width,min-width] duration-200 ease-in-out shadow-sm"
       >
         {/* Logo — h-14 matches the topbar height so borders align */}
         <div
@@ -455,7 +455,7 @@ export function DashboardShell({
       {/* ── Main Area ── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="flex h-14 items-center gap-3 border-b bg-background/70 backdrop-blur-xl backdrop-saturate-150 px-4 lg:px-6">
+        <header className="flex h-14 items-center gap-3 border-b bg-background/60 backdrop-blur-2xl backdrop-saturate-200 px-4 lg:px-6 shadow-sm">
           {/* Mobile hamburger */}
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
             <SheetTrigger asChild>

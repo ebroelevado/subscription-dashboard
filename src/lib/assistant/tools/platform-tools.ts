@@ -8,6 +8,7 @@ import { createMutationToken } from "@/lib/mutation-token";
 import { jsonToCsv } from "@/lib/csv-utils";
 import { formatCurrency, centsToAmount } from "@/lib/currency";
 import { preparePythonAnalysis as preparePython, pythonAnalysisTemplateIds } from "@/lib/python-analysis";
+import { sanitizeData } from "@/lib/data-utils";
 
 type DefineToolFn = (...args: any[]) => any;
 
@@ -38,7 +39,7 @@ export function getPlatformTools(defineTool: DefineToolFn, userId: string, allow
               },
             });
     
-            return platformsList.map((p) => ({
+            const results = platformsList.map((p) => ({
               id: p.id,
               name: p.name,
               plans: p.plans.map((plan) => ({
@@ -56,6 +57,8 @@ export function getPlatformTools(defineTool: DefineToolFn, userId: string, allow
                 })),
               })),
             }));
+
+            return sanitizeData(results);
           },
         }),
     
@@ -138,7 +141,7 @@ export function getPlatformTools(defineTool: DefineToolFn, userId: string, allow
               },
             });
     
-            return {
+            const results = {
               totalFound: renewals.length,
               renewals: renewals.map((pr) => ({
                 id: pr.id,
@@ -151,6 +154,8 @@ export function getPlatformTools(defineTool: DefineToolFn, userId: string, allow
                 paidOn: pr.paidOn,
               })),
             };
+    
+            return sanitizeData(results);
           },
         }),
     

@@ -37,6 +37,9 @@ migrations_dir = "./drizzle"
 binding = "CHAT_BACKUPS"
 bucket_name = "chat-backups"
 
+[[send_email]]
+name = "EMAIL"
+
 # Environment variables (non-secrets)
 [vars]
 NEXT_PUBLIC_APP_URL = "https://subscription-dashboard.pages.dev"

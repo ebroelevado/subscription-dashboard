@@ -91,7 +91,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-dvh bg-background text-foreground selection:bg-primary/20">
       {/* ── Navbar ── */}
-      <nav className="sticky top-0 z-50 border-b border-border/40 bg-background/60 backdrop-blur-xl">
+      <nav className="sticky top-0 z-50 border-b border-border/40 bg-background/50 backdrop-blur-2xl backdrop-saturate-150 shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2.5 group">
             <Logo size={32} className="text-primary transition-transform group-hover:scale-105" />
@@ -131,8 +131,9 @@ export default function LandingPage() {
         {/* ── Hero Section ── */}
         <section className="relative overflow-hidden pt-16 pb-24 lg:pt-32 lg:pb-40">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10 pointer-events-none overflow-hidden">
-             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
-             <div className="absolute bottom-[20%] right-[-5%] w-[30%] h-[30%] bg-emerald-500/5 rounded-full blur-[100px]" />
+             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[140px]" />
+             <div className="absolute bottom-[20%] right-[-5%] w-[30%] h-[30%] bg-emerald-500/10 rounded-full blur-[120px]" />
+             <div className="absolute top-[40%] right-[20%] w-[25%] h-[25%] bg-blue-500/5 rounded-full blur-[100px]" />
           </div>
 
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -167,7 +168,7 @@ export default function LandingPage() {
                       <ArrowRight className="ml-2 size-4 transition-transform group-hover:translate-x-1" />
                     </Link>
                   </Button>
-                  <Button variant="outline" size="lg" asChild className="rounded-full px-8 text-base h-14 bg-background/50 backdrop-blur-sm">
+                  <Button variant="outline" size="lg" asChild className="rounded-full px-8 text-base h-14 glass-card hover:glass-strong">
                     <Link href="#features">
                       {t("ctaSecondary")}
                     </Link>
@@ -199,9 +200,9 @@ export default function LandingPage() {
                     />
                   </div>
                   {/* floating elements */}
-                  <div className="absolute -top-6 -right-6 bg-background/80 backdrop-blur-xl p-4 rounded-2xl border border-primary/20 shadow-2xl animate-float z-20">
+                  <div className="absolute -top-6 -right-6 glass-card p-4 rounded-2xl border-primary/30 shadow-2xl shadow-primary/10 animate-float z-20">
                     <div className="flex items-center gap-3">
-                      <div className="bg-emerald-500/10 p-2 rounded-lg">
+                      <div className="bg-emerald-500/10 backdrop-blur-sm p-2 rounded-lg border border-emerald-500/20">
                         <TrendingUp className="size-5 text-emerald-500" />
                       </div>
                       <div>
@@ -217,7 +218,8 @@ export default function LandingPage() {
         </section>
 
         {/* ── Problem Section ── */}
-        <section className="py-24 bg-muted/30 relative">
+        <section className="py-24 bg-muted/30 relative overflow-hidden">
+          <div className="absolute top-[20%] left-[-10%] w-[30%] h-[30%] bg-red-500/5 rounded-full blur-[100px] pointer-events-none" />
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-16">
               <h2 className="text-3xl lg:text-4xl font-bold mb-4">{t("problemTitle")}</h2>
@@ -226,9 +228,9 @@ export default function LandingPage() {
             <div className="grid md:grid-cols-3 gap-8">
               {problemPoints.map((point, i) => (
                 <AnimatedSection key={point} delay={i}>
-                  <Card className="border-none bg-background shadow-sm hover:shadow-md transition-shadow">
+                  <Card className="glass-card glass-card-hover border-white/10 dark:border-white/5 shadow-xl">
                     <CardContent className="pt-8 pb-8 flex flex-col items-center text-center">
-                      <div className="bg-red-500/10 text-red-500 p-3 rounded-2xl mb-6">
+                      <div className="bg-red-500/10 backdrop-blur-sm text-red-500 p-3 rounded-2xl mb-6 border border-red-500/20">
                         <HelpCircle className="size-6" />
                       </div>
                       <p className="font-medium text-lg leading-snug">{t(point as any)}</p>
@@ -241,20 +243,21 @@ export default function LandingPage() {
         </section>
 
         {/* ── Solution Section ── */}
-        <section id="features" className="py-24 lg:py-32">
+        <section id="features" className="py-24 lg:py-32 relative overflow-hidden">
+          <div className="absolute bottom-[10%] right-[-10%] w-[35%] h-[35%] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-20">
-              <Badge className="mb-4 bg-primary/10 text-primary hover:bg-primary/20 border-none">{t("theSolution")}</Badge>
+              <Badge className="mb-4 glass-card text-primary hover:glass-strong border-primary/20">{t("theSolution")}</Badge>
               <h2 className="text-3xl lg:text-5xl font-bold mb-6">{t("solutionTitle")}</h2>
               <p className="text-muted-foreground text-xl leading-relaxed">{t("solutionSubtitle")}</p>
             </div>
-            
+
             <div className="grid md:grid-cols-3 gap-10">
               {solutionPoints.map((item, i) => (
                 <AnimatedSection key={item.title} delay={i}>
-                  <div className="flex flex-col gap-6 p-8 rounded-3xl bg-muted/30 border border-transparent hover:border-primary/20 transition-colors group">
-                    <div className="bg-background size-14 rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                      <item.icon className="size-7" />
+                  <div className="flex flex-col gap-6 p-8 rounded-3xl glass-card glass-card-hover border-white/10 dark:border-white/5 shadow-xl group">
+                    <div className="glass-subtle size-14 rounded-2xl flex items-center justify-center shadow-sm border border-white/10 group-hover:glass-strong group-hover:border-primary/30 transition-all">
+                      <item.icon className="size-7 group-hover:text-primary transition-colors" />
                     </div>
                     <div>
                       <h3 className="text-xl font-bold mb-3">{t(item.title as any)}</h3>
@@ -290,7 +293,7 @@ export default function LandingPage() {
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     {featureList.map((f, i) => (
-                       <div key={f.key} className="bg-white/10 backdrop-blur-sm p-6 rounded-2xl border border-white/10 flex flex-col gap-4">
+                       <div key={f.key} className="glass-card p-6 rounded-2xl border-white/20 flex flex-col gap-4 hover:glass-strong transition-all">
                           <f.icon className="size-8" />
                           <span className="font-bold">{t(f.key as any)}</span>
                        </div>
@@ -301,7 +304,9 @@ export default function LandingPage() {
         </section>
 
         {/* ── Pricing Section ── */}
-        <section id="pricing" className="py-24 lg:py-32">
+        <section id="pricing" className="py-24 lg:py-32 relative overflow-hidden">
+          <div className="absolute top-[30%] left-[10%] w-[30%] h-[30%] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
+          <div className="absolute bottom-[20%] right-[5%] w-[25%] h-[25%] bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-20">
               <h2 className="text-4xl lg:text-5xl font-bold mb-6">{t("pricingTitle")}</h2>
@@ -311,7 +316,7 @@ export default function LandingPage() {
             <div className="grid lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
               {/* Free Plan */}
               <AnimatedSection delay={0}>
-                <Card className="h-full border-2 border-transparent hover:border-border transition-colors">
+                <Card className="h-full glass-card glass-card-hover border-white/10 dark:border-white/5 shadow-2xl">
                   <CardContent className="p-10 flex flex-col h-full">
                     <div className="mb-8">
                       <h3 className="text-2xl font-bold mb-2">{t("pricingFreeName")}</h3>
@@ -328,7 +333,7 @@ export default function LandingPage() {
                         </li>
                       ))}
                     </ul>
-                    <Button variant="outline" size="lg" className="w-full rounded-full h-12" asChild>
+                    <Button variant="outline" size="lg" className="w-full rounded-full h-12 glass-subtle hover:glass-card" asChild>
                       <Link href="/signup">{t("pricingGetStarted")}</Link>
                     </Button>
                   </CardContent>
@@ -337,8 +342,8 @@ export default function LandingPage() {
 
               {/* Premium Plan */}
               <AnimatedSection delay={1}>
-                <Card className="h-full relative border-2 border-primary shadow-2xl shadow-primary/10">
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-primary-foreground px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
+                <Card className="h-full relative glass-strong glass-card-hover border-primary/30 shadow-2xl shadow-primary/20">
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 glass-card border-primary/40 text-primary px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg">
                     {t("pricingPopular")}
                   </div>
                   <CardContent className="p-10 flex flex-col h-full">
@@ -368,19 +373,22 @@ export default function LandingPage() {
         </section>
 
         {/* ── FAQ Section ── */}
-        <section className="py-24 bg-muted/20">
+        <section className="py-24 bg-muted/20 relative overflow-hidden">
+          <div className="absolute top-[50%] right-[-10%] w-[30%] h-[30%] bg-blue-500/5 rounded-full blur-[100px] pointer-events-none" />
           <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
             <h2 className="text-3xl font-bold mb-12 text-center">{t("faqTitle")}</h2>
-            <Accordion type="single" collapsible className="w-full">
-              {faqItems.map((item, i) => (
-                <AccordionItem key={i} value={`item-${i}`} className="border-border/50">
-                  <AccordionTrigger className="text-lg hover:no-underline font-semibold">{t(item.q as any)}</AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground text-base leading-relaxed">
-                    {t(item.a as any)}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
+            <div className="glass-card rounded-3xl p-6 shadow-xl">
+              <Accordion type="single" collapsible className="w-full">
+                {faqItems.map((item, i) => (
+                  <AccordionItem key={i} value={`item-${i}`} className="border-white/10 dark:border-white/5">
+                    <AccordionTrigger className="text-lg hover:no-underline font-semibold hover:text-primary transition-colors">{t(item.q as any)}</AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground text-base leading-relaxed">
+                      {t(item.a as any)}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
           </div>
         </section>
 
@@ -405,7 +413,7 @@ export default function LandingPage() {
       </main>
 
       {/* ── Footer ── */}
-      <footer className="border-t py-12 bg-background">
+      <footer className="border-t border-white/10 dark:border-white/5 py-12 bg-background/80 backdrop-blur-xl backdrop-saturate-150">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="flex items-center gap-3">
             <Logo size={28} />

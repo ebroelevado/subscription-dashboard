@@ -30,6 +30,6 @@ export default defineConfig({
     external: ["better-sqlite3", "pg"],
   },
   optimizeDeps: {
-    exclude: ["better-sqlite3", "pg"],
+    exclude: ["better-sqlite3", "pg", "next-intl"],
   },
 });

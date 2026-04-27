@@ -205,7 +205,22 @@
     "somethingWentWrong": "Ha ocurrido un error. Inténtalo de nuevo.",
     "accountCreated": "¡Cuenta creada! Bienvenido a Pearfect 🎉",
     "accountCreatedSignInFailed": "Cuenta creada, pero no se pudo iniciar sesión. Inicia sesión manualmente.",
-    "failedToCreateAccount": "No se pudo crear la cuenta"
+    "failedToCreateAccount": "No se pudo crear la cuenta",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "forgotPasswordTitle": "¿Olvidaste tu contraseña?",
+    "forgotPasswordDescription": "Introduce tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
+    "checkEmail": "Revisa tu correo",
+    "resetLinkSent": "Hemos enviado un enlace de restablecimiento a tu correo.",
+    "sendResetLink": "Enviar Enlace",
+    "didntReceiveEmail": "¿No recibiste el correo?",
+    "tryAgain": "Intentar de nuevo",
+    "resetPasswordTitle": "Restablecer Contraseña",
+    "resetPasswordDescription": "Introduce tu nueva contraseña a continuación.",
+    "newPassword": "Nueva Contraseña",
+    "confirmPassword": "Confirmar Nueva Contraseña",
+    "resetPassword": "Restablecer Contraseña",
+    "passwordResetSuccessDescription": "Tu contraseña se ha restablecido correctamente. Redirigiendo al inicio de sesión...",
+    "goToLogin": "Ir al inicio de sesión"
   },
   "dashboard": {
     "title": "Panel",
@@ -815,6 +830,7 @@
   "metadata": {
     "title": "Pearfect S.L. — Gestión Profesional de Suscripciones",
     "description": "Gestiona plataformas, planes, perfiles y renovaciones de clientes desde un único panel. Rastreo automatizado de rentabilidad.",
+    "dashboardTitle": "Panel de Control",
     "ogTitle": "Pearfect S.L. — Gestión Profesional de Suscripciones",
     "ogDescription": "Gestiona plataformas, planes, perfiles y renovaciones de clientes desde un único panel."
   },

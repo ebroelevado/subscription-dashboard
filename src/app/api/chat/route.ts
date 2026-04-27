@@ -7,6 +7,7 @@ import { streamText, tool, stepCountIs, convertToModelMessages, wrapLanguageMode
 import { createAiGateway } from "ai-gateway-provider";
 import { createUnified } from "ai-gateway-provider/providers/unified";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { ErrorType } from "@/lib/ai-assistant/types/error.types";
 
 export const maxDuration = 60;
 const CHAT_PROXY_TIMEOUT_MS = 120_000;
@@ -170,7 +171,17 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
     createUserScopedTools(adaptedDefineTool as any, userId, allowDestructive);
     const tools = builtTools;
 
-    const coreMessages = await convertToModelMessages(messages);
+    // Normalize messages to UIMessage format (with parts + id) that convertToModelMessages expects
+    const normalizedMessages = messages.map((msg: any) => ({
+      id: msg.id || crypto.randomUUID(),
+      role: msg.role,
+      parts: msg.parts || (Array.isArray(msg.content) 
+        ? msg.content 
+        : [{ type: 'text', text: String(msg.content || '') }]),
+      ...(msg.metadata ? { metadata: msg.metadata } : {}),
+    }));
+
+    const coreMessages = await convertToModelMessages(normalizedMessages);
     const sanitizedMessages = coreMessages.map((msg: any) => {
       const newMsg = { ...msg } as any;
       if (newMsg.reasoning_content !== undefined) delete newMsg.reasoning_content;
@@ -199,14 +210,30 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
       },
     });
 
-    return result.toUIMessageStreamResponse() as Response;
+    return result.toUIMessageStreamResponse({
+      originalMessages: normalizedMessages,
+    }) as Response;
 }
 
   export async function POST(req: Request): Promise<Response> {
   try {
     const session = await getAuthSession();
+    console.log("[Chat API] Session found:", session?.user?.id ? "YES" : "NO", session?.user?.id);
+
     if (!session?.user?.id) {
-      return new Response("Unauthorized", { status: 401 });
+      console.warn("[Chat API] Unauthorized access attempt");
+      return new Response(
+        JSON.stringify({
+          error: "Unauthorized",
+          code: "UNAUTHORIZED",
+          type: ErrorType.AUTHENTICATION,
+          retryable: false
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
     }
 
     const rateLimit = checkRateLimit({
@@ -221,6 +248,8 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
         JSON.stringify({
           error: "Too Many Requests",
           code: "RATE_LIMITED",
+          type: ErrorType.RATE_LIMIT,
+          retryable: true,
           retryAfterSeconds,
         }),
         {
@@ -288,9 +317,28 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
         clearTimeout(timeoutId);
       }
 
+      // Filter headers to avoid issues with content-encoding, length, etc. from proxy
+      const safeHeaders = new Headers();
+      const headersToSkip = ['content-encoding', 'content-length', 'transfer-encoding', 'connection', 'keep-alive'];
+      doReq.headers.forEach((value, key) => {
+        if (!headersToSkip.includes(key.toLowerCase())) {
+          safeHeaders.set(key, value);
+        }
+      });
+
+      // Handle non-OK responses or empty bodies
+      if (!doReq.ok || !doReq.body) {
+        const text = await doReq.text();
+        console.warn(`[Chat Proxy] External proxy returned ${doReq.status}:`, text);
+        return new Response(text, {
+          status: doReq.status,
+          headers: safeHeaders
+        });
+      }
+
       return new Response(doReq.body, {
         status: doReq.status,
-        headers: doReq.headers
+        headers: safeHeaders
       });
     } else {
       console.log("[Chat Proxy] Using Local Dev Execution Container (No Binding/URL)");
@@ -298,12 +346,48 @@ async function executeLocalChat({ messages, model, allowDestructive }: any, user
     }
   } catch (err: unknown) {
     const error = err as Error;
-    console.error("[Chat API Critical Error]:", error?.message || err);
-    console.error("[Chat API Stack]:", error?.stack);
-    const statusCode = error instanceof ChatProxyTimeoutError ? 504 : 500;
+    console.error("[Chat API Critical Error]:", {
+      message: error?.message || err,
+      stack: error?.stack,
+      name: error?.name,
+      timestamp: new Date().toISOString()
+    });
+
+    // Classify error type for better client handling
+    let errorType = ErrorType.UNKNOWN;
+    let statusCode = 500;
+    let retryable = false;
+
+    if (error instanceof ChatProxyTimeoutError) {
+      errorType = ErrorType.TIMEOUT;
+      statusCode = 504;
+      retryable = true;
+    } else if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
+      errorType = ErrorType.NETWORK;
+      statusCode = 503;
+      retryable = true;
+    } else if (error?.message?.includes('rate limit') || error?.message?.includes('429')) {
+      errorType = ErrorType.RATE_LIMIT;
+      statusCode = 429;
+      retryable = true;
+    } else if (error?.message?.includes('stream')) {
+      errorType = ErrorType.STREAM_ERROR;
+      statusCode = 500;
+      retryable = true;
+    }
+
     return new Response(
-      JSON.stringify({ error: error?.message || "Failed to connect to AI service" }),
-      { status: statusCode, headers: { "Content-Type": "application/json" } }
+      JSON.stringify({
+        error: error?.message || "Failed to connect to AI service",
+        code: error?.name || "INTERNAL_ERROR",
+        type: errorType,
+        retryable,
+        timestamp: Date.now()
+      }),
+      {
+        status: statusCode,
+        headers: { "Content-Type": "application/json" }
+      }
     );
   }
 }
