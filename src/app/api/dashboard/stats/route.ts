@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { eq, sql, desc, and, gte, lte, sum } from "drizzle-orm";
 import { platforms, plans, clients, subscriptions, clientSubscriptions, renewalLogs, platformRenewals } from "@/db/schema";
 import { success, withErrorHandling } from "@/lib/api-utils";
-import { startOfDay, addDays, startOfMonth, endOfMonth } from "date-fns";
+import { startOfDay, endOfDay, addDays, startOfMonth, endOfMonth } from "date-fns";
 
 // GET /api/dashboard/stats — Aggregated overview scoped to current user
 export async function GET() {
@@ -11,7 +11,7 @@ export async function GET() {
     const userId = await getAuthUserId();
 
     const today = startOfDay(new Date());
-    const soonThreshold = addDays(today, 3);
+    const soonThreshold = endOfDay(addDays(today, 3));
     const monthStart = startOfMonth(today).toISOString().split("T")[0];
     const monthEnd = endOfMonth(today).toISOString().split("T")[0];
 
@@ -194,7 +194,8 @@ export async function GET() {
       expiringSubscriptions: subscriptionsList
         .filter(s => {
           const activeUntilDate = new Date(s.activeUntil);
-          return activeUntilDate >= today && activeUntilDate <= soonThreshold;
+          // Show active subscriptions expiring soon (or slightly overdue)
+          return s.status === "active" && activeUntilDate <= soonThreshold && activeUntilDate >= addDays(today, -7);
         })
         .map(s => ({
           id: s.id,
@@ -203,7 +204,12 @@ export async function GET() {
           autoRenewal: s.autoRenewal,
           planName: s.plan.name,
           platformName: s.plan.platform.name,
-          daysLeft: Math.ceil((new Date(s.activeUntil).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+          daysLeft: Math.ceil((new Date(s.activeUntil).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
+          plan: {
+            cost: s.plan.cost,
+            name: s.plan.name,
+            platform: { name: s.plan.platform.name }
+          }
         }))
     });
   });

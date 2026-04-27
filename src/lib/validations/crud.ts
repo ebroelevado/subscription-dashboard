@@ -135,6 +135,7 @@ export type RenewBulkClientSubscriptionsInput = z.infer<
 
 export const renewPlatformSubscriptionSchema = z.object({
   amountPaid: z.number().min(0).optional(), // defaults to plan cost
+  months: z.coerce.number().int().optional().default(1),
   paidOn: z.string().date().optional(),
   notes: z.string().nullable().optional(),
 });

@@ -57,7 +57,7 @@
     "startForFree": "Empieza gratis",
     "getStartedFree": "Empieza gratis — Es gratuito",
     "daysOverdue": "{count}d atrasado",
-    "daysLeft": "{count}d restantes",
+    "daysLeft": "{count}d quedan",
     "today": "¡Hoy!",
     "margin": "{percent}% margen",
     "noRevenueYet": "Sin ingresos aún",
@@ -115,7 +115,9 @@
     "overdue": "Atrasado",
     "expiring": "Venciendo",
     "month": "mes",
-    "perMonth": "/mes"
+    "months": "meses",
+    "perMonth": "/mes",
+    "renew": "Renovar"
   },
   "nav": {
     "dashboard": "Panel",
@@ -257,7 +259,9 @@
     "viewSubscriptions": "Ver Suscripciones",
     "viewClients": "Ver Clientes",
     "viewPlans": "Ver Planes",
-    "askAssistant": "Preguntar al Asistente"
+    "askAssistant": "Preguntar al Asistente",
+    "platformSubscriptions": "Suscripciones de Plataforma",
+    "clientSeats": "Asientos de Clientes"
   },
   "platforms": {
     "title": "Plataformas",
@@ -453,7 +457,7 @@
     "customizeRenewal": "Personalizar",
     "addNotes": "Añadir notas",
     "allExpireSameDate": "mismo vencimiento",
-    "disciplineScore": "Disciplina de pago",
+    "disciplineScore": "Aura",
     "scoreExcellent": "Excelente (Siempre a tiempo)",
     "scoreGood": "Buena (Rara vez tarde)",
     "scoreAverage": "Regular (Atrasos ocasionales)",
@@ -474,7 +478,10 @@
     "totalMonthlyCost": "Coste Mensual Total",
     "noServicesDescription": "Este cliente aún no ha sido asignado a ninguna suscripción.",
     "customPrice": "Precio Personalizado",
-    "joined": "Fecha de Unión"
+    "joined": "Fecha de Unión",
+    "renewDuration": "Renovar {count, plural, one {# mes} other {# meses}}",
+    "advancedOptions": "Opciones Avanzadas...",
+    "selectDuration": "Seleccionar duración"
   },
   "history": {
     "title": "Historial de Renovaciones",

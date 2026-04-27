@@ -27,6 +27,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const result = await renewPlatformSubscription({
       subscriptionId: id,
       amountPaid: data.amountPaid,
+      months: data.months,
       notes: data.notes,
     });
 

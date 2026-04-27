@@ -106,7 +106,11 @@
     "expiring": "即将到期",
     "manage": "管理",
     "security": "安全",
-    "subscription": "订阅"
+    "subscription": "订阅",
+    "month": "月",
+    "months": "个月",
+    "perMonth": "/月",
+    "renew": "续订"
   },
   "nav": {
     "dashboard": "仪表板",
@@ -426,7 +430,7 @@
     "customizeRenewal": "自定义",
     "addNotes": "添加备注",
     "allExpireSameDate": "同日到期",
-    "disciplineScore": "付款信誉",
+    "disciplineScore": "Aura",
     "scoreExcellent": "极好 (总是按时)",
     "scoreGood": "好 (很少迟交)",
     "scoreAverage": "一般 (偶尔延迟)",
@@ -447,8 +451,10 @@
     "totalMonthlyCost": "每月总成本",
     "noServicesDescription": "该客户尚未分配任何订阅。",
     "customPrice": "自定义价格",
-    "joined": "加入时间",
-    "paymentDueImmediately": "需立即付款"
+    "joined": "加入日期",
+    "renewDuration": "续订 {count} 个月",
+    "advancedOptions": "高级选项...",
+    "selectDuration": "选择持续时间"
   },
   "history": {
     "title": "续约历史",
@@ -539,11 +545,11 @@
     "arpu": "ARPU",
     "cogs": "COGS",
     "netMargin": "净利润率",
-    "disciplineScore": "付款信誉得分",
+    "disciplineScore": "Aura",
     "totalPayments": "付款总计",
     "premiumAnalysis": "高级分析",
     "premiumAnalysisDesc": "使用高级版查看历史趋势和收入预测。",
-    "disciplineScoreTitle": "付款信誉得分",
+    "disciplineScoreTitle": "Aura",
     "disciplineScoreDesc": "分析客户的守时情况并获取高级版的预测得分。",
     "topPremiumUsers": "高级用户排行",
     "breakEvenTitle": "盈亏平衡分析",

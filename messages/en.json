@@ -108,7 +108,9 @@
     "security": "Security",
     "subscription": "Subscription",
     "month": "month",
-    "perMonth": "/mo"
+    "months": "months",
+    "perMonth": "/mo",
+    "renew": "Renew"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -233,7 +235,9 @@
     "netProfit": "Net Profit",
     "totalFromActiveSeats": "Total from active seats",
     "totalSubscriptionCosts": "Total subscription costs",
-    "financialHealth": "Financial Health — This Month",
+    "financialHealth": "Financial Health",
+    "expected": "expected",
+    "actual": "actual",
     "revenue": "Revenue",
     "cost": "Cost",
     "net": "Net",
@@ -250,7 +254,9 @@
     "viewSubscriptions": "View Subscriptions",
     "viewClients": "View Clients",
     "viewPlans": "View Plans",
-    "askAssistant": "Ask Assistant"
+    "askAssistant": "Ask Assistant",
+    "platformSubscriptions": "Platform Subscriptions",
+    "clientSeats": "Client Seats"
   },
   "platforms": {
     "title": "Platforms",
@@ -453,7 +459,7 @@
     "customizeRenewal": "Customize",
     "addNotes": "Add notes",
     "allExpireSameDate": "same expiry",
-    "disciplineScore": "Payment Discipline",
+    "disciplineScore": "Aura",
     "scoreExcellent": "Excellent (Always on time)",
     "scoreGood": "Good (Rarely late)",
     "scoreAverage": "Average (Occasional delays)",
@@ -474,7 +480,10 @@
     "totalMonthlyCost": "Total Monthly Cost",
     "noServicesDescription": "This client hasn't been assigned to any subscriptions yet.",
     "customPrice": "Custom Price",
-    "joined": "Joined"
+    "joined": "Date Joined",
+    "renewDuration": "Renew {count, plural, one {# month} other {# months}}",
+    "advancedOptions": "Advanced Options...",
+    "selectDuration": "Select duration"
   },
   "history": {
     "title": "Renewal History",

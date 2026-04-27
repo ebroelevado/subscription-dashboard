@@ -15,7 +15,7 @@ import { SeatCard } from "@/components/subscriptions/seat-card";
 import { AddSeatDialog } from "@/components/subscriptions/add-seat-dialog";
 import { EditSeatDialog } from "@/components/subscriptions/edit-seat-dialog";
 import { RenewClientDialog } from "@/components/subscriptions/renew-client-dialog";
-import { RenewPlatformDialog } from "@/components/subscriptions/renew-platform-dialog";
+import { RenewPlatformSheet } from "@/components/subscriptions/renew-platform-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import {
@@ -423,17 +423,8 @@ export default function SubscriptionDetailPage({
       />
 
       {/* Renew Platform */}
-      <RenewPlatformDialog
-        subscription={renewPlatformOpen ? {
-          id: sub.id,
-          label: sub.label,
-          activeUntil: sub.activeUntil,
-          plan: {
-            cost: Number(sub.plan.cost),
-            name: sub.plan.name,
-            platform: sub.plan.platform,
-          },
-        } : null}
+      <RenewPlatformSheet
+        subscription={renewPlatformOpen ? sub : null}
         open={renewPlatformOpen}
         onOpenChange={setRenewPlatformOpen}
       />

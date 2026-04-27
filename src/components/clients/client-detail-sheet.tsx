@@ -18,13 +18,21 @@ import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
 import {
-  Copy, Eye, EyeOff, RefreshCw, MessageCircle, UserCircle, AlertTriangle, Plus,
+  Copy, Eye, EyeOff, RefreshCw, MessageCircle, UserCircle, AlertTriangle, Plus, ChevronDown, Check, Globe
 } from "lucide-react";
 import { differenceInDays, startOfDay, addMonths, subMonths, format } from "date-fns";
 import { toast } from "sonner";
@@ -237,7 +245,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                   </div>
                   <div>
                     <h2 className="text-xl font-bold">{client.name}</h2>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-foreground">
                       {client.phone ?? t("noPhone")} · {client.notes ?? t("noNotes")}
                     </p>
                   </div>
@@ -250,7 +258,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tc("credentials")}</p>
                   {client.serviceUser && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{tc("username")}</span>
+                      <span className="text-foreground/70">{tc("username")}</span>
                       <div className="flex items-center gap-1">
                         <code className="font-mono text-sm">{client.serviceUser}</code>
                         <Button variant="ghost" size="icon" className="size-6" onClick={() => copyToClipboard(client.serviceUser!, tc("username"))}>
@@ -261,7 +269,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                   )}
                   {client.servicePassword && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{tc("password")}</span>
+                      <span className="text-foreground/70">{tc("password")}</span>
                       <div className="flex items-center gap-1">
                         <code className="font-mono text-sm">
                           {showPasswords["global"] ? client.servicePassword : "••••••••"}
@@ -291,27 +299,37 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                   <MessageCircle className="mr-2 size-4" />
                   {activeSeats.length > 1 ? t("sendReminders") : t("sendReminder")}
                 </Button>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="font-mono text-xs"
-                        onClick={() => {
-                          if (lang === "es") setLang("en");
-                          else if (lang === "en") setLang("zh");
-                          else setLang("es");
-                        }}
-                      >
-                        {lang === "es" ? "🇪🇸 ES" : lang === "en" ? "🇬🇧 EN" : "🇨🇳 ZH"}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="font-mono text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <Globe className="mr-1.5 size-3.5" />
+                      {lang === "es" ? "ES" : lang === "en" ? "EN" : "ZH"}
+                      <ChevronDown className="ml-1 size-3 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-32">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
                       {tc("changeLanguage")}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setLang("es")} className="flex items-center justify-between">
+                      <span>🇪🇸 Español</span>
+                      {lang === "es" && <Check className="size-3" />}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setLang("en")} className="flex items-center justify-between">
+                      <span>🇬🇧 English</span>
+                      {lang === "en" && <Check className="size-3" />}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setLang("zh")} className="flex items-center justify-between">
+                      <span>🇨🇳 中文</span>
+                      {lang === "zh" && <Check className="size-3" />}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               {!canSendReminder && client.phone && activeSeats.length === 0 && (
@@ -349,19 +367,19 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
 
                 {/* Seats count label & Discipline Score */}
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">
-                    {t("seatsSection")} ({client.clientSubscriptions.length})
-                  </p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {t("seatsSection")} ({client.clientSubscriptions.length})
+                    </p>
                   {disciplineScore !== null && discipline && (
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div className="flex items-center gap-1.5 cursor-help">
-                            <span className="text-sm font-medium text-muted-foreground">
-                              {t("disciplineScore")}:
-                            </span>
-                            <span className={`text-sm font-bold font-mono ${getScoreColor(Number(disciplineScore))}`}>
-                              {Number(disciplineScore).toFixed(1)}
+                             <span className="text-sm font-medium text-foreground/80">
+                               {t("disciplineScore")}:
+                             </span>
+                            <span className={`text-sm font-bold font-mono ${getScoreColor(Number(disciplineScore) / 1000)}`}>
+                              {(Number(disciplineScore) / 1000).toFixed(1)}
                             </span>
                           </div>
                         </TooltipTrigger>
@@ -404,7 +422,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                             >
                               {cs.subscription?.plan?.platform?.name ?? "Deleted"} — {cs.subscription?.plan?.name ?? "Deleted"}
                             </Link>
-                            <p className="text-xs text-muted-foreground">{cs.subscription?.label ?? "Deleted"}</p>
+                             <p className="text-xs text-foreground/60">{cs.subscription?.label ?? "Deleted"}</p>
                           </div>
                           <Badge variant={
                             cs.status === "active" ? "default" : "secondary"
@@ -415,9 +433,9 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
 
                         {/* Auto-renewal toggle */}
                         <div className="flex items-center justify-between py-1 border-y border-dashed border-muted">
-                          <Label htmlFor={`auto-renew-${cs.id}`} className="text-[10px] font-medium text-muted-foreground uppercase cursor-pointer">
-                            {tc("autoRenewal")}
-                          </Label>
+                           <Label htmlFor={`auto-renew-${cs.id}`} className="text-[10px] font-medium text-foreground/70 uppercase cursor-pointer">
+                             {tc("autoRenewal")}
+                           </Label>
                           <Switch
                             id={`auto-renew-${cs.id}`}
                             checked={cs.autoRenewal}
@@ -432,15 +450,15 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-mono">{formatCurrency(Number(cs.customPrice), currency)}</span>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">
-                              {isPaused
-                                ? tc("paused")
-                                : expiry.diff < 0
-                                  ? tc("daysOverdue", { count: Math.abs(expiry.diff) })
-                                  : expiry.diff === 0
-                                    ? tc("today")
-                                    : tc("daysLeft", { count: expiry.diff })}
-                            </span>
+                             <span className="text-xs text-foreground/80">
+                               {isPaused
+                                 ? tc("paused")
+                                 : expiry.diff < 0
+                                   ? tc("daysOverdue", { count: Math.abs(expiry.diff) })
+                                   : expiry.diff === 0
+                                     ? tc("today")
+                                     : tc("daysLeft", { count: expiry.diff })}
+                             </span>
                             <Badge variant={isPaused ? "secondary" : expiryBadge[expiry.status]} className="text-[10px]">
                               {format(new Date(cs.activeUntil), "dd/MM/yyyy")}
                             </Badge>
@@ -450,19 +468,54 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                         {/* Renew button — only for active seats */}
                         {cs.status === "active" && (
                           <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => openRenewDialog({
-                                id: cs.id,
-                                customPrice: Number(cs.customPrice),
-                                activeUntil: cs.activeUntil,
-                              })}
-                            >
-                              <RefreshCw className="mr-2 size-3.5" />
-                              {t("renewSeat")}
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                >
+                                  <RefreshCw className="mr-2 size-3.5" />
+                                  {t("renewSeat")}
+                                  <ChevronDown className="ml-2 size-3 opacity-50" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="w-48">
+                                <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+                                  {tc("renewMonthsHint") || t("selectDuration")}
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {[1, 3, 6, 12].map((months) => (
+                                  <DropdownMenuItem
+                                    key={months}
+                                    onClick={() => {
+                                      const basePrice = Number(cs.customPrice) / 100;
+                                      renewMut.mutate({ 
+                                        seatId: cs.id, 
+                                        amountPaid: Number((basePrice * months).toFixed(2)), 
+                                        months: months, 
+                                        paidOn: format(new Date(), "yyyy-MM-dd"), 
+                                        notes: "" 
+                                      });
+                                    }}
+                                  >
+                                    <RefreshCw className="mr-2 size-3.5" />
+                                    {t("renewDuration", { count: months })}
+                                  </DropdownMenuItem>
+                                ))}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => openRenewDialog({
+                                    id: cs.id,
+                                    customPrice: Number(cs.customPrice),
+                                    activeUntil: cs.activeUntil,
+                                  })}
+                                >
+                                  <Plus className="mr-2 size-3.5" />
+                                  {t("advancedOptions")}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                             {client?.phone && (
                               <Button
                                 variant="outline"
@@ -479,11 +532,11 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                         {/* Recent renewals */}
                         {cs.renewalLogs.length > 0 && (
                           <div className="border-t pt-2 mt-1">
-                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                            <p className="text-[10px] font-bold text-foreground uppercase tracking-wider mb-1">
                               {tNav("history")}
                             </p>
                             {cs.renewalLogs.slice(0, 3).map((r) => (
-                              <div key={r.id} className="flex items-center justify-between text-xs text-muted-foreground">
+                              <div key={r.id} className="flex items-center justify-between text-xs text-foreground/80">
                                 <span>{format(new Date(r.paidOn), "dd/MM/yyyy")}</span>
                                 <span className="font-mono">{formatCurrency(Number(r.amountPaid), currency)}</span>
                               </div>
@@ -521,7 +574,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                 onChange={(e) => setRenewAmount(Number(e.target.value))}
               />
               {renewMonths > 1 && renewSeat && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-foreground/70">
                   {tc("autoCalculated")}: {centsToAmount(Number(renewSeat.customPrice)).toFixed(2)} × {renewMonths} {t("renewMonths")}
                 </p>
               )}
@@ -536,7 +589,7 @@ export function ClientDetailSheet({ clientId, open, onOpenChange }: ClientDetail
                 value={renewMonths}
                 onChange={(e) => handleRenewMonthsChange(Number(e.target.value) || 1)}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-foreground/70">
                 {tc("renewMonthsHint")}
               </p>
             </div>

@@ -186,10 +186,10 @@ export function ClientsTable({ clients, isLoading }: ClientsTableProps) {
                   onClick={() => setSheetClientId(c.id)}
                 >
                   <TableCell className="text-center font-medium">{c.name}</TableCell>
-                  <TableCell className="text-center text-muted-foreground">
+                  <TableCell className="text-center text-sm font-medium text-foreground">
                     {c.phone ?? "—"}
                   </TableCell>
-                  <TableCell className="text-center text-sm text-muted-foreground">
+                  <TableCell className="text-center text-sm text-foreground/80">
                     <div className="max-w-[180px] mx-auto whitespace-normal break-words leading-tight">
                       {services}
                     </div>
@@ -199,8 +199,8 @@ export function ClientsTable({ clients, isLoading }: ClientsTableProps) {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className={cn("font-mono font-bold text-sm", getScoreColor(Number(score)))}>
-                              {Number(score).toFixed(1)}
+                            <span className={cn("font-mono font-bold text-sm", getScoreColor(Number(score) / 1000))}>
+                              {(Number(score) / 1000).toFixed(1)}
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="text-xs">

@@ -1,4 +1,8 @@
 import { differenceInDays, startOfDay, format } from "date-fns";
+import { IntlMessageFormat } from "intl-messageformat";
+import esMessages from "../../messages/es.json";
+import enMessages from "../../messages/en.json";
+import zhMessages from "../../messages/zh.json";
 
 export type Lang = "es" | "en" | "zh";
 
@@ -8,16 +12,41 @@ export interface SeatWhatsAppContext {
   platformName: string;
 }
 
+const DICTS: Record<Lang, any> = {
+  es: esMessages,
+  en: enMessages,
+  zh: zhMessages,
+};
+
+function getTranslation(lang: Lang, key: string, values?: Record<string, string | number>) {
+  const dict = DICTS[lang] || DICTS.es;
+  const keys = key.split(".");
+  let msg = dict;
+  for (const k of keys) {
+    if (!msg) break;
+    msg = msg[k];
+  }
+  
+  if (!msg || typeof msg !== "string") return key;
+  
+  if (values) {
+    return new IntlMessageFormat(msg, langToLocale(lang)).format(values) as string;
+  }
+  return msg;
+}
+
 export function buildWhatsAppUrl(
   phone: string,
   name: string,
   seats: SeatWhatsAppContext[],
   lang: Lang,
-  t: (key: string, values?: Record<string, string | number>) => string,
+  _ignoredT: any, // Keeping signature for backwards compatibility temporarily
   signature?: string,
   currency = "EUR",
   forceAll = false
 ): string {
+  const t = (key: string, values?: Record<string, string | number>) => getTranslation(lang, key, values);
+
   const today = startOfDay(new Date());
   const URGENCY_THRESHOLD = 5;
 
@@ -98,3 +127,4 @@ function langToLocale(lang: Lang): string {
     case "zh": return "zh-CN";
   }
 }
+
