@@ -456,9 +456,10 @@ export default function HistoryPage() {
             variant="outline"
             onClick={handleExport}
             disabled={!data?.rows.length}
+            className="gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/30 transition-all active:scale-95"
           >
-            <Download className="size-4" />
-            {t("exportCsv")}
+            <Download className="size-4 text-primary" />
+            <span>{t("exportCsv")}</span>
           </Button>
         </div>
       </div>
@@ -494,16 +495,6 @@ export default function HistoryPage() {
                 {tc("clearSearch")}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9"
-              onClick={handleExport}
-              disabled={!data?.rows.length}
-            >
-              <Download className="mr-2 size-4" />
-              {t("exportCsv")}
-            </Button>
           </div>
         </div>
 
@@ -625,11 +616,11 @@ export default function HistoryPage() {
           <table className="w-full text-sm">
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id} className="border-b bg-muted/50">
+                <tr key={headerGroup.id} className="border-b bg-muted/40">
                   {headerGroup.headers.map((header) => (
                     <th
                       key={header.id}
-                      className="px-4 py-3 text-left font-medium text-muted-foreground"
+                      className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                     >
                       {header.isPlaceholder
                         ? null
@@ -661,8 +652,8 @@ export default function HistoryPage() {
                     key={row.id}
                     onClick={() => setEditingRow(row.original)}
                     className={cn(
-                      "border-b last:border-0 transition-colors cursor-pointer",
-                      selectedIds.has(row.original.id) ? "bg-muted/50" : "hover:bg-muted/30"
+                      "border-b last:border-0 transition-colors cursor-pointer even:bg-muted/20",
+                      selectedIds.has(row.original.id) ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30"
                     )}
                   >
                     {row.getVisibleCells().map((cell) => (
